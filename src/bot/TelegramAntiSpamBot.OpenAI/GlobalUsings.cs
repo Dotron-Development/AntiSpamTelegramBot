@@ -1,0 +1,13 @@
+﻿global using System.Diagnostics.CodeAnalysis;
+global using System.ClientModel;
+global using System.Text.Json;
+global using Microsoft.Extensions.Logging;
+global using OpenAI.Chat;
+global using Azure.AI.OpenAI;
+global using Azure.Identity;
+global using Microsoft.Extensions.DependencyInjection;
+global using System.Text.RegularExpressions;
+global using TelegramAntiSpamBot.OpenAI.Instructions;
+global using Microsoft.Extensions.Options;
+global using System.Reflection;
+global using System.Text;

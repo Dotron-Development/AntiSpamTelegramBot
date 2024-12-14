@@ -1,0 +1,101 @@
+name: main-infrastructure
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+
+    outputs:
+      resource_group_name:
+        description: "The name of the resource group"
+        value: ${{ jobs.main-infrastructure.outputs.resource_group_name }}
+      functionapp_name:
+        description: "The name of the function app"
+        value: ${{ jobs.main-infrastructure.outputs.functionapp_name }}
+
+env:
+  # service principal credentials
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+
+#   GH_TOKEN: ${{ secrets.ANTISPAM_GITHUB_TOKEN }}
+
+jobs:
+  main-infrastructure:
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+
+    outputs:
+      resource_group_name: ${{ steps.generate-outputs.outputs.resource_group_name }}
+      functionapp_name: ${{ steps.generate-outputs.outputs.functionapp_name }}
+
+    defaults:
+      run:
+        working-directory: src/infrastructure
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify Inputs
+        run: |
+          allowed_environments=("dev" "prod")
+          if [[ ! " ${allowed_environments[@]} " =~ " ${{ inputs.environment }} " ]]; then
+            echo "Invalid environment: ${{ inputs.environment }}. Allowed values are: ${allowed_environments[@]}"
+            exit 1
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        env:
+          # backend configuration
+          AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
+          AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
+          AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
+          AZ_MAIN_STATE_FILE_KEY: "main.terraform.tfstate"
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
+            -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
+            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+
+      - name: Terraform Plan
+        env:
+          AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
+          AZ_OPENAI_STATE_FILE_KEY: "openai.terraform.tfstate"
+          AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
+          AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
+          AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
+        run: |
+          terraform plan -out=tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
+            -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}" \
+            -var="openai_state_storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}" \
+            -var="openai_state_container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -var="openai_state_resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+            -var="openai_state_key=${AZ_OPENAI_STATE_FILE_KEY}" \
+            -var="telegram_bot_token=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            -var="telegram_bot_secret_header=${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}"
+
+      - name: Apply Terraform plan
+        run: terraform apply tfplan
+
+      - name: Generate outputs
+        id: generate-outputs
+        run: |
+          RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name)
+          FUNCTION_APP_NAME=$(terraform output -raw functionapp_name)
+          if [ -z "$RESOURCE_GROUP_NAME" ] || [ -z "$FUNCTION_APP_NAME" ]; then
+            echo "Error: RESOURCE_GROUP_NAME or FUNCTION_APP_NAME is empty."
+            exit 1
+          fi
+          echo "resource_group_name=$RESOURCE_GROUP_NAME" >> $GITHUB_OUTPUT
+          echo "functionapp_name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT

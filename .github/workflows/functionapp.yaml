@@ -1,0 +1,83 @@
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      resource_group_name:
+        description: "The name of the resource group"
+        required: true
+        type: string
+      function_app_name:
+        description: "The name of the function app"
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: "./bot/TelegramAntiSpamBot.Functions"
+  DOTNET_VERSION: "9.0.x"
+  DOTNET_INSTALL_DIR: "./.dotnet"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
+
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+
+      - name: Verify Inputs
+        run: |
+          allowed_environments=("dev" "prod")
+          if [[ ! " ${allowed_environments[@]} " =~ " ${{ inputs.environment }} " ]]; then
+            echo "Invalid environment: ${{ inputs.environment }}. Allowed values are: ${allowed_environments[@]}"
+            exit 1
+          fi
+
+      - name: "Azure login"
+        uses: azure/login@v2
+        with:
+          creds: '{"clientId":"${{ secrets.ARM_CLIENT_ID }}","clientSecret":"${{ secrets.ARM_CLIENT_SECRET }}","subscriptionId":"${{ secrets.ARM_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.ARM_TENANT_ID }}"}'
+
+      - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: "Publish Using Dotnet"
+        shell: bash
+        run: |
+          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+          dotnet publish --configuration Release --os win --arch x64 --output ./output
+          popd
+
+      - name: Zip published output
+        run: |
+          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
+          zip -r app.zip .
+          popd
+
+      - name: Upload publishing artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: app
+          path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
+
+      - name: Deploy to Azure Function App
+        run: |
+          echo "Resource Group Name: ${{ inputs.resource_group_name }}"
+          echo "Function App Name: ${{ inputs.function_app_name }}"
+
+          RESOURCE_GROUP_NAME=${{ inputs.resource_group_name }}
+          FUNCTION_APP_NAME=${{ inputs.function_app_name }}
+          az functionapp deployment source config-zip --resource-group $RESOURCE_GROUP_NAME --name $FUNCTION_APP_NAME --src ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip

@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-openai-infrastructure-to-dev:
+    uses: ./.github/workflows/openai-infrastructure.yaml
+    with:
+      environment: dev
+    secrets: inherit
+
+  deploy-main-infrastructure-to-dev:
+    needs: deploy-openai-infrastructure-to-dev
+    uses: ./.github/workflows/main-infrastructure.yaml
+    with:
+      environment: dev
+    secrets: inherit
+
+  deploy-functionapp-to-dev:
+    needs: deploy-main-infrastructure-to-dev
+    uses: ./.github/workflows/functionapp.yaml
+    with:
+      environment: dev
+      resource_group_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.resource_group_name }}
+      function_app_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.functionapp_name }}
+    secrets: inherit
+
+  deploy-openai-infrastructure-to-prod:
+    needs:
+      - deploy-main-infrastructure-to-dev
+      - deploy-functionapp-to-dev
+    uses: ./.github/workflows/openai-infrastructure.yaml
+    with:
+      environment: prod
+    secrets: inherit
+
+  deploy-main-infrastructure-to-prod:
+    needs: deploy-openai-infrastructure-to-prod
+    uses: ./.github/workflows/main-infrastructure.yaml
+    with:
+      environment: prod
+    secrets: inherit
+
+  deploy-functionapp-to-prod:
+    needs: deploy-main-infrastructure-to-prod
+    uses: ./.github/workflows/functionapp.yaml
+    with:
+      environment: prod
+      resource_group_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.resource_group_name }}
+      function_app_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.functionapp_name }}
+    secrets: inherit
