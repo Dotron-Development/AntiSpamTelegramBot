@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "TelegramAntiSpamBot.Initializer": {
+      "commandName": "Project",
+      "commandLineArgs": "token https://url"
+    }
+  }
+}
