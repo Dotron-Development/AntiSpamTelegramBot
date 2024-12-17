@@ -20,7 +20,6 @@ namespace TelegramAntiSpamBot.Functions
                     var userMessageCount = await repository.GetUserMessageCount(message.Chat.Id, fromUser.Id);
                     var increaseCounterTask = repository.IncreaseMessageCount(message.Chat.Id, fromUser.Id);
 
-             
                     if (message.Text?.Length > 30)
                     {
                         var spamDetectionResult = await detectionService.IsSpam(MessageType.Message, message.Text, userMessageCount);
