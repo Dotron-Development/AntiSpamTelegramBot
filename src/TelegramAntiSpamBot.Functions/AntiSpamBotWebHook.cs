@@ -1,9 +1,11 @@
+using MessageType = TelegramAntiSpamBot.OpenAI.MessageType;
+
 namespace TelegramAntiSpamBot.Functions
 {
     public class AntiSpamBotWebHook(ILogger<AntiSpamBotWebHook> logger,
         SpamDetectionService detectionService,
         AntiSpamBotRepository repository,
-        TelegramBotClient bot)
+        ITelegramBotClient bot)
     {
         [Function("AntiSpamBotWebHook")]
         public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req)
@@ -13,14 +15,15 @@ namespace TelegramAntiSpamBot.Functions
                 var update = JsonSerializer.Deserialize<Update>(req.BodyReader.AsStream(), JsonBotAPI.Options);
 
                 if (update?.Type is UpdateType.Message or UpdateType.EditedMessage
-                    && update.Message is { } message && message.From is { } fromUser)
+                    && update.Message is { From: { } fromUser } message && message.Chat.Id != -1002395980780)
                 {
                     var userMessageCount = await repository.GetUserMessageCount(message.Chat.Id, fromUser.Id);
                     var increaseCounterTask = repository.IncreaseMessageCount(message.Chat.Id, fromUser.Id);
 
+             
                     if (message.Text?.Length > 30)
                     {
-                        var spamDetectionResult = await detectionService.IsSpam(message.Text, userMessageCount);
+                        var spamDetectionResult = await detectionService.IsSpam(MessageType.Message, message.Text, userMessageCount);
                         logger.LogInformation("SPAM DETECTION RESULT: {probability}", spamDetectionResult.Probability);
 
                         if (spamDetectionResult.Probability >= 90)
@@ -30,7 +33,9 @@ namespace TelegramAntiSpamBot.Functions
                                                                 message.Text,
                                                                 spamDetectionResult.Probability.Value));
 
+                            await bot.ForwardMessage(new ChatId(-1002395980780), message.Chat.Id, message.Id);
                             await bot.DeleteMessage(message.Chat.Id, message.Id);
+                            
                             await saveTask;
                         }
                     }

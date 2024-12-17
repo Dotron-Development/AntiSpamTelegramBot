@@ -3,7 +3,7 @@
     [TestClass]
     public sealed class OpenAiServicesTests
     {
-        SpamDetectionService service;
+        private SpamDetectionService service;
 
         public OpenAiServicesTests()
         {
