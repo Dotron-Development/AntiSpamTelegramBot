@@ -15,7 +15,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: src/infrastucture
+        working-directory: src/infrastructure
 
     steps:
       - name: Checkout code
