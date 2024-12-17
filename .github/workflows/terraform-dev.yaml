@@ -1,4 +1,4 @@
-name: cd
+name: terraform-dev
 
 on:
   push:
@@ -39,3 +39,16 @@ jobs:
             -backend-config="container_name=dev" \
             -backend-config="key=terraform.tfstate" \
             -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan -var-file=environments/dev.tfvars
+
+      - name: Upload plan file
+        uses: actions/upload-artifact@v2
+        with:
+          name: tfplan
+          path: tfplan
+
+      - name: Apply Terraform plan (manual step)
+        if: github.event_name == 'workflow_dispatch'
+        run: terraform apply tfplan
