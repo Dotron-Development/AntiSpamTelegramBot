@@ -53,5 +53,14 @@ jobs:
           path: tfplan
 
       - name: Apply Terraform plan (manual step)
-        if: github.event_name == 'workflow_dispatch'
+      - uses: trstringer/manual-approval@v1
+        timeout-minutes: 60
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          message: "Approve to apply Terraform plan"
+          approvers: se-trofimov
+          minimum-approvals: 1
+          issue-title: "Deploying infrastructire to dev environment"
+          issue-body: "Please approve or deny the deployment of the infrastructure to the dev environment"
+          wait-for-approval: true
         run: terraform apply tfplan
