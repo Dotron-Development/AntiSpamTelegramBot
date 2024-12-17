@@ -54,15 +54,3 @@ jobs:
 
       - name: Apply Terraform plan
         run: terraform apply tfplan
-
-      - name: Update deployment status to success
-        if: success()
-        run: echo "Deployment successful"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update deployment status to failure
-        if: failure()
-        run: echo "Deployment failed"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
