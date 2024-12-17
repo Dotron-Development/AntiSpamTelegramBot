@@ -9,7 +9,7 @@ on:
       - ".github/workflows/**"
 
 env:
-  WORKING_DIRECTORY: "src/infrasrtucture"
+  WORKING_DIRECTORY: "src/infrastructure"
 
 jobs:
   terraform:
