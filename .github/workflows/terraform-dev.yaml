@@ -1,20 +1,28 @@
-name: cd
+name: terraform-dev
 
 on:
   push:
     branches:
-      - main
+      - dev
     paths:
       - "src/infrastucture/**"
       - ".github/workflows/**"
-
-env:
-  WORKING_DIRECTORY: "src/infrastructure"
 
 jobs:
   terraform:
     environment: dev
     runs-on: ubuntu-latest
+
+    env:
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+
+    defaults:
+      run:
+        working-directory: src/infrastructure
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,16 +34,24 @@ jobs:
 
       - name: Terraform Init
         env:
-          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
           AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
           AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
-        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           terraform init \
             -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
             -backend-config="container_name=dev" \
             -backend-config="key=terraform.tfstate" \
             -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan -var-file=environments/dev.tfvars
+
+      - name: Upload plan file
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan
+          path: tfplan
+
+      - name: Apply Terraform plan (manual step)
+        if: github.event_name == 'workflow_dispatch'
+        run: terraform apply tfplan
