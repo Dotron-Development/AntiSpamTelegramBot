@@ -8,13 +8,15 @@ on:
       - "src/infrastucture/**"
       - ".github/workflows/**"
 
-env:
-  WORKING_DIRECTORY: "src/infrastructure"
-
 jobs:
   terraform:
     environment: dev
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: src/infrastucture
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
