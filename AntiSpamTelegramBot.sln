@@ -3,13 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.12.35506.116
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Functions", "src\TelegramAntiSpamBot.Functions\TelegramAntiSpamBot.Functions.csproj", "{2B3D4958-8B77-484B-9972-C4AF8CDE30BB}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Functions", "src\bot\TelegramAntiSpamBot.Functions\TelegramAntiSpamBot.Functions.csproj", "{2B3D4958-8B77-484B-9972-C4AF8CDE30BB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.OpenAI", "src\TelegramAntiSpamBot.OpenAI\TelegramAntiSpamBot.OpenAI.csproj", "{E9DD044B-2BF1-4E5E-8F8F-75598EE44BB3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.OpenAI", "src\bot\TelegramAntiSpamBot.OpenAI\TelegramAntiSpamBot.OpenAI.csproj", "{E9DD044B-2BF1-4E5E-8F8F-75598EE44BB3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Persistence", "src\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj", "{F5BE1D91-3D91-4011-BCB0-79653FC9BD67}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Persistence", "src\bot\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj", "{F5BE1D91-3D91-4011-BCB0-79653FC9BD67}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Initializer", "src\TelegramAntiSpamBot.Initializer\TelegramAntiSpamBot.Initializer.csproj", "{3E88F004-F387-4935-9CCF-5F550951646A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Initializer", "src\bot\TelegramAntiSpamBot.Initializer\TelegramAntiSpamBot.Initializer.csproj", "{3E88F004-F387-4935-9CCF-5F550951646A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
