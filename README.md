@@ -1,1 +1,1 @@
-[![cd](https://github.com/se-trofimov/AntiSpamTelegramBot/actions/workflows/cd.yaml/badge.svg)](https://github.com/se-trofimov/AntiSpamTelegramBot/actions/workflows/cd.yaml)
+[![infrastructure-dev](https://github.com/se-trofimov/AntiSpamTelegramBot/actions/workflows/terraform-dev.yaml/badge.svg?branch=dev)](https://github.com/se-trofimov/AntiSpamTelegramBot/actions/workflows/terraform-dev.yaml)
