@@ -5,7 +5,7 @@ on:
     branches:
       - dev
     paths:
-      - "src/infrastucture/**"
+      - "src/infrastructure/**"
       - ".github/workflows/**"
 
 jobs:
