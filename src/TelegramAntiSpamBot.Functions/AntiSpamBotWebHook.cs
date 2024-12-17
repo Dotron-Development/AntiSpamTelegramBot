@@ -25,11 +25,13 @@ namespace TelegramAntiSpamBot.Functions
 
                         if (spamDetectionResult.Probability >= 90)
                         {
-                            await bot.DeleteMessage(message.Chat.Id, message.Id);
-                            await repository.SaveMessageAsync(new SpamHistoryEntry(message.Chat.Id,
+                            var saveTask = repository.SaveMessageAsync(new SpamHistoryEntry(message.Chat.Id,
                                                                 message.From.Id,
                                                                 message.Text,
                                                                 spamDetectionResult.Probability.Value));
+
+                            await bot.DeleteMessage(message.Chat.Id, message.Id);
+                            await saveTask;
                         }
                     }
 

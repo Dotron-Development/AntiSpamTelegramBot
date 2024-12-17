@@ -18,7 +18,7 @@
             Message = message;
             Probability = probability;
             PartitionKey = chatId.ToString();
-            RowKey = userId.ToString();
+            RowKey = Guid.NewGuid().ToString();
         }
     }
 }

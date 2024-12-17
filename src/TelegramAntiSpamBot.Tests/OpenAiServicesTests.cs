@@ -26,7 +26,7 @@
             var result = await service.IsSpam(message, messageCount);
             
             result.ResultType.Should().Be(ResultType.Evaluated);
-            result.Probability.Should().BeGreaterThan(90);
+            result.Probability.Should().BeGreaterThanOrEqualTo(90);
         }
     }
 }
