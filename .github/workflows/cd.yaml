@@ -37,4 +37,5 @@ jobs:
           terraform init \
             -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
             -backend-config="container_name=dev" \
-            -backend-config="key=terraform.tfstate"
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
