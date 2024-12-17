@@ -21,6 +21,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: List root directory contents
+        run: ls -la
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
