@@ -65,7 +65,10 @@ jobs:
         working-directory: src/infrastructure/openai
 
     steps:
-      name: Setup Terraform
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
