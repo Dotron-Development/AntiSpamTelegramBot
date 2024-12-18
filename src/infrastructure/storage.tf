@@ -4,8 +4,5 @@ resource "azurerm_storage_account" "main_storage" {
   location                 = var.location
   account_tier             = "Standard"
   account_replication_type = "GRS"
-
-  tags = {
-    environment = var.environment_name
-  }
+  tags                     = local.tags
 }
