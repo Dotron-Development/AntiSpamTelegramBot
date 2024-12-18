@@ -12,17 +12,21 @@ resource "azurerm_service_plan" "function_sp" {
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
 
-  os_type  = "Windows"
+  os_type  = "Linux"
   sku_name = "Y1"
 
   tags = local.tags
 }
 
-resource "azurerm_function_app" "function_app" {
+resource "azurerm_linux_function_app" "function_app" {
   name                       = "fn-ai-assistant-function-${var.environment_prefix}"
   location                   = var.location
   resource_group_name        = azurerm_resource_group.rg.name
-  app_service_plan_id        = azurerm_service_plan.function_sp.id
+  service_plan_id            = azurerm_service_plan.function_sp.id
   storage_account_name       = azurerm_storage_account.function_storage.name
   storage_account_access_key = azurerm_storage_account.function_storage.primary_access_key
+
+  site_config {
+    always_on = false
+  }
 }

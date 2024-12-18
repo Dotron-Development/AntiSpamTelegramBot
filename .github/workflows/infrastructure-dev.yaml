@@ -86,3 +86,15 @@ jobs:
             -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
             -backend-config="key=openai.terraform.tfstate" \
             -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan -var-file=environments/dev.tfvars
+
+      - name: Upload plan file
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan
+          path: tfplan
+
+      - name: Apply Terraform plan
+        run: terraform apply tfplan
