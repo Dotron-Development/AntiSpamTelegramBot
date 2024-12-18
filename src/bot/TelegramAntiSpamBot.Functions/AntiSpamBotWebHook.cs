@@ -15,7 +15,9 @@ namespace TelegramAntiSpamBot.Functions
                 var update = JsonSerializer.Deserialize<Update>(req.BodyReader.AsStream(), JsonBotAPI.Options);
 
                 if (update?.Type is UpdateType.Message or UpdateType.EditedMessage
-                    && update.Message is { From: { } fromUser } message && message.Chat.Id != -1002395980780)
+                    && update.Message is { From: { } fromUser }  message 
+                    && fromUser.Id != 777000 // forwarded messages from main group (TG user)
+                    && message.Chat.Id != -1002395980780) // my database channel for spam collection
                 {
                     var userMessageCount = await repository.GetUserMessageCount(message.Chat.Id, fromUser.Id);
                     var increaseCounterTask = repository.IncreaseMessageCount(message.Chat.Id, fromUser.Id);

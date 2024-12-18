@@ -9,7 +9,7 @@
                .ValidateDataAnnotations()
                .ValidateOnStart();
 
-            serviceCollection.AddScoped(provider =>
+            serviceCollection.AddScoped<ITelegramBotClient>(provider =>
             {
                 var configuration = provider.GetRequiredService<IOptions<TelegramBotConfiguration>>().Value;
                 return new TelegramBotClient(configuration.Token);
