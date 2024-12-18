@@ -64,6 +64,9 @@ jobs:
       run:
         working-directory: src/infrastructure/openai
 
+    needs:
+      - main-infrastructure
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
