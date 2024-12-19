@@ -5,7 +5,7 @@ module "avm-res-cognitiveservices-account" {
   name                = "open-ai-services-account-${var.environment_prefix}"
   resource_group_name = data.terraform_remote_state.data.outputs.resource_group_name
   sku_name            = "S0"
-
+  tags                = local.tags
   cognitive_deployments = {
     "gpt-4o" = {
       name = "gpt-4o"
