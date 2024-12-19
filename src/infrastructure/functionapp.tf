@@ -13,7 +13,7 @@ resource "azurerm_service_plan" "function_sp" {
   resource_group_name = azurerm_resource_group.rg.name
 
   os_type  = "Linux"
-  sku_name = "FC1"
+  sku_name = "Y1"
 
   tags = local.tags
 }
@@ -29,6 +29,10 @@ resource "azurerm_linux_function_app" "function_app" {
 
   site_config {
     always_on = false
+    application_stack {
+      dotnet_version              = "9.0"
+      use_dotnet_isolated_runtime = true
+    }
   }
 
   app_settings = {
