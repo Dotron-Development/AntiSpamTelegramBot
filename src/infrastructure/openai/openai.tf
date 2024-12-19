@@ -20,3 +20,10 @@ module "avm-res-cognitiveservices-account" {
     }
   }
 }
+
+## Grant access for the function app to the Open AI services account
+resource "azurerm_role_assignment" "function_app_to_openai" {
+  scope                = module.avm-res-cognitiveservices-account.id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = data.terraform_remote_state.data.outputs.function_app_identity_principal_id
+}
