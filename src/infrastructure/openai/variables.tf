@@ -13,13 +13,8 @@ variable "main_state_container_name" {
   type        = string
 }
 
-variable "main_key" {
+variable "main_state_key" {
   description = "The main state file key (path)."
-  type        = string
-}
-
-variable "environment" {
-  description = "The environment name."
   type        = string
 }
 
@@ -30,5 +25,10 @@ variable "location" {
 
 variable "environment_prefix" {
   description = "The prefix to use for all resources."
+  type        = string
+}
+
+variable "environment_name" {
+  description = "The environment name."
   type        = string
 }
