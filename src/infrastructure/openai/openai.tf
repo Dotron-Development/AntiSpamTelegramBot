@@ -14,8 +14,9 @@ module "avm-res-cognitiveservices-account" {
         name   = "gpt-4o"
       }
       scale = {
-        type = "Standard"
+        type     = "Standard"
         capacity = 100
+      }
     }
   }
 }
