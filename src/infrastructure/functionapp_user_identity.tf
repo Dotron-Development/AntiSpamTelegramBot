@@ -10,3 +10,10 @@ resource "azurerm_role_assignment" "functionapp_identity_storage_access" {
   role_definition_name = "Storage Table Data Contributor"
   principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
 }
+
+## Grant Read access for the function app to the Open AI services in the resource group
+resource "azurerm_role_assignment" "function_app_to_openai" {
+  scope                = azurerm_resource_group.rg.id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = data.terraform_remote_state.data.outputs.functionapp_identity_principal_id
+}
