@@ -13,7 +13,7 @@ resource "azurerm_service_plan" "function_sp" {
   resource_group_name = azurerm_resource_group.rg.name
 
   os_type  = "Linux"
-  sku_name = "Y1"
+  sku_name = "FC1"
 
   tags = local.tags
 }
@@ -32,9 +32,9 @@ resource "azurerm_linux_function_app" "function_app" {
   }
 
   app_settings = {
-    "AzureWebJobsStorage"         = azurerm_storage_account.function_storage.primary_connection_string
-    "FUNCTIONS_EXTENSION_VERSION" = "~4"
-    "KEY_VAULT_SECRET"            = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
+    "AzureWebJobsStorage"             = azurerm_storage_account.function_storage.primary_connection_string
+    "FUNCTIONS_EXTENSION_VERSION"     = "~4"
+    "TelegramBotConfiguration__Token" = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
   }
 
 
