@@ -14,50 +14,44 @@ resource "azurerm_key_vault" "kv" {
     object_id = var.application_owner_object_id
 
     key_permissions = [
-      "get",
-      "list",
-      "set",
-      "delete",
-      "backup",
-      "restore",
-      "recover",
-      "purge"
+      "Get",
+      "List",
+      "Update",
+      "Create",
+      "Import",
+      "Delete",
+      "Recover",
+      "Backup",
+      "Restore",
+      "Decrypt",
+      "Encrypt",
+      "UnwrapKey",
+      "WrapKey",
+      "Verify",
+      "Sign",
+      "Purge",
+      "Release",
+      "Rotate",
+      "GetRotationPolicy",
+      "SetRotationPolicy"
     ]
 
-    secret_permissions = [
-      "get",
-      "list",
-      "update",
-      "create",
-      "import",
-      "delete",
-      "backup",
-      "restore",
-      "recover",
-      "purge",
-      "sign",
-      "verify",
-      "wrapKey",
-      "unwrapKey",
-      "encrypt",
-      "decrypt"
-    ]
-
+    secret_permissions = ["Get", "List", "Set", "Delete", "Recover", "Backup", "Restore", "Purge"]
     storage_permissions = [
-      "get",
-      "list",
-      "update",
-      "create",
-      "import",
-      "delete",
-      "managecontacts",
-      "getissuers",
-      "listissuers",
-      "setissuers",
-      "deleteissuers",
-      "manageissuers",
-      "recover",
-      "purge"
+      "Backup",
+      "Delete",
+      "DeleteSAS",
+      "Get",
+      "GetSAS",
+      "List",
+      "ListSAS",
+      "Purge",
+      "Recover",
+      "RegenerateKey",
+      "Restore",
+      "Set",
+      "SetSAS",
+      "Update"
     ]
   }
 
@@ -66,7 +60,7 @@ resource "azurerm_key_vault" "kv" {
     tenant_id = data.azurerm_client_config.current.tenant_id
     object_id = azurerm_user_assigned_identity.functionapp_identity.principal_id
 
-    secret_permissions = ["get"]
+    secret_permissions = ["Get"]
   }
 }
 
