@@ -7,11 +7,67 @@ resource "azurerm_key_vault" "kv" {
   soft_delete_retention_days  = 7
   purge_protection_enabled    = false
   sku_name                    = "standard"
+
+  ## access for the owner of the application
+  access_policy {
+    tenant_id = data.azurerm_client_config.current.tenant_id
+    object_id = var.application_owner_object_id
+
+    key_permissions = [
+      "get",
+      "list",
+      "set",
+      "delete",
+      "backup",
+      "restore",
+      "recover",
+      "purge"
+    ]
+
+    secret_permissions = [
+      "get",
+      "list",
+      "update",
+      "create",
+      "import",
+      "delete",
+      "backup",
+      "restore",
+      "recover",
+      "purge",
+      "sign",
+      "verify",
+      "wrapKey",
+      "unwrapKey",
+      "encrypt",
+      "decrypt"
+    ]
+
+    storage_permissions = [
+      "get",
+      "list",
+      "update",
+      "create",
+      "import",
+      "delete",
+      "managecontacts",
+      "getissuers",
+      "listissuers",
+      "setissuers",
+      "deleteissuers",
+      "manageissuers",
+      "recover",
+      "purge"
+    ]
+  }
+
+  ## access for the function's user assigned identity
+  access_policy {
+    tenant_id = data.azurerm_client_config.current.tenant_id
+    object_id = azurerm_user_assigned_identity.functionapp_identity.principal_id
+
+    secret_permissions = ["get"]
+  }
 }
 
-## Grant full access for keyvault to owner
-resource "azurerm_role_assignment" "keyvault_owner" {
-  scope                = azurerm_key_vault.kv.id
-  role_definition_name = "Key Vault Administrator"
-  principal_id         = var.application_owner_object_id
-}
+
