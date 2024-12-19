@@ -7,16 +7,15 @@ module "avm-res-cognitiveservices-account" {
   sku_name            = "S0"
 
   cognitive_deployments = {
-    "gpt-4-32k" = {
-      name = "gpt-4-32k"
+    "gpt-4o" = {
+      name = "gpt-4o"
       model = {
-        format  = "OpenAI"
-        name    = "gpt-4-32k"
-        version = "0613"
+        format = "OpenAI"
+        name   = "gpt-4o"
       }
       scale = {
         type = "Standard"
-      }
+        capacity = 100
     }
   }
 }
