@@ -29,4 +29,11 @@ resource "azurerm_linux_function_app" "function_app" {
   site_config {
     always_on = false
   }
+
+  identity {
+    type = "UserAssigned"
+    identity_ids = [
+      azurerm_user_assigned_identity.functionapp_identity.id
+    ]
+  }
 }
