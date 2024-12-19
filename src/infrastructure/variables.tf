@@ -9,3 +9,7 @@ variable "environment_prefix" {
 variable "location" {
   type = string
 }
+
+variable "application_owner_object_id" {
+  type = string
+}

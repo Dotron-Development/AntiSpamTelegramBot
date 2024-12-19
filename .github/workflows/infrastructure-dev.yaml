@@ -19,6 +19,7 @@ env:
   AZ_BACKEND_CONTAINER_NAME: "dev"
   AZ_MAIN_STATE_FILE_KEY: "main.terraform.tfstate"
   AZ_OPENAI_STATE_FILE_KEY: "openai.terraform.tfstate"
+  AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
 
 jobs:
   main-infrastructure:
@@ -47,7 +48,8 @@ jobs:
             -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
 
       - name: Terraform Plan
-        run: terraform plan -out=tfplan -var-file=environments/dev.tfvars
+        run: terraform plan -out=tfplan -var-file=environments/dev.tfvars \
+          -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}"
 
       - name: Apply Terraform plan
         run: terraform apply tfplan
