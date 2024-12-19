@@ -10,8 +10,9 @@ module "avm-res-cognitiveservices-account" {
     "gpt-4o" = {
       name = "gpt-4o"
       model = {
-        format = "OpenAI"
-        name   = "gpt-4o"
+        format  = "OpenAI"
+        name    = "gpt-4o"
+        version = "2024-05-13"
       }
       scale = {
         type     = "Standard"
