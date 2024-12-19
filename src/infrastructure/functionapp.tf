@@ -36,4 +36,6 @@ resource "azurerm_linux_function_app" "function_app" {
       azurerm_user_assigned_identity.functionapp_identity.id
     ]
   }
+
+  tags = local.tags
 }
