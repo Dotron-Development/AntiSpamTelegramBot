@@ -30,6 +30,13 @@ resource "azurerm_linux_function_app" "function_app" {
     always_on = false
   }
 
+  app_settings = {
+    "AzureWebJobsStorage"         = azurerm_storage_account.storage.primary_connection_string
+    "FUNCTIONS_EXTENSION_VERSION" = "~4"
+    "KEY_VAULT_SECRET"            = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
+  }
+
+
   identity {
     type = "UserAssigned"
     identity_ids = [
