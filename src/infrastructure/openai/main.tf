@@ -1,9 +1,9 @@
-data "terraform_remote_state" "storage" {
+data "terraform_remote_state" "data" {
   backend = "azurerm"
   config = {
-    resource_group_name  = "bg-terraform-backend"
-    storage_account_name = "bgterraformbackendsa"
-    container_name       = "terraform-state-${var.environment}-container"
-    key                  = "storage/terraform.tfstate"
+    resource_group_name  = var.main_state_resource_group_name
+    storage_account_name = var.main_state_storage_account_name
+    container_name       = var.main_state_container_name
+    key                  = var.main_key
   }
 }
