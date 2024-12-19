@@ -48,8 +48,9 @@ jobs:
             -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
 
       - name: Terraform Plan
-        run: terraform plan -out=tfplan -var-file=environments/dev.tfvars \
-          -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}"
+        run: |
+          terraform plan -out=tfplan -var-file=environments/dev.tfvars \
+            -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}"
 
       - name: Apply Terraform plan
         run: terraform apply tfplan
