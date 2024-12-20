@@ -8,6 +8,13 @@ resource "azurerm_key_vault" "kv" {
   purge_protection_enabled    = false
   sku_name                    = "standard"
 
+  ## network rules
+  public_network_access_enabled = false
+  network_acls {
+    bypass         = "AzureServices"
+    default_action = "Allow"
+  }
+
   ## access for the owner of the application
   access_policy {
     tenant_id = data.azurerm_client_config.current.tenant_id
