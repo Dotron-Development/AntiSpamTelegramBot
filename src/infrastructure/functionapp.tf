@@ -1,5 +1,5 @@
 resource "azurerm_storage_account" "function_storage" {
-  name                     = "satgantispambotfnapp${var.environment_prefix}"
+  name                     = "satgbotfnapp${var.environment_prefix}"
   resource_group_name      = azurerm_resource_group.rg.name
   location                 = var.location
   account_tier             = "Standard"
