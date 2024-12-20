@@ -9,11 +9,11 @@ resource "azurerm_key_vault" "kv" {
   sku_name                    = "standard"
 
   ## network rules
-  public_network_access_enabled = false
-  network_acls {
-    bypass         = "AzureServices"
-    default_action = "Allow"
-  }
+  public_network_access_enabled = true
+  #   network_acls {
+  #     bypass         = "AzureServices"
+  #     default_action = "Allow"
+  #   }
 
   ## access for the owner of the application
   access_policy {
