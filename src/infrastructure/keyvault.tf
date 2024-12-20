@@ -1,5 +1,5 @@
 resource "azurerm_key_vault" "kv" {
-  name                        = "${kv_name}-${var.environment_prefix}"
+  name                        = "${local.kv_name}-${var.environment_prefix}"
   location                    = var.location
   resource_group_name         = azurerm_resource_group.rg.name
   enabled_for_disk_encryption = true
@@ -96,7 +96,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_vnet_link" {
 }
 
 resource "azurerm_private_endpoint" "kv_pe" {
-  name                = "pe-${kv_name}-${var.environment_prefix}"
+  name                = "pe-${local.kv_name}-${var.environment_prefix}"
   subnet_id           = azurerm_subnet.subnet_for_vm.id
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
