@@ -1,6 +1,6 @@
 resource "azurerm_user_assigned_identity" "functionapp_identity" {
   location            = var.location
-  name                = "ua-mi-${appName}-fn-${var.environment_prefix}"
+  name                = "ua-mi-${local.appName}-fn-${var.environment_prefix}"
   resource_group_name = azurerm_resource_group.rg.name
   tags                = local.tags
 }
