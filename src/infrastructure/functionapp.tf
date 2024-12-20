@@ -8,7 +8,7 @@ resource "azurerm_storage_account" "function_storage" {
 }
 
 resource "azurerm_service_plan" "function_sp" {
-  name                = "sp-${appName}-fn-${var.environment_prefix}"
+  name                = "sp-${local.appName}-fn-${var.environment_prefix}"
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
 
@@ -19,7 +19,7 @@ resource "azurerm_service_plan" "function_sp" {
 }
 
 resource "azurerm_linux_function_app" "function_app" {
-  name                            = "fn-${appName}-${var.environment_prefix}"
+  name                            = "fn-${local.appName}-${var.environment_prefix}"
   location                        = var.location
   resource_group_name             = azurerm_resource_group.rg.name
   service_plan_id                 = azurerm_service_plan.function_sp.id
