@@ -21,7 +21,26 @@ resource "azurerm_key_vault" "kv" {
     object_id = var.application_owner_object_id
 
     key_permissions = [
-      "All"
+      "Get",
+      "List",
+      "Update",
+      "Create",
+      "Import",
+      "Delete",
+      "Recover",
+      "Backup",
+      "Restore",
+      "Decrypt",
+      "Encrypt",
+      "UnwrapKey",
+      "WrapKey",
+      "Verify",
+      "Sign",
+      "Purge",
+      "Release",
+      "Rotate",
+      "GetRotationPolicy",
+      "SetRotationPolicy"
     ]
 
     secret_permissions = ["Get", "List", "Set", "Delete", "Recover", "Backup", "Restore", "Purge"]
