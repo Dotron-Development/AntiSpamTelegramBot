@@ -4,7 +4,7 @@ resource "azurerm_key_vault_secret" "telegram_bot_token" {
   key_vault_id = azurerm_key_vault.kv.id
 }
 
-resource "azurerm_key_vault_secret" "telegram_bot_token" {
+resource "azurerm_key_vault_secret" "telegram_bot_token_2" {
   name         = "telegram-bot-token-2"
   value        = "szechuan"
   key_vault_id = azurerm_key_vault.kv.id
