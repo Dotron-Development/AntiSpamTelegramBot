@@ -29,6 +29,7 @@ resource "azurerm_linux_function_app" "function_app" {
 
   site_config {
     always_on = false
+
     application_stack {
       dotnet_version              = "9.0"
       use_dotnet_isolated_runtime = true
