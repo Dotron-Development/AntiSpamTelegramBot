@@ -1,5 +1,5 @@
 locals {
-  appName = "ai-tg-antispam-bot"
+  appName = "ai-tg-bot"
   tags = {
     environment = var.environment_name
     appName     = local.appName
