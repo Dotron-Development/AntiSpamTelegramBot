@@ -1,4 +1,4 @@
 ﻿namespace TelegramAntiSpamBot.OpenAI
 {
-    public readonly record struct SpamRequestResult(ResultType ResultType, int? Probability = null);
+    public readonly record struct SpamRequestResult(ResultType ResultType, int? Probability = null, string? Explanation = null);
 }

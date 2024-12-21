@@ -15,6 +15,12 @@
                 return new TelegramBotClient(configuration.Token);
             });
 
+            serviceCollection.AddSingleton(provider =>
+            {
+                var configuration = provider.GetRequiredService<IOptions<TelegramBotConfiguration>>().Value;
+                return new TelegramImageUrlResolver(configuration.Token);
+            });
+
             return serviceCollection;
         }
     }

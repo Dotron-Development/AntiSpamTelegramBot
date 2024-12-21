@@ -1,9 +1,4 @@
-﻿using Azure;
-using Azure.AI.OpenAI;
-using Azure.Identity;
-using Microsoft.Extensions.DependencyInjection;
-
-namespace TelegramAntiSpamBot.OpenAI
+﻿namespace TelegramAntiSpamBot.OpenAI
 {
     public static class DependencyInjection
     {
@@ -14,11 +9,12 @@ namespace TelegramAntiSpamBot.OpenAI
                 var client = new AzureOpenAIClient(
                     new Uri("https://open-ai-telegram-assistant.openai.azure.com/"), 
                     new DefaultAzureCredential());
-                var chatClient = client.GetChatClient("gpt-4o");
+                var chatClient = client.GetChatClient("gpt-4o-mini");
                 return chatClient;
             });
 
-            serviceCollection.AddTransient<SpamDetectionService>();
+            serviceCollection.AddSingleton<SpamDetectionInstructions>();
+            serviceCollection.AddScoped<ISpamDetectionService, SpamDetectionService>();
             return serviceCollection;
         }
     }
