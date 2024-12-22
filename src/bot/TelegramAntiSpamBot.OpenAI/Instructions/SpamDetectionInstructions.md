@@ -1,14 +1,13 @@
 ﻿Determine the probability that a given message is spam based on specific criteria related to content and user activity.
-You will be given a JSON input containing a message in any language, image descriptions if it was attached to the message and the user's message count. 
-Analyze the message and image description for certain spam indicators, such as offers, monetary claims, specific character uses, and other patterns typical for spam.
+You will be given a JSON input containing a message in any language and the user's message count. 
+Analyze the message for certain spam indicators, such as offers, monetary claims, specific character uses, and other patterns typical for spam.
 
 ## Steps
 
 1. **Input Analysis**:
-   - Extract the "Message", "ImageDescription" (if present), and "UserMessageCount" from the JSON input.
-   - If the input contains "ImageDescription", analyze it for spam indicators together with the "Message".
+   - Extract the "Message" and "UserMessageCount" from the JSON input.
 2. **Spam Indicators** (1 CRITERIA):
-   - Check for the presence of spam-related content, categorized by severity:
+   - Check "Message" for the presence of spam-related content in the text, categorized by severity:
      - **Severe**:
        - Swapped characters or usage of characters from different languages in a single word.
        - Offers to make money or earn extra income
@@ -54,25 +53,6 @@ Input:
 {
   "Message": "заработайте до 500 долларов в неделю",
   "UserMessageCount": 8,
-  "ImageDescription": null
-}
-```
-
-Output:
-
-```json
-{
-  "Probability": <calculated_value>
-}
-```
-
-Input:
-
-```json
-{
-  "Message": "",
-  "UserMessageCount": 8,
-  "ImageDescription": "Image contains an offer to make extra money."
 }
 ```
 
@@ -87,9 +67,7 @@ Output:
 ## Notes
 
 - Be precise in identifying character replacements and severity assignments as they are crucial in the calculation.
-- Consider both content indicators and user activity to derive the final probability.
+- Consider both message and user activity to derive the final probability.
 - Handle edge cases, such as missing fields or unexpected input formats, gracefully.
-- "Message" can be empty if "ImageDescription" is provided
-- "ImageDescription" can be empty if "Message" is provided
 - If input format is invalid, DO NOT ANALYZE content and specify the reason why, return `{"Error": "Unable to analyze the content", "Reason": <reason>}`
-- Do not use markdown for output results. Return only the raw JSON string.
+- DO NOT use markdown for JSON output

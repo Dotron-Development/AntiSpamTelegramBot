@@ -1,0 +1,10 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "TelegramAntiSpamBot": "Debug",
+      "Microsoft": "Warning",
+      "System": "Warning",
+      "Host": "Warning"
+    }
+  }
+}

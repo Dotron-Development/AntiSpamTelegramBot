@@ -1,7 +1,8 @@
 ﻿namespace TelegramAntiSpamBot.OpenAI
 {
     internal partial class SpamDetectionService(
-        ChatClient chatClient,
+        [FromKeyedServices("SpamDetector")] ChatClient spamDetector,
+        [FromKeyedServices("ImageAnalyzer")] ChatClient imageAnalyzer,
         SpamDetectionInstructions instructions,
         ILogger<SpamDetectionService> logger) : ISpamDetectionService
     {
@@ -25,15 +26,16 @@
         {
             try
             {
-                var instr = await instructions.GetSpamDetectionInstructions(explainDecision);               
                 string? imageDescription = null;
 
                 // Step 1 - describe image if attached
                 if (imageUrl != null && Uri.TryCreate(imageUrl, UriKind.Absolute, out var uriResult) 
                                      && uriResult.Scheme == Uri.UriSchemeHttps)
                 {
+                    LogDebugImageRecognitionAiRequest(logger, imageUrl);
+
                     var imageRecognitionInstructions = await instructions.GetImageAnalyzerInstructions();
-                    var imageRecognitionCompletion = await chatClient.CompleteChatAsync(
+                    var imageRecognitionCompletion = await imageAnalyzer.CompleteChatAsync(
                     [
                         new SystemChatMessage(imageRecognitionInstructions),
                         new UserChatMessage(
@@ -42,11 +44,18 @@
                     ], ChatCompletionOptions);
 
                     imageDescription = imageRecognitionCompletion.Value.Content[0].Text;
+
+                    LogDebugImageRecognitionAiResponse(logger, imageDescription);
                 }
 
                 // Step 2 - Spam analysis
-                var requestJson = JsonSerializer.Serialize(new SpamDetectionRequest(userMessage, userMessagesCount, imageDescription));
-                ChatCompletion completion = await chatClient.CompleteChatAsync(
+                var messageContent = $"{userMessage} \n\r {imageDescription}";
+                var requestJson = JsonSerializer.Serialize(new SpamDetectionRequest(messageContent, userMessagesCount));
+
+                LogDebugSpamDetectionAiRequest(logger, requestJson);
+
+                var instr = await instructions.GetSpamDetectionInstructions(explainDecision);
+                ChatCompletion completion = await spamDetector.CompleteChatAsync(
                 [
                     new SystemChatMessage(instr),
                     new UserChatMessage(requestJson)
@@ -54,11 +63,11 @@
                 ], ChatCompletionOptions);
 
                 var responseText = completion.Content[0].Text;
-                
-                LogDebugAiResponse(logger, requestJson, imageUrl, completion.Content[0].Text);
 
                 if (ResultRegex().IsMatch(responseText))
                 {
+                    LogDebugSpamDetectionAiResponse(logger, responseText);
+
                     var json = ResultRegex().Match(responseText).Groups[0].Value;
                     var result = JsonSerializer.Deserialize<SpamDetectionResult>(json);
                     if (result?.Probability is { } number)
@@ -66,8 +75,10 @@
                         if (!explainDecision) return new SpamRequestResult(ResultType.Evaluated, number);
 
                         var explanation = ResultRegex().Replace(responseText, string.Empty);
-                        return new SpamRequestResult(ResultType.Evaluated, number, explanation);
 
+                        LogDebugSpamDetectionAiExplanation(logger, explanation);
+
+                        return new SpamRequestResult(ResultType.Evaluated, number, explanation);
                     }
                 }
 
@@ -86,7 +97,19 @@
             }
         }
 
-        [LoggerMessage(LogLevel.Debug, "AI Service Request: {request}. ImageUrl: {imageUrl}. Response: {response}")]
-        private static partial void LogDebugAiResponse(ILogger logger, string request, string? imageUrl, string response);
+        [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Request: {request}")]
+        private static partial void LogDebugSpamDetectionAiRequest(ILogger<SpamDetectionService> logger, string request);
+
+        [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Response: {response}")]
+        private static partial void LogDebugSpamDetectionAiResponse(ILogger<SpamDetectionService> logger, string response);
+
+        [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Response Explanation: {explanation}")]
+        private static partial void LogDebugSpamDetectionAiExplanation(ILogger<SpamDetectionService> logger, string explanation);
+
+        [LoggerMessage(LogLevel.Debug, "Image Recognition AI Service Response: {response}")]
+        private static partial void LogDebugImageRecognitionAiResponse(ILogger<SpamDetectionService> logger, string response);
+
+        [LoggerMessage(LogLevel.Debug, "Image Recognition AI Service Request: ImageUrl: {imageUrl}.")]
+        private static partial void LogDebugImageRecognitionAiRequest(ILogger<SpamDetectionService> logger, string imageUrl);
     }
 }

@@ -1,3 +1,6 @@
+using System.Net;
+using Microsoft.Azure.Functions.Worker.Http;
+
 namespace TelegramAntiSpamBot.Functions
 {
     public class AntiSpamBotWebHook(ILogger<AntiSpamBotWebHook> logger,
@@ -8,17 +11,20 @@ namespace TelegramAntiSpamBot.Functions
         IOptions<TelegramBotConfiguration> botConfig)
     {
         [Function("AntiSpamBotWebHook")]
-        public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req)
+        public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequestData req)
         {
             try
             {
-                var update = JsonSerializer.Deserialize<Update>(req.BodyReader.AsStream(), JsonBotAPI.Options);
+                var update = JsonSerializer.Deserialize<Update>(req.Body, JsonBotAPI.Options);
 
-                Message? message = ExtractMessageFromUpdate(update);
-                 
+                var message = ExtractMessageFromUpdate(update);
+
                 if (message is { From: { } fromUser }
                     && fromUser.Id != 777000 // forwarded messages from main group (TG user)
-                    && message.Chat.Id != -1002395980780) // my database channel for spam collection
+                    
+                    // database chat for spam collection
+                    // helpful for controlling of what was deleted
+                    && message.Chat.Id != botConfig.Value.ForwardSpamToChatId) 
                 {
                     var userMessageCount = await repository.GetUserMessageCount(message.Chat.Id, fromUser.Id);
                     var increaseCounterTask = repository.IncreaseMessageCount(message.Chat.Id, fromUser.Id);
@@ -38,7 +44,11 @@ namespace TelegramAntiSpamBot.Functions
                                                                 messageText,
                                                                 spamDetectionResult.Probability.Value));
 
-                            await bot.ForwardMessage(new ChatId(-1002395980780), message.Chat.Id, message.Id);
+                            if (botConfig.Value.ForwardSpamToChatId != null)
+                            {
+                                await bot.ForwardMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), message.Chat.Id, message.Id);
+                            }
+                            
                             await bot.DeleteMessage(message.Chat.Id, message.Id);
                             
                             await saveTask;
@@ -53,7 +63,7 @@ namespace TelegramAntiSpamBot.Functions
                 logger.LogError("Error: {e}", e);
             }
 
-            return new OkObjectResult(null);
+            return req.CreateResponse(HttpStatusCode.NoContent);
         }
 
         private async Task<string?> ExtractUrlImageFromMessage(Message message)

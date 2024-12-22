@@ -7,3 +7,7 @@ global using Azure.AI.OpenAI;
 global using Azure.Identity;
 global using Microsoft.Extensions.DependencyInjection;
 global using System.Text.RegularExpressions;
+global using TelegramAntiSpamBot.OpenAI.Instructions;
+global using Microsoft.Extensions.Options;
+global using System.Reflection;
+global using System.Text;

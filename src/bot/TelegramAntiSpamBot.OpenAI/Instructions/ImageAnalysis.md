@@ -1,4 +1,5 @@
-﻿Describe only the text visible on an image. Ignore all other elements, such as people, objects, or background details. Focus solely on capturing any written content exactly as it appears.
+﻿Describe only the text visible on an image. Ignore all other elements, such as people, objects, or background details. 
+Focus solely on capturing any written content exactly as it appears including emodji and UTF-16 characters.
 
 # Steps
 

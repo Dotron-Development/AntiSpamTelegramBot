@@ -1,11 +1,23 @@
-using TelegramAntiSpamBot.Functions;
+var builder = new HostBuilder();
 
-var builder = FunctionsApplication.CreateBuilder(args);
-Console.OutputEncoding = Encoding.UTF8;
-builder.ConfigureFunctionsWebApplication();
-builder.Services.AddOpenAiService();
+builder.ConfigureFunctionsWorkerDefaults();
 
-builder.Services.AddTelegramBot();
-builder.Services.AddPersistence();
+builder.ConfigureServices(collection =>
+{
+    collection.AddOpenAiService();
+    collection.AddTelegramBot();
+    collection.AddPersistence();
+});
+
+// configure logging
+builder.ConfigureAppConfiguration((_, config) =>
+{
+    config.AddJsonFile("loggerConfig.json");
+}).ConfigureLogging((hostingContext, logging) =>
+{
+    logging.AddConfiguration(hostingContext.Configuration.GetSection("Logging"));
+});
+
+
 
 builder.Build().Run();

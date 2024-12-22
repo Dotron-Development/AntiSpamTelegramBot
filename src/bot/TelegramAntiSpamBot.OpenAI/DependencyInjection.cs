@@ -4,12 +4,28 @@
     {
         public static IServiceCollection AddOpenAiService(this IServiceCollection serviceCollection)
         {
-            serviceCollection.AddTransient(provider =>
+            serviceCollection.AddOptions<OpenAiServicesConfiguration>()
+                .BindConfiguration(nameof(OpenAiServicesConfiguration))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
+
+            serviceCollection.AddKeyedScoped("SpamDetector", (provider, _) =>
             {
+                var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>();
                 var client = new AzureOpenAIClient(
-                    new Uri("https://open-ai-telegram-assistant.openai.azure.com/"), 
+                    new Uri(config.Value.ServiceUrl), 
                     new DefaultAzureCredential());
-                var chatClient = client.GetChatClient("gpt-4o-mini");
+                var chatClient = client.GetChatClient(config.Value.SpamRecognitionDeployment);
+                return chatClient;
+            });
+
+            serviceCollection.AddKeyedScoped("ImageAnalyzer", (provider, _) =>
+            {
+                var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>();
+                var client = new AzureOpenAIClient(
+                    new Uri(config.Value.ServiceUrl),
+                    new DefaultAzureCredential());
+                var chatClient = client.GetChatClient(config.Value.ImageRecognitionDeployment);
                 return chatClient;
             });
 
