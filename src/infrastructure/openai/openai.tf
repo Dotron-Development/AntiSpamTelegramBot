@@ -46,8 +46,8 @@ module "avm-res-cognitiveservices-account" {
         source             = "Prompt"
         }, {
         name               = "Sexual"
-        blocking           = false
-        enabled            = false
+        blocking           = true
+        enabled            = true
         severity_threshold = "High"
         source             = "Prompt"
       }]
