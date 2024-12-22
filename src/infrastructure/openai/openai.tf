@@ -33,5 +33,26 @@ module "avm-res-cognitiveservices-account" {
     }
   }
 
+  rai_policies = {
+    policy1 = {
+      name             = "all_high"
+      base_policy_name = "Microsoft.Default"
+      mode             = "Asynchronous_filter"
+      content_filters = [{
+        name               = "Hate"
+        blocking           = true
+        enabled            = true
+        severity_threshold = "High"
+        source             = "Prompt"
+        }, {
+        name               = "Sexual"
+        blocking           = true
+        enabled            = false
+        severity_threshold = "High"
+        source             = "Prompt"
+      }]
+    }
+  }
+
   tags = local.tags
 }
