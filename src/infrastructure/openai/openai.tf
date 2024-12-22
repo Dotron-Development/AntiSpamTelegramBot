@@ -61,7 +61,7 @@ module "avm-res-cognitiveservices-account" {
           source             = "Prompt"
         },
         {
-          name               = "Self-harm"
+          name               = "Selfharm"
           blocking           = true
           enabled            = true
           severity_threshold = "High"
@@ -89,7 +89,7 @@ module "avm-res-cognitiveservices-account" {
           source             = "Completion"
         },
         {
-          name               = "Self-harm"
+          name               = "Selfharm"
           blocking           = true
           enabled            = true
           severity_threshold = "High"
