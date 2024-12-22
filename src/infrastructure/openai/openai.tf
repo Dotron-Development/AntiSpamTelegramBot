@@ -38,19 +38,64 @@ module "avm-res-cognitiveservices-account" {
       name             = "all_high"
       base_policy_name = "Microsoft.Default"
       mode             = "Asynchronous_filter"
-      content_filters = [{
-        name               = "Hate"
-        blocking           = true
-        enabled            = true
-        severity_threshold = "High"
-        source             = "Prompt"
-        }, {
-        name               = "Sexual"
-        blocking           = true
-        enabled            = true
-        severity_threshold = "High"
-        source             = "Prompt"
-      }]
+      content_filters = [
+        {
+          name               = "Hate"
+          blocking           = true
+          enabled            = true
+          severity_threshold = "High"
+          source             = "Prompt"
+        },
+        {
+          name               = "Sexual"
+          blocking           = true
+          enabled            = true
+          severity_threshold = "High"
+          source             = "Prompt"
+        },
+        {
+          name               = "Violence"
+          blocking           = true
+          enabled            = true
+          severity_threshold = "High"
+          source             = "Prompt"
+        },
+        {
+          name               = "Self-harm"
+          blocking           = true
+          enabled            = true
+          severity_threshold = "High"
+          source             = "Prompt"
+        },
+        {
+          name               = "Hate"
+          blocking           = true
+          enabled            = true
+          severity_threshold = "High"
+          source             = "Completion"
+        },
+        {
+          name               = "Sexual"
+          blocking           = true
+          enabled            = true
+          severity_threshold = "High"
+          source             = "Completion"
+        },
+        {
+          name               = "Violence"
+          blocking           = true
+          enabled            = true
+          severity_threshold = "High"
+          source             = "Completion"
+        },
+        {
+          name               = "Self-harm"
+          blocking           = true
+          enabled            = true
+          severity_threshold = "High"
+          source             = "Completion"
+        }
+      ]
     }
   }
 
