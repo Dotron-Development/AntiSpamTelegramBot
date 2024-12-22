@@ -16,7 +16,10 @@
         };
 
         [GeneratedRegex(@"\{\s*""Probability""\s*:\s*(100|[1-9]?[0-9])\s*\}")]
-        private static partial Regex ResultRegex();
+        private static partial Regex SpamResultRegex();
+
+        [GeneratedRegex(@"""TextOnImage""\s*:\s*""(.*?)""")]
+        private static partial Regex ImageResultRegex();
 
         public async Task<SpamRequestResult> IsSpam(
             string userMessage, 
@@ -43,9 +46,16 @@
 
                     ], ChatCompletionOptions);
 
-                    imageDescription = imageRecognitionCompletion.Value.Content[0].Text;
-
-                    LogDebugImageRecognitionAiResponse(logger, imageDescription);
+                    var imageResponse = imageRecognitionCompletion.Value.Content[0].Text;
+                    var match = ImageResultRegex().Match(imageResponse);
+                    
+                    if (match.Success)
+                    {
+                        var recognizedText = match.Groups[1].Value;
+                        imageDescription = recognizedText;
+                    }
+                    
+                    LogDebugImageRecognitionAiResponse(logger, imageResponse);
                 }
 
                 // Step 2 - Spam analysis
@@ -64,17 +74,19 @@
 
                 var responseText = completion.Content[0].Text;
 
-                if (ResultRegex().IsMatch(responseText))
+                var spamRespMatch = SpamResultRegex().Match(responseText);
+                if (spamRespMatch.Success)
                 {
                     LogDebugSpamDetectionAiResponse(logger, responseText);
 
-                    var json = ResultRegex().Match(responseText).Groups[0].Value;
+                    var json = spamRespMatch.Groups[0].Value;
                     var result = JsonSerializer.Deserialize<SpamDetectionResult>(json);
+
                     if (result?.Probability is { } number)
                     {
                         if (!explainDecision) return new SpamRequestResult(ResultType.Evaluated, number);
 
-                        var explanation = ResultRegex().Replace(responseText, string.Empty);
+                        var explanation = SpamResultRegex().Replace(responseText, string.Empty);
 
                         LogDebugSpamDetectionAiExplanation(logger, explanation);
 

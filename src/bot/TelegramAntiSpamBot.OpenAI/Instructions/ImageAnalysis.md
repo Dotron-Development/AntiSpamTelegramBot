@@ -18,7 +18,16 @@ Focus solely on capturing any written content exactly as it appears including em
 
 Please provide the output as plain text, matching the format and spelling of the original text from the image. Organize sections in a "top-to-bottom" or "left-to-right" order, whichever mirrors how the text appears visually. 
 
+Output
+
+```json
+{
+  "TextOnImage": <recognized text>
+}
+```
+
 # Notes
 
 - If some text is unclear or partially obscured, indicate this using "[unreadable]" for missing parts without assumptions.
 - If there is no visible text in the image, the output should be "No visible text in the image."
+- Return output json without markdown

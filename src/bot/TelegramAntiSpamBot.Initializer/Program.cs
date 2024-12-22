@@ -9,10 +9,13 @@ namespace TelegramAntiSpamBot.Initializer
         {
             Console.WriteLine(args[0]);
             Console.WriteLine(args[1]);
+            Console.WriteLine(args[2]);
 
             var bot = new TelegramBotClient(args[0]);
-            await bot.SetWebhook(args[1],
-                allowedUpdates: [UpdateType.Message, UpdateType.EditedMessage]);
+            await bot.SetWebhook(
+                url: args[1],
+                allowedUpdates: [UpdateType.Message, UpdateType.EditedMessage],
+                secretToken: args[2]);
         }
     }
 }

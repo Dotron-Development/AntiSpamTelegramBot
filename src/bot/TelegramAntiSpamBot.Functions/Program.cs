@@ -1,6 +1,10 @@
 var builder = new HostBuilder();
 
-builder.ConfigureFunctionsWorkerDefaults();
+builder.ConfigureFunctionsWorkerDefaults(b =>
+  {
+     b.UseMiddleware<AuthorizationMiddleware>();
+  }
+);
 
 builder.ConfigureServices(collection =>
 {
@@ -17,7 +21,5 @@ builder.ConfigureAppConfiguration((_, config) =>
 {
     logging.AddConfiguration(hostingContext.Configuration.GetSection("Logging"));
 });
-
-
 
 builder.Build().Run();
