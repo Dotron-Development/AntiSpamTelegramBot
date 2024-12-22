@@ -18,6 +18,18 @@ module "avm-res-cognitiveservices-account" {
         type     = "Standard"
         capacity = 100
       }
+    },
+    "gpt-4o-mini" = {
+      name = "gpt-4o-mini"
+      model = {
+        format  = "OpenAI"
+        name    = "gpt-4o-mini"
+        version = "2024-07-18"
+      }
+      scale = {
+        type     = "Standard"
+        capacity = 100
+      }
     }
   }
 
