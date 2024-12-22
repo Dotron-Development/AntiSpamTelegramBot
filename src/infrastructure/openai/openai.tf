@@ -8,7 +8,8 @@ module "avm-res-cognitiveservices-account" {
 
   cognitive_deployments = {
     "gpt-4o" = {
-      name = "gpt-4o"
+      name            = "gpt-4o"
+      rai_policy_name = "all_high"
       model = {
         format  = "OpenAI"
         name    = "gpt-4o"
@@ -20,7 +21,8 @@ module "avm-res-cognitiveservices-account" {
       }
     },
     "gpt-4o-mini" = {
-      name = "gpt-4o-mini"
+      name            = "gpt-4o-mini"
+      rai_policy_name = "all_high"
       model = {
         format  = "OpenAI"
         name    = "gpt-4o-mini"
