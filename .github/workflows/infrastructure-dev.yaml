@@ -1,4 +1,4 @@
-name: terraform-dev
+name: infrastructure-dev
 
 on:
   push:
