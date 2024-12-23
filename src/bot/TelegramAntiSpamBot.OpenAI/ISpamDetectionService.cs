@@ -3,6 +3,7 @@ namespace TelegramAntiSpamBot.OpenAI
 {
     public interface ISpamDetectionService
     {
-        Task<SpamRequestResult> IsSpam(string userMessage, int userMessagesCount, string? imageUrl = null, bool explainDecision = false);
+        Task<SpamRequestResult> IsSpam(string userMessage, int userMessagesCount, bool explainDecision = false);
+        Task<string> ExtractImageText(string imageUrl);
     }
 }

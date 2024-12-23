@@ -31,6 +31,16 @@ namespace TelegramAntiSpamBot.Persistence
                 return tableClient;
             });
 
+            serviceCollection.AddKeyedScoped("SpamHash", (provider, _) =>
+            {
+                var options = provider.GetRequiredService<IOptions<AzureTablesConfiguration>>();
+                var tableClient = new TableClient(
+                    new Uri(options.Value.StorageAccountUrl),
+                    "SpamHash",
+                    new DefaultAzureCredential());
+                return tableClient;
+            });
+
             serviceCollection.AddTransient<AntiSpamBotRepository>();
             return serviceCollection;
         }

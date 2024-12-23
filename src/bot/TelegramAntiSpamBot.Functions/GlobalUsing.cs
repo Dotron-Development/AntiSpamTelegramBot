@@ -15,3 +15,6 @@ global using Microsoft.Extensions.Configuration;
 global using TelegramAntiSpamBot.Functions;
 global using System.Net;
 global using Microsoft.Azure.Functions.Worker.Middleware;
+global using System.Security.Cryptography;
+global using System.Text;
+global using Microsoft.Azure.Functions.Worker.Http;

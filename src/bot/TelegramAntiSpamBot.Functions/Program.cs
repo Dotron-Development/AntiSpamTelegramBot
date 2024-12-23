@@ -1,3 +1,5 @@
+using Azure.Monitor.OpenTelemetry.AspNetCore;
+
 var builder = new HostBuilder();
 
 builder.ConfigureFunctionsWorkerDefaults(b =>
@@ -11,6 +13,7 @@ builder.ConfigureServices(collection =>
     collection.AddOpenAiService();
     collection.AddTelegramBot();
     collection.AddPersistence();
+    collection.AddOpenTelemetry().UseAzureMonitor();
 });
 
 // configure logging

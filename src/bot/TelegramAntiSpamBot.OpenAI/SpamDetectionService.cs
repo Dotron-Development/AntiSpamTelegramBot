@@ -24,43 +24,11 @@
         public async Task<SpamRequestResult> IsSpam(
             string userMessage, 
             int userMessagesCount, 
-            string? imageUrl = null, 
             bool explainDecision = false)
         {
             try
             {
-                string? imageDescription = null;
-
-                // Step 1 - describe image if attached
-                if (imageUrl != null && Uri.TryCreate(imageUrl, UriKind.Absolute, out var uriResult) 
-                                     && uriResult.Scheme == Uri.UriSchemeHttps)
-                {
-                    LogDebugImageRecognitionAiRequest(logger, imageUrl);
-
-                    var imageRecognitionInstructions = await instructions.GetImageAnalyzerInstructions();
-                    var imageRecognitionCompletion = await imageAnalyzer.CompleteChatAsync(
-                    [
-                        new SystemChatMessage(imageRecognitionInstructions),
-                        new UserChatMessage(
-                            ChatMessageContentPart.CreateImagePart(uriResult))
-
-                    ], ChatCompletionOptions);
-
-                    var imageResponse = imageRecognitionCompletion.Value.Content[0].Text;
-                    var match = ImageResultRegex().Match(imageResponse);
-                    
-                    if (match.Success)
-                    {
-                        var recognizedText = match.Groups[1].Value;
-                        imageDescription = recognizedText;
-                    }
-                    
-                    LogDebugImageRecognitionAiResponse(logger, imageResponse);
-                }
-
-                // Step 2 - Spam analysis
-                var messageContent = $"{userMessage} \n\r {imageDescription}";
-                var requestJson = JsonSerializer.Serialize(new SpamDetectionRequest(messageContent, userMessagesCount));
+                var requestJson = JsonSerializer.Serialize(new SpamDetectionRequest(userMessage, userMessagesCount));
 
                 LogDebugSpamDetectionAiRequest(logger, requestJson);
 
@@ -107,6 +75,37 @@
                 logger.LogError("Error occurred during spam detection process: {e}", e);
                 return new SpamRequestResult(ResultType.Error);
             }
+        }
+
+        public async Task<string> ExtractImageText(string imageUrl)
+        {
+            LogDebugImageRecognitionAiRequest(logger, imageUrl);
+
+            if (Uri.TryCreate(imageUrl, UriKind.Absolute, out var uriResult)
+                                 && uriResult.Scheme == Uri.UriSchemeHttps)
+            {
+                var imageRecognitionInstructions = await instructions.GetImageAnalyzerInstructions();
+                var imageRecognitionCompletion = await imageAnalyzer.CompleteChatAsync(
+                [
+                    new SystemChatMessage(imageRecognitionInstructions),
+                    new UserChatMessage(
+                        ChatMessageContentPart.CreateImagePart(uriResult))
+
+                ], ChatCompletionOptions);
+
+                var imageResponse = imageRecognitionCompletion.Value.Content[0].Text;
+
+                LogDebugImageRecognitionAiResponse(logger, imageResponse);
+
+                var match = ImageResultRegex().Match(imageResponse);
+
+                if (match.Success)
+                {
+                    return match.Groups[1].Value;
+                }
+            }
+
+            return string.Empty;
         }
 
         [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Request: {request}")]
