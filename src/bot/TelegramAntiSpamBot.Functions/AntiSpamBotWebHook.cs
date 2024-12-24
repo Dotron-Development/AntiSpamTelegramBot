@@ -15,7 +15,7 @@ namespace TelegramAntiSpamBot.Functions
                 var update = JsonSerializer.Deserialize<Update>(req.Body, JsonBotAPI.Options);
 
                 var message = ExtractMessageFromUpdate(update);
-
+              
                 if (message is { From: { } fromUser }
                     && fromUser.Id != 777000 // forwarded messages from main group (TG user)
 
@@ -49,16 +49,14 @@ namespace TelegramAntiSpamBot.Functions
 
                         if (shortcutResult)
                         {
-                            await HandleSpamShort(message.Id, message.Chat.Id);
+                            await HandleSpamShort(message.Id, fromUser.Id, message.Chat.Id);
                             logger.LogInformation("Shortcut is used for spam detection");
 
                             return req.CreateResponse(HttpStatusCode.NoContent);
-
                         }
 
                         // Step 3.2. 
                         // Check message for spam with Open AI
-
                         var spamDetectionResult = await detectionService.IsSpam(messageContent, userMessageCount, botConfig.Value.DebugAiResponse);
 
                         logger.LogInformation("SPAM DETECTION RESULT: {probability}", spamDetectionResult.Probability);
@@ -81,14 +79,25 @@ namespace TelegramAntiSpamBot.Functions
             return req.CreateResponse(HttpStatusCode.NoContent);
         }
 
-        private async Task HandleSpamShort(int messageId, long chatId)
+        private async Task HandleSpamShort(int messageId, long userId, long chatId)
         {
             if (botConfig.Value.ForwardSpamToChatId != null)
             {
                 await bot.ForwardMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), chatId, messageId);
             }
 
-            await bot.DeleteMessage(chatId, messageId);
+            await bot.RestrictChatMember(chatId, userId, new ChatPermissions()
+            {
+                CanSendPhotos = false,
+                CanSendMessages = false,
+                CanSendOtherMessages = false,
+                CanSendAudios = false,
+                CanSendVideoNotes = false,
+                CanSendDocuments = false,
+                CanSendVideos = false,
+                CanSendPolls = false,
+                CanSendVoiceNotes = false
+            }, false, DateTime.UtcNow.AddHours(3));
         }
 
         private async Task HandleSpam(int messageId, long chatId, long userId, string messageContent, int probability, string hex)
@@ -97,11 +106,12 @@ namespace TelegramAntiSpamBot.Functions
                 userId,
                 messageContent,
                 probability));
+
             var saveTask2 = repository.SaveMessageHash(hex);
 
-            await HandleSpamShort(messageId, chatId);
-
-            await Task.WhenAll(saveTask1, saveTask2);
+            var t3 = HandleSpamShort(messageId, userId, chatId);
+            
+            await Task.WhenAll(saveTask1, saveTask2, t3);
         }
 
         private static string MergeMessageContent(string messageText, string imageText) => $"{messageText}\n\r{imageText}";
