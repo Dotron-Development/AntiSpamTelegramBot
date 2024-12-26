@@ -86,6 +86,7 @@ namespace TelegramAntiSpamBot.Functions
                 await bot.ForwardMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), chatId, messageId);
             }
 
+            await bot.DeleteMessage(chatId, messageId);
             await bot.RestrictChatMember(chatId, userId, new ChatPermissions()
             {
                 CanSendPhotos = false,
@@ -96,7 +97,12 @@ namespace TelegramAntiSpamBot.Functions
                 CanSendDocuments = false,
                 CanSendVideos = false,
                 CanSendPolls = false,
-                CanSendVoiceNotes = false
+                CanSendVoiceNotes = false,
+                CanAddWebPagePreviews = false,
+                CanChangeInfo = false,
+                CanInviteUsers = false,
+                CanManageTopics = false,
+                CanPinMessages = false
             }, false, DateTime.UtcNow.AddHours(3));
         }
 
