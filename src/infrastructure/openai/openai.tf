@@ -30,7 +30,7 @@ module "avm-res-cognitiveservices-account" {
       }
       scale = {
         type     = "Standard"
-        capacity = 99
+        capacity = 100
       }
     }
   }
