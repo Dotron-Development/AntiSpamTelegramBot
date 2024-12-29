@@ -1,4 +1,4 @@
-name: infrastructure-dev
+name: infrastructure
 
 on:
   push:
