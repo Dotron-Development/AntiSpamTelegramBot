@@ -2,7 +2,7 @@ name: deploy-bot-dev
 
 on:
   workflow_run:
-    workflows: ["terraform-dev"]
+    workflows: ["infrastructure-dev"]
     types:
       - completed
 
