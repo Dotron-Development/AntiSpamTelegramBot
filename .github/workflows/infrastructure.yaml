@@ -8,10 +8,6 @@ on:
       - "src/infrastructure/**"
       - ".github/workflows/**"
 
-permissions:
-  contents: read
-  actions: write
-
 env:
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
