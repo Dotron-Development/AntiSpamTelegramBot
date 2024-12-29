@@ -3,7 +3,7 @@ module "avm-res-cognitiveservices-account" {
   kind                = "OpenAI"
   location            = var.location
   name                = "${local.appName}-ai-services-account-${var.environment_prefix}"
-  resource_group_name = data.terraform_remote_state.data.outputs.resource_group_name
+  resource_group_name = "rg-${local.appName}-${var.environment_prefix}"
   sku_name            = "S0"
 
   cognitive_deployments = {

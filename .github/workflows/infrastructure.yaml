@@ -22,39 +22,6 @@ env:
   AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
 
 jobs:
-  main-infrastructure:
-    environment: dev
-    runs-on: self-hosted
-
-    defaults:
-      run:
-        working-directory: src/infrastructure
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform Init
-        run: |
-          terraform init \
-            -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
-            -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
-            -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
-            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
-
-      - name: Terraform Plan
-        run: |
-          terraform plan -out=tfplan -var-file=environments/dev.tfvars \
-            -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}"
-
-      - name: Apply Terraform plan
-        run: terraform apply tfplan
-
   openaiservices-infrastructure:
     environment: dev
     runs-on: self-hosted
@@ -88,11 +55,40 @@ jobs:
 
       - name: Terraform Plan
         run: |
+          terraform plan -out=tfplan -var-file=environments/dev.tfvars
+
+      - name: Apply Terraform plan
+        run: terraform apply tfplan
+
+  main-infrastructure:
+    environment: dev
+    runs-on: self-hosted
+
+    defaults:
+      run:
+        working-directory: src/infrastructure
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
+            -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
+            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+
+      - name: Terraform Plan
+        run: |
           terraform plan -out=tfplan -var-file=environments/dev.tfvars \
-            -var="main_state_storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}" \
-            -var="main_state_container_name=${AZ_BACKEND_CONTAINER_NAME}" \
-            -var="main_state_resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
-            -var="main_state_key=${AZ_MAIN_STATE_FILE_KEY}"
+            -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}"
 
       - name: Apply Terraform plan
         run: terraform apply tfplan

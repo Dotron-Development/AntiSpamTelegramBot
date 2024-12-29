@@ -40,7 +40,12 @@ resource "azurerm_linux_function_app" "function_app" {
     "AzureWebJobsStorage"             = azurerm_storage_account.function_storage.primary_connection_string
     "FUNCTIONS_EXTENSION_VERSION"     = "~4"
     "WEBSITE_RUN_FROM_PACKAGE"        = "1"
+    "WEBSITE_ENABLE_SYNC_UPDATE_SITE" = "true"
     "TelegramBotConfiguration__Token" = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
+
+    "OpenAiServicesConfiguration__ImageRecognitionDeployment" = "gpt-4o-mini"
+    "OpenAiServicesConfiguration__ServiceUrl"                 = "https://open-ai-telegram-assistant.openai.azure.com/"
+
   }
 
 
