@@ -39,6 +39,7 @@ resource "azurerm_linux_function_app" "function_app" {
   app_settings = {
     "AzureWebJobsStorage"             = azurerm_storage_account.function_storage.primary_connection_string
     "FUNCTIONS_EXTENSION_VERSION"     = "~4"
+    "WEBSITE_RUN_FROM_PACKAGE"        = "1"
     "TelegramBotConfiguration__Token" = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
   }
 
