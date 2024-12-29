@@ -30,13 +30,13 @@ jobs:
         with:
           creds: '{"clientId":"${{ secrets.ARM_CLIENT_ID }}","clientSecret":"${{ secrets.ARM_CLIENT_SECRET }}","subscriptionId":"${{ secrets.ARM_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.ARM_TENANT_ID }}"}'
 
-      # - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
-      #   uses: actions/setup-dotnet@v4
-      #   with:
-      #     dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       # - name: "Resolve Project Dependencies Using Dotnet"
-      #   shell: pwsh # For Linux, use bash
+      #   shell: bash
       #   run: |
       #     pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
       #     dotnet build --configuration Release --output ./output
