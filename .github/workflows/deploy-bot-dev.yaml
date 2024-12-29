@@ -3,6 +3,7 @@ name: deploy-bot-dev
 on:
   workflow_run:
     workflows: ["infrastructure-dev"]
+    branches: [dev]
     types:
       - completed
 
