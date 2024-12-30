@@ -11,5 +11,5 @@ data "terraform_remote_state" "openai_data" {
 }
 
 module "global_constants" {
-  source = "../global_constants"
+  source = "./global_constants"
 }
