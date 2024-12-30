@@ -17,21 +17,18 @@ env:
   AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
   AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
   AZ_BACKEND_CONTAINER_NAME: "dev"
-  AZ_MAIN_STATE_FILE_KEY: "main.terraform.tfstate"
   AZ_OPENAI_STATE_FILE_KEY: "openai.terraform.tfstate"
+  AZ_MAIN_STATE_FILE_KEY: "main.terraform.tfstate"
   AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
 
 jobs:
   openaiservices-infrastructure:
     environment: dev
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     defaults:
       run:
         working-directory: src/infrastructure/openai
-
-    needs:
-      - main-infrastructure
 
     steps:
       - name: Checkout code
@@ -68,6 +65,9 @@ jobs:
       run:
         working-directory: src/infrastructure
 
+    needs:
+      - openaiservices-infrastructure
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -88,7 +88,11 @@ jobs:
       - name: Terraform Plan
         run: |
           terraform plan -out=tfplan -var-file=environments/dev.tfvars \
-            -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}"
+            -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}" \
+            -var="openai_state_storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}" \
+            -var="openai_state_container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -var="openai_state_resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+            -var="openai_state_key=${AZ_OPENAI_STATE_FILE_KEY}"
 
       - name: Apply Terraform plan
         run: terraform apply tfplan
