@@ -1,7 +1,7 @@
 resource "azurerm_key_vault" "kv" {
   name                        = "${local.kv_name}-${var.environment_prefix}"
   location                    = var.location
-  resource_group_name         = data.terraform_remote_state.openai_data.resource_group_name
+  resource_group_name         = data.terraform_remote_state.openai_data.outputs.resource_group_name
   enabled_for_disk_encryption = true
   tenant_id                   = data.azurerm_client_config.current.tenant_id
   soft_delete_retention_days  = 7
@@ -84,7 +84,7 @@ resource "azurerm_key_vault" "kv" {
 
 resource "azurerm_private_dns_zone" "private_dns" {
   name                = "${local.kv_name}-${var.environment_prefix}.privatelink.vaultcore.azure.net"
-  resource_group_name = data.terraform_remote_state.openai_data.resource_group_name
+  resource_group_name = data.terraform_remote_state.openai_data.outputs.resource_group_name
   tags                = local.tags
 }
 
@@ -92,7 +92,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_vnet_link" {
   name                  = "vnl-${local.kv_name}-${var.environment_prefix}"
   virtual_network_id    = azurerm_virtual_network.vnet.id
   private_dns_zone_name = azurerm_private_dns_zone.private_dns.name
-  resource_group_name   = data.terraform_remote_state.openai_data.resource_group_name
+  resource_group_name   = data.terraform_remote_state.openai_data.outputs.resource_group_name
   tags                  = local.tags
 }
 
@@ -100,7 +100,7 @@ resource "azurerm_private_endpoint" "kv_pe" {
   name                = "pe-${local.kv_name}-${var.environment_prefix}"
   subnet_id           = azurerm_subnet.subnet_for_vm.id
   location            = var.location
-  resource_group_name = data.terraform_remote_state.openai_data.resource_group_name
+  resource_group_name = data.terraform_remote_state.openai_data.outputs.resource_group_name
   tags                = local.tags
 
   private_service_connection {
@@ -121,7 +121,7 @@ resource "azurerm_private_endpoint" "kv_pe" {
 resource "azurerm_private_dns_a_record" "keyvault_a_record" {
   name                = "@"
   zone_name           = azurerm_private_dns_zone.private_dns.name
-  resource_group_name = data.terraform_remote_state.openai_data.resource_group_name
+  resource_group_name = data.terraform_remote_state.openai_data.outputs.resource_group_name
   ttl                 = 300
   records = [
     azurerm_private_endpoint.kv_pe.ip_configuration[0].private_ip_address
