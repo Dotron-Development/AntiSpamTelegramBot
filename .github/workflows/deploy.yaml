@@ -1,12 +1,10 @@
 name: deploy
 
 on:
-  push:
-    branches:
-      - dev
-    paths:
-      - "src/infrastructure/**"
-      - ".github/workflows/**"
+  workflow_run:
+    workflows: ["infrastructure"]
+    types:
+      - completed
 
 permissions:
   id-token: write
