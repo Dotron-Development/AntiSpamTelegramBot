@@ -102,4 +102,6 @@ module "avm-res-cognitiveservices-account" {
   }
 
   tags = local.tags
+
+  depends_on = [azurerm_resource_group.rg]
 }
