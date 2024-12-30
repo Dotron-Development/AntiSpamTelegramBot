@@ -1,7 +1,7 @@
 resource "azurerm_user_assigned_identity" "functionapp_identity" {
   location            = var.location
   name                = "ua-mi-${local.appName}-fn-${var.environment_prefix}"
-  resource_group_name = terraform_remote_state.openai_data.resource_group_name
+  resource_group_name = data.terraform_remote_state.openai_data.resource_group_name
   tags                = local.tags
 }
 
@@ -14,7 +14,7 @@ resource "azurerm_role_assignment" "functionapp_identity_storage_access" {
 
 ## Grant Read access for the function app to the Open AI services in the resource group
 resource "azurerm_role_assignment" "function_app_to_openai" {
-  scope                = terraform_remote_state.openai_data.resource_group_id
+  scope                = data.terraform_remote_state.openai_data.resource_group_id
   role_definition_name = "Cognitive Services OpenAI User"
   principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
 }
