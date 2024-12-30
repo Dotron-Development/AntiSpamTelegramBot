@@ -13,8 +13,8 @@ variable "environment_name" {
   type        = string
 }
 
-variable "openai_state_container_name" {
-  description = "The name of the terraform backend storage account."
+variable "openai_state_resource_group_name" {
+  description = "The name of the terraform backend resource group name."
   type        = string
 }
 
