@@ -16,7 +16,7 @@ resource "azurerm_key_vault" "kv" {
     default_action = "Allow"
   }
 
-  ## access for the owner of the application
+  ## access for the owner of the application.
   access_policy {
     tenant_id = data.azurerm_client_config.current.tenant_id
     object_id = var.application_owner_object_id
