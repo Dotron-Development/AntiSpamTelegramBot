@@ -92,6 +92,7 @@ jobs:
             -var="openai_state_storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}" \
             -var="openai_state_container_name=${AZ_BACKEND_CONTAINER_NAME}" \
             -var="openai_state_resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+            -var="openai_state_key=${AZ_OPENAI_STATE_FILE_KEY}" \
             -var="telegram_bot_token=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
             -var="telegram_bot_secret_header=${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}"
 
