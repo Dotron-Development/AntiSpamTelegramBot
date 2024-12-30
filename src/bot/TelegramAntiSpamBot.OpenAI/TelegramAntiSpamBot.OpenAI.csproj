@@ -7,11 +7,34 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Instructions\ImageAnalysis.md" />
+    <None Remove="Instructions\SpamDetectionInstructions.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Instructions\ImageAnalysis.md">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Instructions\SpamDetectionInstructions.md">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
     <PackageReference Include="Azure.AI.OpenAI.Assistants" Version="1.0.0-beta.4" />
     <PackageReference Include="Azure.Identity" Version="1.13.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="SpamDetectionInstructions.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

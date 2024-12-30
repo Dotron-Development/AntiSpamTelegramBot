@@ -1,11 +1,28 @@
-using TelegramAntiSpamBot.Functions;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 
-var builder = FunctionsApplication.CreateBuilder(args);
-Console.OutputEncoding = Encoding.UTF8;
-builder.ConfigureFunctionsWebApplication();
-builder.Services.AddOpenAiService();
+var builder = new HostBuilder();
 
-builder.Services.AddTelegramBot();
-builder.Services.AddPersistence();
+builder.ConfigureFunctionsWorkerDefaults(b =>
+  {
+     b.UseMiddleware<AuthorizationMiddleware>();
+  }
+);
+
+builder.ConfigureServices(collection =>
+{
+    collection.AddOpenAiService();
+    collection.AddTelegramBot();
+    collection.AddPersistence();
+    collection.AddOpenTelemetry().UseAzureMonitor();
+});
+
+// configure logging
+builder.ConfigureAppConfiguration((_, config) =>
+{
+    config.AddJsonFile("loggerConfig.json");
+}).ConfigureLogging((hostingContext, logging) =>
+{
+    logging.AddConfiguration(hostingContext.Configuration.GetSection("Logging"));
+});
 
 builder.Build().Run();

@@ -1,0 +1,98 @@
+name: infrastructure
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - "src/infrastructure/**"
+      - ".github/workflows/**"
+
+env:
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  # Configuration for Terraform backend
+  AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
+  AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
+  AZ_BACKEND_CONTAINER_NAME: "dev"
+  AZ_OPENAI_STATE_FILE_KEY: "openai.terraform.tfstate"
+  AZ_MAIN_STATE_FILE_KEY: "main.terraform.tfstate"
+  AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
+
+jobs:
+  openaiservices-infrastructure:
+    environment: dev
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: src/infrastructure/openai
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        env:
+          AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
+          AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
+            -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -backend-config="key=${AZ_OPENAI_STATE_FILE_KEY}" \
+            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+
+      - name: Terraform Plan
+        run: |
+          terraform plan -out=tfplan -var-file=environments/dev.tfvars
+
+      - name: Apply Terraform plan
+        run: terraform apply tfplan
+
+  main-infrastructure:
+    environment: dev
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: src/infrastructure
+
+    needs:
+      - openaiservices-infrastructure
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
+            -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
+            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+
+      - name: Terraform Plan
+        run: |
+          terraform plan -out=tfplan -var-file=environments/dev.tfvars \
+            -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}" \
+            -var="openai_state_storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}" \
+            -var="openai_state_container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -var="openai_state_resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+            -var="openai_state_key=${AZ_OPENAI_STATE_FILE_KEY}"
+
+      - name: Apply Terraform plan
+        run: terraform apply tfplan
