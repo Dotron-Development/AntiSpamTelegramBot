@@ -64,12 +64,12 @@ resource "azurerm_key_vault" "kv" {
   }
 
   ## access for the function's user assigned identity
-  # access_policy {
-  #   tenant_id = data.azurerm_client_config.current.tenant_id
-  #   object_id = azurerm_user_assigned_identity.functionapp_identity.principal_id
+  access_policy {
+    tenant_id = data.azurerm_client_config.current.tenant_id
+    object_id = azurerm_user_assigned_identity.functionapp_identity.principal_id
 
-  #   secret_permissions = ["Get"]
-  # }
+    secret_permissions = ["Get"]
+  }
 
   ## access for terraform to manage the key vault
   access_policy {
