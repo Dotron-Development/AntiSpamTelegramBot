@@ -41,6 +41,8 @@ resource "azurerm_linux_function_app" "function_app" {
     "FUNCTIONS_EXTENSION_VERSION"         = "~4"
     "WEBSITE_ENABLE_SYNC_UPDATE_SITE"     = "true"
     "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
+    "WEBSITE_RUN_FROM_PACKAGE"            = "1"
+    "FUNCTIONS_WORKER_RUNTIME"            = "dotnet-isolated"
 
     "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.appinsights.instrumentation_key
 
