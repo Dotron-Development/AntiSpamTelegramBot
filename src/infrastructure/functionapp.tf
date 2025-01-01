@@ -61,7 +61,6 @@ resource "azurerm_windows_function_app" "function_app" {
     "TelegramBotConfiguration__Token"               = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
   }
 
-
   identity {
     type = "UserAssigned"
     identity_ids = [
