@@ -98,3 +98,14 @@ jobs:
 
       - name: Apply Terraform plan
         run: terraform apply tfplan
+
+      - name: Extract Outputs from State File
+        id: tf_outputs
+        run: |
+          terraform output -json > tf_outputs.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tf_outputs
+          path: tf_outputs.json

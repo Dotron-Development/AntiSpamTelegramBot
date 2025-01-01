@@ -35,11 +35,11 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: "Resolve Project Dependencies Using Dotnet"
+      - name: "Publish Using Dotnet"
         shell: bash
         run: |
           pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-          dotnet build --configuration Release --output ./output
+          dotnet publish --configuration Release --os win --arch x64 --output ./output
           popd
 
       - name: Zip published output
@@ -52,3 +52,7 @@ jobs:
         with:
           name: app
           path: app.zip
+
+      # - name: Deploy to Azure Function App
+      #   run: |
+      #     az functionapp deployment source config-zip --resource-group ${{ secrets.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }} --name ${{ env.AZURE_FUNCTIONAPP_NAME }} --src app.zip
