@@ -44,7 +44,7 @@ jobs:
           cd output
           zip -r ../app.zip .
 
-      - name: Upload artifact
+      - name: Upload publishing artifact
         uses: actions/upload-artifact@v3
         with:
           name: app
