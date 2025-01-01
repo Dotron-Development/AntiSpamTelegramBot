@@ -41,9 +41,7 @@ jobs:
 
       - name: Zip published output
         run: |
-          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-          ls
-          cd output
+          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
           zip -r ../app.zip .
           popd
 
@@ -51,7 +49,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: app
-          path: app.zip
+          path: ./${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
 
       - name: Deploy to Azure Function App
         run: |

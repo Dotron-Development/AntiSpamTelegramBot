@@ -41,13 +41,12 @@ resource "azurerm_windows_function_app" "function_app" {
     }
   }
 
-  functions_extension_version = 4
+  functions_extension_version = "~4"
 
   app_settings = {
-    "FUNCTIONS_EXTENSION_VERSION" = "~4"
-    "WEBSITE_RUN_FROM_PACKAGE"    = "1"
+    "WEBSITE_RUN_FROM_PACKAGE" = "1"
+    "FUNCTIONS_WORKER_RUNTIME" = "dotnet-isolated"
 
-    "APPINSIGHTS_INSTRUMENTATIONKEY"        = azurerm_application_insights.appinsights.instrumentation_key
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.appinsights.connection_string
 
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = module.global_constants.image_text_extraction_model_name
