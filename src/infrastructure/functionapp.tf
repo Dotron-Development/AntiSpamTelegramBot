@@ -29,9 +29,11 @@ resource "azurerm_windows_function_app" "function_app" {
   https_only                      = true
 
   site_config {
-    always_on         = false
-    app_scale_limit   = 5
-    use_32_bit_worker = false
+    always_on                              = false
+    app_scale_limit                        = 5
+    use_32_bit_worker                      = false
+    application_insights_connection_string = azurerm_application_insights.appinsights.connection_string
+    application_insights_key               = azurerm_application_insights.appinsights.instrumentation_key
 
     application_stack {
       dotnet_version              = "v9.0"

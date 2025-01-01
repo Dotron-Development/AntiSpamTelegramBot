@@ -102,10 +102,10 @@ jobs:
       - name: Extract Outputs from State File
         id: tf_outputs
         run: |
-          terraform output -json > tf_outputs.json
+          echo "RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name)" >> $GITHUB_ENV
+          echo "FUNCTION_APP_NAME=$(terraform output -raw functionapp_name)" >> $GITHUB_ENV
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: tf_outputs
-          path: tf_outputs.json
+      - name: Use Environment Variables
+        run: |
+          echo "The resource group name is $RESOURCE_GROUP_NAME"
+          echo "The function app name is $FUNCTION_APP_NAME"
