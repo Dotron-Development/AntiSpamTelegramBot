@@ -39,12 +39,16 @@ jobs:
           dotnet publish --configuration Release --os win --arch x64 --output ./output
           popd
 
+      - name: LS
+        run: |
+          ls
+
       - name: Zip published output
         run: |
           cd output
           zip -r ../app.zip .
 
-      - name: Upload artifact
+      - name: Upload publishing artifact
         uses: actions/upload-artifact@v3
         with:
           name: app
