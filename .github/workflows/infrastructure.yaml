@@ -21,7 +21,7 @@ env:
   AZ_MAIN_STATE_FILE_KEY: "main.terraform.tfstate"
   AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
 
-  GH_TOKEN: ${{ github.token }}
+  GH_TOKEN: ${{ secrets.ANTISPAM_GITHUB_TOKEN }}
 
 jobs:
   openaiservices-infrastructure:
