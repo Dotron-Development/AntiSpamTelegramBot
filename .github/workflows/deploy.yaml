@@ -49,10 +49,10 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: app
-          path: ./${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
+          path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
 
       - name: Deploy to Azure Function App
         run: |
           RESOURCE_GROUP_NAME=${{ github.event.client_payload.resource_group_name }}
           FUNCTION_APP_NAME=${{ github.event.client_payload.function_app_name }}
-          az functionapp deployment source config-zip --resource-group $RESOURCE_GROUP_NAME --name $FUNCTION_APP_NAME --src ./${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
+          az functionapp deployment source config-zip --resource-group $RESOURCE_GROUP_NAME --name $FUNCTION_APP_NAME --src ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
