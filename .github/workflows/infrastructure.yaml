@@ -103,7 +103,7 @@ jobs:
         run: |
           RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name)
           FUNCTION_APP_NAME=$(terraform output -raw functionapp_name)
-          curl -X POST  \
+          curl -X POST \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.ANTISPAM_GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/dispatches \
