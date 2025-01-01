@@ -26,9 +26,12 @@ resource "azurerm_windows_function_app" "function_app" {
   storage_account_name            = azurerm_storage_account.function_storage.name
   storage_account_access_key      = azurerm_storage_account.function_storage.primary_access_key
   key_vault_reference_identity_id = azurerm_user_assigned_identity.functionapp_identity.id
+  https_only                      = true
 
   site_config {
-    always_on = false
+    always_on         = false
+    app_scale_limit   = 5
+    use_32_bit_worker = false
 
     application_stack {
       dotnet_version              = "v9.0"
@@ -44,7 +47,8 @@ resource "azurerm_windows_function_app" "function_app" {
     "WEBSITE_RUN_FROM_PACKAGE"            = "1"
     "FUNCTIONS_WORKER_RUNTIME"            = "dotnet-isolated"
 
-    "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.appinsights.instrumentation_key
+    "APPINSIGHTS_INSTRUMENTATIONKEY"        = azurerm_application_insights.appinsights.instrumentation_key
+    "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.appinsights.connection_string
 
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = module.global_constants.image_text_extraction_model_name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = module.global_constants.spam_recognition_model_name
