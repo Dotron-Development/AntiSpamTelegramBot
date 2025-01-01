@@ -41,13 +41,12 @@ resource "azurerm_windows_function_app" "function_app" {
     }
   }
 
+  functions_extension_version = 4
+
   app_settings = {
-    "AzureWebJobsStorage"                 = azurerm_storage_account.function_storage.primary_connection_string
-    "FUNCTIONS_EXTENSION_VERSION"         = "~4"
-    "WEBSITE_ENABLE_SYNC_UPDATE_SITE"     = "true"
-    "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
-    "WEBSITE_RUN_FROM_PACKAGE"            = "1"
-    "FUNCTIONS_WORKER_RUNTIME"            = "dotnet-isolated"
+    "FUNCTIONS_EXTENSION_VERSION" = "~4"
+    "WEBSITE_RUN_FROM_PACKAGE"    = "1"
+    "FUNCTIONS_WORKER_RUNTIME"    = "dotnet-isolated"
 
     "APPINSIGHTS_INSTRUMENTATIONKEY"        = azurerm_application_insights.appinsights.instrumentation_key
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.appinsights.connection_string
