@@ -99,13 +99,12 @@ jobs:
       - name: Apply Terraform plan
         run: terraform apply tfplan
 
-      - name: Extract Outputs from State File
-        id: tf_outputs
+      - name: Trigger Deploy Workflow
         run: |
-          echo "RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name)" >> $GITHUB_ENV
-          echo "FUNCTION_APP_NAME=$(terraform output -raw functionapp_name)" >> $GITHUB_ENV
-
-      - name: Use Environment Variables
-        run: |
-          echo "The resource group name is $RESOURCE_GROUP_NAME"
-          echo "The function app name is $FUNCTION_APP_NAME"
+          RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name)
+          FUNCTION_APP_NAME=$(terraform output -raw functionapp_name)
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{"event_type":"trigger-deploy-workflow","client_payload":{"resource_group_name":"'"$RESOURCE_GROUP_NAME"'","function_app_name":"'"$FUNCTION_APP_NAME"'"}}'

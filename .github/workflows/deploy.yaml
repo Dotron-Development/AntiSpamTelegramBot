@@ -1,10 +1,8 @@
 name: deploy
 
 on:
-  workflow_run:
-    workflows: ["infrastructure"]
-    types:
-      - completed
+  repository_dispatch:
+    types: [trigger-deploy-workflow]
 
 permissions:
   id-token: write
@@ -52,6 +50,13 @@ jobs:
         with:
           name: app
           path: app.zip
+
+      - name: Use Data
+        run: |
+          RESOURCE_GROUP_NAME=${{ github.event.client_payload.resource_group_name }}
+          FUNCTION_APP_NAME=${{ github.event.client_payload.function_app_name }}
+          echo "Resource Group Name: $RESOURCE_GROUP_NAME"
+          echo "Function App Name: $FUNCTION_APP_NAME"
 
       # - name: Deploy to Azure Function App
       #   run: |
