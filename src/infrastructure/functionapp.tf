@@ -12,13 +12,13 @@ resource "azurerm_service_plan" "function_sp" {
   location            = var.location
   resource_group_name = data.terraform_remote_state.openai_data.outputs.resource_group_name
 
-  os_type  = "Linux"
+  os_type  = "Windows"
   sku_name = "Y1"
 
   tags = local.tags
 }
 
-resource "azurerm_linux_function_app" "function_app" {
+resource "azurerm_windows_function_app" "function_app" {
   name                            = "fn-${local.appName}-${var.environment_prefix}"
   location                        = var.location
   resource_group_name             = data.terraform_remote_state.openai_data.outputs.resource_group_name
