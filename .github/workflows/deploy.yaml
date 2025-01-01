@@ -39,6 +39,10 @@ jobs:
           dotnet publish --configuration Release --os win --arch x64 --output ./output
           popd
 
+      - name: LS
+        run: |
+          ls
+
       - name: Zip published output
         run: |
           cd output
