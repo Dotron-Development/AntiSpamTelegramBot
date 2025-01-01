@@ -9,3 +9,7 @@ data "terraform_remote_state" "openai_data" {
     key                  = var.openai_state_key
   }
 }
+
+module "global_constants" {
+  source = "./global_constants"
+}

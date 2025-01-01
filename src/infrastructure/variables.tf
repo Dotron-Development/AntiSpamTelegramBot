@@ -33,3 +33,15 @@ variable "openai_state_key" {
   description = "The main state file key (path)."
   type        = string
 }
+
+variable "telegram_bot_token" {
+  description = "The token for the telegram bot."
+  type        = string
+  sensitive   = true
+}
+
+variable "telegram_bot_secret_header" {
+  description = "The secret header for the telegram bot."
+  type        = string
+  sensitive   = true
+}

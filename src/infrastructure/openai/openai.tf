@@ -21,12 +21,12 @@ module "avm-res-cognitiveservices-account" {
       }
     },
     "image_text_extractor" = {
-      name            = module.global_constants.imge_text_extraction_model_name
+      name            = module.global_constants.image_text_extraction_model_name
       rai_policy_name = "all_high"
       model = {
         format  = "OpenAI"
-        name    = module.global_constants.imge_text_extraction_model_name
-        version = module.global_constants.imge_text_extraction_model_version
+        name    = module.global_constants.image_text_extraction_model_name
+        version = module.global_constants.image_text_extraction_model_version
       }
       scale = {
         type     = "Standard"

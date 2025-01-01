@@ -1,10 +1,8 @@
 name: deploy
 
 on:
-  workflow_run:
-    workflows: ["infrastructure"]
-    types:
-      - completed
+  repository_dispatch:
+    types: [trigger-deploy-workflow]
 
 permissions:
   id-token: write
@@ -18,6 +16,7 @@ env:
 
 jobs:
   build-and-deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -34,15 +33,31 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: "Resolve Project Dependencies Using Dotnet"
+      - name: "Publish Using Dotnet"
         shell: bash
         run: |
           pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-          dotnet build --configuration Release --output ./output
+          dotnet publish --configuration Release --os win --arch x64 --output ./output
           popd
 
-      - name: "Run Azure Functions Action"
-        uses: Azure/functions-action@v1
+      - name: Zip published output
+        run: |
+          cd output
+          zip -r ../app.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
         with:
-          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-          package: "${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output"
+          name: app
+          path: app.zip
+
+      - name: Use Data
+        run: |
+          RESOURCE_GROUP_NAME=${{ github.event.client_payload.resource_group_name }}
+          FUNCTION_APP_NAME=${{ github.event.client_payload.function_app_name }}
+          echo "Resource Group Name: $RESOURCE_GROUP_NAME"
+          echo "Function App Name: $FUNCTION_APP_NAME"
+
+      # - name: Deploy to Azure Function App
+      #   run: |
+      #     az functionapp deployment source config-zip --resource-group ${{ secrets.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }} --name ${{ env.AZURE_FUNCTIONAPP_NAME }} --src app.zip
