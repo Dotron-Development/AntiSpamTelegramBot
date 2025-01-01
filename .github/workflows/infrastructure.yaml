@@ -103,8 +103,14 @@ jobs:
         run: |
           RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name)
           FUNCTION_APP_NAME=$(terraform output -raw functionapp_name)
+
+          if [ -z "$RESOURCE_GROUP_NAME" ] || [ -z "$FUNCTION_APP_NAME" ]; then
+            echo "Error: RESOURCE_GROUP_NAME or FUNCTION_APP_NAME is empty."
+            exit 1
+          fi
+
           curl -X POST \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.ANTISPAM_GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/dispatches \
-            -d '{"event_type":"trigger-deploy-workflow","client_payload":{"resource_group_name":"'"$RESOURCE_GROUP_NAME"'","function_app_name":"'"$FUNCTION_APP_NAME"'"}}'
+            -d '{"event_type":"trigger-deploy-workflow","client_payload":{"resource_group_name":"'"$RESOURCE_GROUP_NAME"'","function_app_name":"'"$FUNCTION_APP_NAME"'", "ref":"'"${{ github.ref }}"'"}}'

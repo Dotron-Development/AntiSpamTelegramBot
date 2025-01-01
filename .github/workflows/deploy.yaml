@@ -9,7 +9,6 @@ permissions:
   contents: read
 
 env:
-  AZURE_FUNCTIONAPP_NAME: "fn-ai-tg-bot-dev"
   AZURE_FUNCTIONAPP_PACKAGE_PATH: "./src/bot/TelegramAntiSpamBot.Functions"
   DOTNET_VERSION: "9.0.x"
   DOTNET_INSTALL_DIR: "./.dotnet"
