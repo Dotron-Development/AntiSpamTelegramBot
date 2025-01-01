@@ -46,7 +46,6 @@ resource "azurerm_windows_function_app" "function_app" {
   app_settings = {
     "FUNCTIONS_EXTENSION_VERSION" = "~4"
     "WEBSITE_RUN_FROM_PACKAGE"    = "1"
-    "FUNCTIONS_WORKER_RUNTIME"    = "dotnet-isolated"
 
     "APPINSIGHTS_INSTRUMENTATIONKEY"        = azurerm_application_insights.appinsights.instrumentation_key
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.appinsights.connection_string
