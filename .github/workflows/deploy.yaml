@@ -53,7 +53,7 @@ jobs:
       - name: Zip published output
         run: |
           pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
-          zip -r ../app.zip .
+          zip -r app.zip .
           popd
 
       - name: Upload publishing artifact
