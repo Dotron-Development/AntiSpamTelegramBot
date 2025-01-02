@@ -47,8 +47,6 @@ resource "azurerm_windows_function_app" "function_app" {
     "WEBSITE_RUN_FROM_PACKAGE" = "1"
     "FUNCTIONS_WORKER_RUNTIME" = "dotnet-isolated"
 
-    "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.appinsights.connection_string
-
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = module.global_constants.image_text_extraction_model_name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = module.global_constants.spam_recognition_model_name
     "OpenAiServicesConfiguration__ServiceUrl"                 = data.terraform_remote_state.openai_data.outputs.openai_service_url
