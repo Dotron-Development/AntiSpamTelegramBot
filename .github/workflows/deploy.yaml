@@ -22,12 +22,12 @@ env:
   DOTNET_INSTALL_DIR: "./.dotnet"
 
 jobs:
-  defaults:
-    run:
-      working-directory: src
-
   build-and-deploy:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
+
     environment: dev
     steps:
       - name: "Checkout"
