@@ -17,11 +17,15 @@ permissions:
   contents: read
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: "./src/bot/TelegramAntiSpamBot.Functions"
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: "./bot/TelegramAntiSpamBot.Functions"
   DOTNET_VERSION: "9.0.x"
   DOTNET_INSTALL_DIR: "./.dotnet"
 
 jobs:
+  defaults:
+    run:
+      working-directory: src
+
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: dev
