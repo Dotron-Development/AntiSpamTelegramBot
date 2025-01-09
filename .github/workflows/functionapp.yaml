@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: "./bot/TelegramAntiSpamBot.Functions"
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: "bot/TelegramAntiSpamBot.Functions"
   DOTNET_VERSION: "9.0.x"
   DOTNET_INSTALL_DIR: "./.dotnet"
 
@@ -59,6 +59,12 @@ jobs:
         run: |
           pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
           dotnet publish --configuration Release --os win --arch x64 --output ./output
+          popd
+
+      - name: Zip published output
+        run: |
+          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
+          zip -r app.zip .
           popd
 
       - name: Upload publishing artifact
