@@ -14,7 +14,7 @@ resource "azurerm_key_vault" "kv" {
 
   network_acls {
     bypass         = "AzureServices"
-    default_action = "Allow"
+    default_action = "Deny"
 
     # if public access is enabled connectivity is done through the service endpoint
     # if public access is disabled, we need to create a private endpoint
