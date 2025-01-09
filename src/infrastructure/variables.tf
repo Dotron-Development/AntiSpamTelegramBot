@@ -64,3 +64,8 @@ variable "github_runners_vnet_subnet_name" {
   type        = string
   sensitive   = true
 }
+
+variable "disable_public_access" {
+  description = "Disable public access to all resources. If true then private endpoints will be created."
+  type        = bool
+}

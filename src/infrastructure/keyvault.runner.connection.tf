@@ -25,15 +25,3 @@ resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_runner_vnet_l
 
   tags = local.tags
 }
-
-# Wait for 3 minutes after creating the private DNS link
-# to be sure that the link is established
-resource "null_resource" "wait_3_minutes" {
-  provisioner "local-exec" {
-    command = "sleep 180"
-  }
-
-  depends_on = [
-    azurerm_private_dns_zone_virtual_network_link.keyvault_runner_vnet_link
-  ]
-}
