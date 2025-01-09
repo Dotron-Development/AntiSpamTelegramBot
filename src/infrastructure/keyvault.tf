@@ -10,7 +10,7 @@ resource "azurerm_key_vault" "kv" {
   enable_rbac_authorization   = true
 
   ## network rules
-  public_network_access_enabled = false
+  public_network_access_enabled = true
 
   network_acls {
     bypass         = "AzureServices"
