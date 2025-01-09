@@ -22,7 +22,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_runner_vnet_l
   count                 = var.disable_public_access ? 1 : 0
   name                  = "vnl-runner-${local.kv_name}-${var.environment_prefix}"
   virtual_network_id    = data.azurerm_virtual_network.github_runner_vnet.id
-  private_dns_zone_name = azurerm_private_dns_zone.private_dns.name
+  private_dns_zone_name = azurerm_private_dns_zone.private_dns[0].name
   resource_group_name   = data.terraform_remote_state.openai_data.outputs.resource_group_name
 
   tags = local.tags
