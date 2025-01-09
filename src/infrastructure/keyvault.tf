@@ -15,6 +15,9 @@ resource "azurerm_key_vault" "kv" {
   network_acls {
     bypass         = "AzureServices"
     default_action = "Deny"
+    virtual_network_subnet_ids = !var.disable_public_access ? [
+      azurerm_subnet.subnet1.id
+    ] : []
   }
 
   # Disable certificate lifecycle contact checks
