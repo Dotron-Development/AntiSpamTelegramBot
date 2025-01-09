@@ -20,7 +20,7 @@ resource "azurerm_key_vault" "kv" {
     # if public access is disabled, we need to create a private endpoint
     virtual_network_subnet_ids = !var.disable_public_access ? [
       azurerm_subnet.subnet1.id,
-      azurerm_subnet.github_runner_vnet_subnet.id
+      data.azurerm_subnet.github_runner_vnet_subnet.id
     ] : []
   }
 
