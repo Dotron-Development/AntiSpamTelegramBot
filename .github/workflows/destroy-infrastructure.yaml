@@ -63,6 +63,7 @@ jobs:
   destroy-main-infrastructure:
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
+    needs: destroy-openaiservices-infrastructure
 
     outputs:
       resource_group_name: ${{ steps.generate-outputs.outputs.resource_group_name }}
