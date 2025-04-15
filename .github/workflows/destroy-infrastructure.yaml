@@ -122,4 +122,4 @@ jobs:
             -var="telegram_bot_secret_header=${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}"
 
       - name: Apply Terraform plan
-        run: terraform apply tfplan -destroy
+        run: terraform apply tfplan
