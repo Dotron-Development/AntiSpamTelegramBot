@@ -1,13 +1,10 @@
 name: destroy-infrastructure
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       environment:
         required: true
-        type: choice
-        options:
-          - dev
-          - prod
+        type: string
 
 env:
   # service principal credentials
