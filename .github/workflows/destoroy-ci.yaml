@@ -1,14 +1,15 @@
 name: destroy-ci
-workflow_dispatch:
-  inputs:
-    environment:
-      description: "Environment to destroy"
-      required: true
-      default: "dev"
-      type: choice
-      options:
-        - dev
-        - prod
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to destroy"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - prod
 
 jobs:
   destroy-infrastructure:
