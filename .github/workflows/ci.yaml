@@ -62,6 +62,10 @@ jobs:
     uses: ./.github/workflows/destroy-infrastructure.yaml
     with:
       environment: prod
-      resource_group_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.resource_group_name }}
-      function_app_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.functionapp_name }}
+    secrets: inherit
+
+  destroy-dev-infrastructure:
+    uses: ./.github/workflows/destroy-infrastructure.yaml
+    with:
+      environment: dev
     secrets: inherit
