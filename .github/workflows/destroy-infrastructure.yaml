@@ -112,7 +112,7 @@ jobs:
           AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
           AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
         run: |
-          terraform plan -destroy -out=tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
+          terraform plan -out=tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
             -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}" \
             -var="openai_state_storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}" \
             -var="openai_state_container_name=${AZ_BACKEND_CONTAINER_NAME}" \
@@ -122,4 +122,4 @@ jobs:
             -var="telegram_bot_secret_header=${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}"
 
       - name: Apply Terraform plan
-        run: terraform apply tfplan
+        run: terraform apply -destroy tfplan
