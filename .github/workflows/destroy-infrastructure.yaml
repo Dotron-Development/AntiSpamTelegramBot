@@ -54,7 +54,7 @@ jobs:
             -backend-config="resource_group_name=$AZ_TERRAFORM_BACKEND_RESOURCEGROUP"
 
       - name: Apply Terraform plan
-        run: terraform apply tfplan -destroy
+        run: terraform apply -destroy
 
   destroy-main-infrastructure:
     runs-on: self-hosted
