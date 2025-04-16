@@ -33,6 +33,8 @@ module "avm-res-cognitiveservices-account" {
         capacity = var.image_text_extractor_capacity
       }
     }
+
+    depends_on = [rai_policies.policy1]
   }
 
   rai_policies = {
