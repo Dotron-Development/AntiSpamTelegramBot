@@ -53,8 +53,12 @@ jobs:
             -backend-config="key=$AZ_OPENAI_STATE_FILE_KEY" \
             -backend-config="resource_group_name=$AZ_TERRAFORM_BACKEND_RESOURCEGROUP"
 
-      - name: Apply Terraform plan
-        run: terraform apply -destroy
+      - name: Terraform Plan
+        run: |
+          terraform plan -destroy -out=destroy.tfplan -var-file=environments/${{ inputs.environment }}.tfvars
+
+      - name: Terraform Apply
+        run: terraform apply destroy.tfplan
 
   destroy-main-infrastructure:
     runs-on: self-hosted
@@ -100,5 +104,22 @@ jobs:
             -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
             -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
 
-      - name: Apply Terraform plan
-        run: terraform apply -destroy
+      - name: Terraform Plan
+        env:
+          AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
+          AZ_OPENAI_STATE_FILE_KEY: "openai.terraform.tfstate"
+          AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
+          AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
+          AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
+        run: |
+          terraform plan -destroy -out=destroy.tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
+            -var="application_owner_object_id=${AZ_OWNER_OBJECT_ID}" \
+            -var="openai_state_storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}" \
+            -var="openai_state_container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -var="openai_state_resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+            -var="openai_state_key=${AZ_OPENAI_STATE_FILE_KEY}" \
+            -var="telegram_bot_token=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            -var="telegram_bot_secret_header=${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}"
+
+      - name: Terraform Apply
+        run: terraform apply destroy.tfplan
