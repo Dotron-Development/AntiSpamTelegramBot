@@ -2,6 +2,7 @@
 {
     public class MessageCountEntry : AzureTableEntry
     {
+        // Reason: No parameterless constructor defined error when using Azure Table Storage
         public MessageCountEntry()
         {
 

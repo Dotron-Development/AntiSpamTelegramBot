@@ -35,28 +35,29 @@ namespace TelegramAntiSpamBot.Persistence
             return 0;
         }
 
-        public async Task<bool> IsSpam(string hex)
+        public async Task<ShortcutCheckResult> IsSpam(string hex)
         {
-            var t1 = spamHashTable.GetEntityIfExistsAsync<TableEntity>("1", hex);
-            var t2 = spamHashTable.GetEntityIfExistsAsync<TableEntity>("2", hex);
-            var t3 = spamHashTable.GetEntityIfExistsAsync<TableEntity>("3", hex);
+            var t1 = spamHashTable.GetEntityIfExistsAsync<SpamHashEntry>("1", hex);
+            var t2 = spamHashTable.GetEntityIfExistsAsync<SpamHashEntry>("2", hex);
+            var t3 = spamHashTable.GetEntityIfExistsAsync<SpamHashEntry>("3", hex);
 
             await foreach (var task in Task.WhenEach(t1, t2, t3))
             {
                 var result = await task;
                 if (result.HasValue)
                 {
-                    return true;
+                    return result.Value!.IsSpam 
+                        ? ShortcutCheckResult.Spam 
+                        : ShortcutCheckResult.NotSpam;
                 }
             }
 
-            return false;
+            return ShortcutCheckResult.NotFound;
         }
 
-        public async Task SaveMessageHash(string hash)
+        public async Task SaveMessageHash(string hash, bool isSpam)
         {
-            var partition = Random.Shared.Next(1, 4).ToString();
-            await spamHashTable.UpsertEntityAsync(new TableEntity(partition, hash), TableUpdateMode.Replace);
+            await spamHashTable.UpsertEntityAsync(new SpamHashEntry(hash, isSpam), TableUpdateMode.Replace);
         }
     }
 }

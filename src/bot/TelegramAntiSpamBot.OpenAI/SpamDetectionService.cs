@@ -64,7 +64,6 @@
 
                         var explanationJson = explanation.Groups[0].Value;
                         var explanationResult = JsonSerializer.Deserialize<SpamExplanationResult>(explanationJson);
-                        LogDebugSpamDetectionAiExplanation(logger, explanationResult?.Explanation ?? string.Empty);
 
                         return new SpamRequestResult(ResultType.Evaluated, number, explanationResult?.Explanation);
                     }
@@ -115,9 +114,6 @@
 
         [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Response: {response}")]
         private static partial void LogDebugSpamDetectionAiResponse(ILogger<SpamDetectionService> logger, string response);
-
-        [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Response Explanation: {explanation}")]
-        private static partial void LogDebugSpamDetectionAiExplanation(ILogger<SpamDetectionService> logger, string explanation);
 
         [LoggerMessage(LogLevel.Debug, "Image Recognition AI Service Response: {response}")]
         private static partial void LogDebugImageRecognitionAiResponse(ILogger<SpamDetectionService> logger, string response);

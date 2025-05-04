@@ -17,7 +17,6 @@
                 var resp = requestData.CreateResponse();
                 resp.StatusCode = HttpStatusCode.Forbidden;
                 context.GetInvocationResult().Value = resp;
-
                 logger.LogWarning("Unauthorized access attempt");
             }
         }

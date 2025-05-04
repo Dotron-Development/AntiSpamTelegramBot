@@ -1,6 +1,4 @@
-﻿
-
-namespace TelegramAntiSpamBot.Persistence
+﻿namespace TelegramAntiSpamBot.Persistence
 {
     public static class DependencyInjection
     {

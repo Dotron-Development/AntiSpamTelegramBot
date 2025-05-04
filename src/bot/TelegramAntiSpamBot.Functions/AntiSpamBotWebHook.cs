@@ -15,7 +15,7 @@ namespace TelegramAntiSpamBot.Functions
                 var update = JsonSerializer.Deserialize<Update>(req.Body, JsonBotAPI.Options);
 
                 var message = ExtractMessageFromUpdate(update);
-              
+
                 if (message is { From: { } fromUser }
                     && fromUser.Id != 777000 // forwarded messages from main group (TG user)
 
@@ -29,7 +29,7 @@ namespace TelegramAntiSpamBot.Functions
 
 
                     // Step 1. Extract message text
-                    var messageContent =  message.Text ?? string.Empty;
+                    var messageContent = message.Text ?? string.Empty;
 
                     // Step 2. Extract image text
                     if (imageUrl != null)
@@ -47,10 +47,14 @@ namespace TelegramAntiSpamBot.Functions
                         var hex = Convert.ToHexString(contentHash);
                         var shortcutResult = await repository.IsSpam(hex);
 
-                        if (shortcutResult)
+                        if (shortcutResult.IsShortCut)
                         {
-                            await HandleSpamShort(message.Id, fromUser.Id, message.Chat.Id);
-                            logger.LogInformation("Shortcut is used for spam detection");
+                            logger.LogInformation("Shortcut is used for spam detection. Message is spam {isSpam}", shortcutResult.IsSpam);
+
+                            if (shortcutResult.IsSpam!.Value)
+                            {
+                                await HandleSpamShort(message.Id, fromUser.Id, message.Chat.Id);
+                            }
 
                             return req.CreateResponse(HttpStatusCode.NoContent);
                         }
@@ -59,12 +63,17 @@ namespace TelegramAntiSpamBot.Functions
                         // Check message for spam with Open AI
                         var spamDetectionResult = await detectionService.IsSpam(messageContent, userMessageCount, botConfig.Value.DebugAiResponse);
 
-                        logger.LogInformation("SPAM DETECTION RESULT: {probability}", spamDetectionResult.Probability);
+                        logger.LogInformation("SPAM DETECTION RESULT: {probability}. EXPLANATION: {explanation}",
+                            spamDetectionResult.Probability, spamDetectionResult.Explanation);
 
                         if (spamDetectionResult.Probability >= 90)
                         {
                             await HandleSpam(message.Id, message.Chat.Id, fromUser.Id, messageContent,
                                 spamDetectionResult.Probability.Value, hex);
+                        }
+                        else
+                        {
+                            await repository.SaveMessageHash(hex, false);
                         }
                     }
 
@@ -113,10 +122,10 @@ namespace TelegramAntiSpamBot.Functions
                 messageContent,
                 probability));
 
-            var saveTask2 = repository.SaveMessageHash(hex);
+            var saveTask2 = repository.SaveMessageHash(hex, true);
 
             var t3 = HandleSpamShort(messageId, userId, chatId);
-            
+
             await Task.WhenAll(saveTask1, saveTask2, t3);
         }
 
