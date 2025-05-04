@@ -21,9 +21,12 @@
         [GeneratedRegex(@"""TextOnImage""\s*:\s*""(.*?)""")]
         private static partial Regex ImageResultRegex();
 
+        [GeneratedRegex(@"\{\s*""Explanation""\s*:\s*""[^""]*""\s*\}")]
+        private static partial Regex ExplanationRegex();
+
         public async Task<SpamRequestResult> IsSpam(
-            string userMessage, 
-            int userMessagesCount, 
+            string userMessage,
+            int userMessagesCount,
             bool explainDecision = false)
         {
             try
@@ -54,11 +57,16 @@
                     {
                         if (!explainDecision) return new SpamRequestResult(ResultType.Evaluated, number);
 
-                        var explanation = SpamResultRegex().Replace(responseText, string.Empty);
 
-                        LogDebugSpamDetectionAiExplanation(logger, explanation);
+                        var explanation = ExplanationRegex().Match(responseText);
+                        if (!explanation.Success)
+                            return new SpamRequestResult(ResultType.Evaluated, number);
 
-                        return new SpamRequestResult(ResultType.Evaluated, number, explanation);
+                        var explanationJson = explanation.Groups[0].Value;
+                        var explanationResult = JsonSerializer.Deserialize<SpamExplanationResult>(explanationJson);
+                        LogDebugSpamDetectionAiExplanation(logger, explanationResult?.Explanation ?? string.Empty);
+
+                        return new SpamRequestResult(ResultType.Evaluated, number, explanationResult?.Explanation);
                     }
                 }
 
@@ -81,31 +89,25 @@
         {
             LogDebugImageRecognitionAiRequest(logger, imageUrl);
 
-            if (Uri.TryCreate(imageUrl, UriKind.Absolute, out var uriResult)
-                                 && uriResult.Scheme == Uri.UriSchemeHttps)
-            {
-                var imageRecognitionInstructions = await instructions.GetImageAnalyzerInstructions();
-                var imageRecognitionCompletion = await imageAnalyzer.CompleteChatAsync(
-                [
-                    new SystemChatMessage(imageRecognitionInstructions),
-                    new UserChatMessage(
-                        ChatMessageContentPart.CreateImagePart(uriResult))
+            if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uriResult)
+                || uriResult.Scheme != Uri.UriSchemeHttps) return string.Empty;
 
-                ], ChatCompletionOptions);
+            var imageRecognitionInstructions = await instructions.GetImageAnalyzerInstructions();
+            var imageRecognitionCompletion = await imageAnalyzer.CompleteChatAsync(
+            [
+                new SystemChatMessage(imageRecognitionInstructions),
+                new UserChatMessage(
+                    ChatMessageContentPart.CreateImagePart(uriResult))
 
-                var imageResponse = imageRecognitionCompletion.Value.Content[0].Text;
+            ], ChatCompletionOptions);
 
-                LogDebugImageRecognitionAiResponse(logger, imageResponse);
+            var imageResponse = imageRecognitionCompletion.Value.Content[0].Text;
 
-                var match = ImageResultRegex().Match(imageResponse);
+            LogDebugImageRecognitionAiResponse(logger, imageResponse);
 
-                if (match.Success)
-                {
-                    return match.Groups[1].Value;
-                }
-            }
+            var match = ImageResultRegex().Match(imageResponse);
 
-            return string.Empty;
+            return match.Success ? match.Groups[1].Value : string.Empty;
         }
 
         [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Request: {request}")]

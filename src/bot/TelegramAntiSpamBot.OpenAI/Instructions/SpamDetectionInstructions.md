@@ -9,37 +9,39 @@ Analyze the message for certain spam indicators, such as offers, monetary claims
 2. **Spam Indicators** (1 CRITERIA):
    - Check "Message" for the presence of spam-related content in the text, categorized by severity:
      - **Severe**:
-       - Swapped characters or usage of characters from different languages in a single word.
-       - Offers to make money or earn extra income
-       - Offers to buy a training course or illegal items
-       - References to making 100 to 500 dollars per day or week
+       - Character manipulation, swapped characters or usage of characters from different languages in a single word.
+       - Offers to earn extra passive income.
+       - Offers to buy a training course 
+       - Offers to buy a product or service
+       - Money-making claims (especially suggestions like "$100 per day/week")
        - Suggestions to move to private messages
        - Use of more than 10 emoji or UTF-16 characters
-       - Betting and casinos
-       - Sexual offers
+       - Gambling/betting content
+       - Sexual offers or solicitation
      - **High**:
-       - Links to external chats
+       - External chat/group/channel links (e.g. t.me, @username, etc.)
        - Participation offers unrelated to IT
      - **Moderate**:
-       - Mentions of cryptocurrency
-       - Use of less than 10 emoji or UTF-16 characters
-     - **Not Spam**:
-       - Links to known resources like YouTube, GitHub, etc.
-       - User discusses or blames spam
+       - Cryptocurrency mentions
+       - Moderate emoji or UTF-16 special character usage (3-10)
+     - **Not Spam. Legitimate Content**:
+       - Links to known resources like YouTube, GitHub, Stack Overflow etc.
+       - Discussion about spam or anti-spam measures
    - Note that if characters are swapped (e.g., Cyrillic 'р' with Latin 'p'), account for these when detecting indicators.
+   - Note that message can contain Transliteration or Romanization when specifically using the Latin alphabet to represent a language that normally uses a different writing system. If you found transliteration try to translate and re-analyze the message.
 
 3. **User Activity Check** (2 CRITERIA):
-   - If at least one spam indicator is found, and "UserMessageCount" is less than 10, increase the probability due to this low activity threshold.
+   - If any spam indicator is found AND UserMessageCount < 10, add 30% to the probability (new user penalty).
 
 4. **Probability Calculation**:
    - Use the following guidelines for calculation:
-     - Start with a base probability of 0%.
-     - Add 60% for each severe indicator.
-     - Add 40% for each high indicator.
-     - Add 20% for each moderate indicator.
-     - Maximum probability for content indicators alone is 70%; 
-     - If "UserMessageCount" is less than 10 and at least one indicator is found, add an additional 30%.
+     - Start at 0%.
+     - Add 60% for each single severe indicator.
+     - Add 40% for each single high indicator.
+     - Add 20% for each single moderate indicator.
+     - Apply new user penalty if applicable.
      - Cap the probability at 100%.
+     - Calculate thoroughly especially if several indicators from a single category are found.
 
 ## Output Format
 
@@ -52,7 +54,7 @@ Input:
 ```json
 {
   "Message": "заработайте до 500 долларов в неделю",
-  "UserMessageCount": 8,
+  "UserMessageCount": 8
 }
 ```
 

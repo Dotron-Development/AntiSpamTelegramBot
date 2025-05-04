@@ -7,7 +7,7 @@ module "avm-res-cognitiveservices-account" {
   sku_name            = "S0"
 
   cognitive_deployments = {
-    "spam_recofnition" = {
+    "spam_recognition" = {
       name            = module.global_constants.spam_recognition_model_name
       rai_policy_name = "all_high"
       model = {
@@ -33,8 +33,6 @@ module "avm-res-cognitiveservices-account" {
         capacity = var.image_text_extractor_capacity
       }
     }
-
-    depends_on = [rai_policies.policy1]
   }
 
   rai_policies = {
