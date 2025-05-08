@@ -1,4 +1,4 @@
-﻿namespace TelegramAntiSpamBot.Persistence
+﻿namespace TelegramAntiSpamBot.Persistence.DTO
 {
     public record ShortcutCheckResult
     {

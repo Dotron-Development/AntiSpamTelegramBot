@@ -4,3 +4,6 @@ global using Azure.Data.Tables;
 global using Microsoft.Extensions.DependencyInjection;
 global using Azure.Identity;
 global using Microsoft.Extensions.Options;
+global using TelegramAntiSpamBot.Persistence.Entities;
+global using TelegramAntiSpamBot.Persistence.DTO;
+global using System.Text.Json;

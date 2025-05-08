@@ -1,10 +1,13 @@
+using TelegramAntispamBot.Configuration;
+
 namespace TelegramAntiSpamBot.Functions
 {
     public class AntiSpamBotWebHook(ILogger<AntiSpamBotWebHook> logger,
         ISpamDetectionService detectionService,
-        AntiSpamBotRepository repository,
+        IAntiSpamBotRepository repository,
         ITelegramBotClient bot,
         TelegramImageUrlResolver imageUrlResolver,
+        ICommandProcessor commandProcessor,
         IOptions<TelegramBotConfiguration> botConfig)
     {
         [Function("AntiSpamBotWebHook")]
@@ -13,6 +16,12 @@ namespace TelegramAntiSpamBot.Functions
             try
             {
                 var update = JsonSerializer.Deserialize<Update>(req.Body, JsonBotAPI.Options);
+
+                if (update != null && commandProcessor.IsCommand(update.Message?.Text))
+                {
+                    await commandProcessor.ProcessCommand(update);
+                    return req.CreateResponse(HttpStatusCode.NoContent);
+                }
 
                 var message = ExtractMessageFromUpdate(update);
 
@@ -53,7 +62,7 @@ namespace TelegramAntiSpamBot.Functions
 
                             if (shortcutResult.IsSpam!.Value)
                             {
-                                await HandleSpamShort(message.Id, fromUser.Id, message.Chat.Id);
+                                await HandleSpamShort(message);
                             }
 
                             return req.CreateResponse(HttpStatusCode.NoContent);
@@ -68,7 +77,7 @@ namespace TelegramAntiSpamBot.Functions
 
                         if (spamDetectionResult.Probability >= 90)
                         {
-                            await HandleSpam(message.Id, message.Chat.Id, fromUser.Id, messageContent,
+                            await HandleSpam(message, messageContent,
                                 spamDetectionResult.Probability.Value, hex);
                         }
                         else
@@ -88,15 +97,22 @@ namespace TelegramAntiSpamBot.Functions
             return req.CreateResponse(HttpStatusCode.NoContent);
         }
 
-        private async Task HandleSpamShort(int messageId, long userId, long chatId)
+        private async Task HandleSpamShort(Message message)
         {
+            var chatId = message.Chat.Id;
+            var messageId = message.MessageId;
+            var userId = message.From!.Id;
+
             if (botConfig.Value.ForwardSpamToChatId != null)
             {
                 await bot.ForwardMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), chatId, messageId);
             }
 
             await bot.DeleteMessage(chatId, messageId);
-            await bot.RestrictChatMember(chatId, userId, new ChatPermissions()
+
+            var diff = DateTime.UtcNow - message.Date;
+            var t1 = repository.UpdateChannelSpamStats(chatId, (int)diff.TotalMilliseconds);
+            var t2 = bot.RestrictChatMember(chatId, userId, new ChatPermissions()
             {
                 CanSendPhotos = false,
                 CanSendMessages = false,
@@ -113,18 +129,23 @@ namespace TelegramAntiSpamBot.Functions
                 CanManageTopics = false,
                 CanPinMessages = false
             }, false, DateTime.UtcNow.AddHours(3));
+
+            await Task.WhenAll(t1, t2);
         }
 
-        private async Task HandleSpam(int messageId, long chatId, long userId, string messageContent, int probability, string hex)
+        private async Task HandleSpam(Message message, string messageContent, int probability, string hex)
         {
-            var saveTask1 = repository.SaveMessageAsync(new SpamHistoryEntry(chatId,
+            var chatId = message.Chat.Id;
+            var userId = message.From!.Id;
+
+            var saveTask1 = repository.SaveMessageAsync(chatId,
                 userId,
                 messageContent,
-                probability));
+                probability);
 
             var saveTask2 = repository.SaveMessageHash(hex, true);
 
-            var t3 = HandleSpamShort(messageId, userId, chatId);
+            var t3 = HandleSpamShort(message);
 
             await Task.WhenAll(saveTask1, saveTask2, t3);
         }

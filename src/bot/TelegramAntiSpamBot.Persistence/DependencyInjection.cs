@@ -39,7 +39,17 @@
                 return tableClient;
             });
 
-            serviceCollection.AddTransient<AntiSpamBotRepository>();
+            serviceCollection.AddKeyedScoped("SpamStats", (provider, _) =>
+            {
+                var options = provider.GetRequiredService<IOptions<AzureTablesConfiguration>>();
+                var tableClient = new TableClient(
+                    new Uri(options.Value.StorageAccountUrl),
+                    "SpamStats",
+                    new DefaultAzureCredential());
+                return tableClient;
+            });
+
+            serviceCollection.AddTransient<IAntiSpamBotRepository, AntiSpamBotRepository>();
             return serviceCollection;
         }
     }

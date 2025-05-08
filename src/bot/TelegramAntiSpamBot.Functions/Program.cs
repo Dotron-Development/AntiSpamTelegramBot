@@ -22,11 +22,13 @@ builder.ConfigureFunctionsWorkerDefaults(b =>
     });
 });
 
+ 
 builder.ConfigureServices(collection =>
 {
     collection.AddOpenAiService();
     collection.AddTelegramBot();
     collection.AddPersistence();
+    collection.AddCommands();
 });
 
 
