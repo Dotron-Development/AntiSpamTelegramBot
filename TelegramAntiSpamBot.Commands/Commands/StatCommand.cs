@@ -40,9 +40,9 @@ namespace TelegramAntiSpamBot.Commands.Commands
                 MessageFormat,
                 dailyStats,
                 monthlyStats,
-                timing.MaxDelayMs?.ToString() ?? "No data",
-                timing.MinDelayMs?.ToString() ?? "No data",
-                timing.AvgDelayMs?.ToString() ?? "No data");
+                timing.MaxDelayMs?.ToString() ?? "<No data> ",
+                timing.MinDelayMs?.ToString() ?? "<No data> ",
+                timing.AvgDelayMs?.ToString() ?? "<No data> ");
 
             var sendTask = bot.SendMessage(chatId, outputMessage);
             var deleteTask = bot.DeleteMessage(chatId, message.Id);
@@ -51,7 +51,7 @@ namespace TelegramAntiSpamBot.Commands.Commands
 
             var sentMessage = sendTask.Result;
 
-            await Task.Delay(TimeSpan.FromSeconds(5));
+            await Task.Delay(TimeSpan.FromSeconds(15));
             await bot.DeleteMessage(chatId, sentMessage.MessageId);
         }
     }

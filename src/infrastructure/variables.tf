@@ -69,3 +69,8 @@ variable "disable_public_access" {
   description = "Disable public access to all resources. If true then private endpoints will be created."
   type        = bool
 }
+
+variable "botName" {
+  description = "The name of the bot. Example: @someBotName"
+  type        = string
+}

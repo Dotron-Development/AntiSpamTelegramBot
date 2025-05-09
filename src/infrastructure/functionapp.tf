@@ -55,6 +55,7 @@ resource "azurerm_windows_function_app" "function_app" {
 
     "TelegramBotConfiguration__DebugAiResponse"     = "false"
     "TelegramBotConfiguration__ForwardSpamToChatId" = "-1002395980780"
+    "TelegramBotConfiguration__BotName"             = var.botName,
     "TelegramBotConfiguration__SecretHeader"        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_secret_header.id})"
     "TelegramBotConfiguration__Token"               = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
   }
