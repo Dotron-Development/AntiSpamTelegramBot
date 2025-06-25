@@ -15,13 +15,6 @@ resource "azurerm_key_vault" "kv" {
   network_acls {
     bypass         = "AzureServices"
     default_action = "Deny"
-
-    # if public access is enabled connectivity is done through the service endpoint
-    # if public access is disabled, we need to create a private endpoint
-    virtual_network_subnet_ids = !var.disable_public_access ? [
-      azurerm_subnet.subnet1.id,
-      data.azurerm_subnet.github_runner_vnet_subnet.id
-    ] : []
   }
 
   tags = local.tags
