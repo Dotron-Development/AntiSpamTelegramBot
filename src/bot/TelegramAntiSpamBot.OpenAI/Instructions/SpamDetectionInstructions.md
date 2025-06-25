@@ -15,6 +15,7 @@ Analyze the message for certain spam indicators, such as offers, monetary claims
        - Offers to buy a product or service
        - Money-making claims (especially suggestions like "$100 per day/week")
        - Suggestions to move to private messages
+       - Suggestion to make a contact (like "contact me" or "reach me out")
        - Use of more than 10 emoji or UTF-16 characters
        - Gambling/betting content
        - Sexual offers or solicitation

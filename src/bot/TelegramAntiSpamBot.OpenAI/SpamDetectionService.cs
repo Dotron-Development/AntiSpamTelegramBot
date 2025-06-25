@@ -1,6 +1,6 @@
 ﻿namespace TelegramAntiSpamBot.OpenAI
 {
-    internal partial class SpamDetectionService(
+    internal sealed partial class SpamDetectionService(
         [FromKeyedServices("SpamDetector")] ChatClient spamDetector,
         [FromKeyedServices("ImageAnalyzer")] ChatClient imageAnalyzer,
         SpamDetectionInstructions instructions,
@@ -12,17 +12,11 @@
             TopP = 0.95f,
             PresencePenalty = 0,
             FrequencyPenalty = 0,
-            MaxOutputTokenCount = 100
+            MaxOutputTokenCount = 300
         };
-
-        [GeneratedRegex(@"\{\s*""Probability""\s*:\s*(100|[1-9]?[0-9])\s*\}")]
-        private static partial Regex SpamResultRegex();
 
         [GeneratedRegex(@"""TextOnImage""\s*:\s*""(.*?)""")]
         private static partial Regex ImageResultRegex();
-
-        [GeneratedRegex(@"\{\s*""Explanation""\s*:\s*""[^""]*""\s*\}")]
-        private static partial Regex ExplanationRegex();
 
         public async Task<SpamRequestResult> IsSpam(
             string userMessage,
@@ -44,29 +38,17 @@
                 ], ChatCompletionOptions);
 
                 var responseText = completion.Content[0].Text;
+                LogDebugSpamDetectionAiResponse(logger, responseText);
 
-                var spamRespMatch = SpamResultRegex().Match(responseText);
-                if (spamRespMatch.Success)
+                var result = JsonSerializer.Deserialize<SpamDetectionResult>(responseText);
+
+                if (result?.Probability is { } number)
                 {
-                    LogDebugSpamDetectionAiResponse(logger, responseText);
+                    if (!explainDecision) return new SpamRequestResult(ResultType.Evaluated, number);
 
-                    var json = spamRespMatch.Groups[0].Value;
-                    var result = JsonSerializer.Deserialize<SpamDetectionResult>(json);
+                    var explanationResult = JsonSerializer.Deserialize<SpamExplanationResult>(responseText);
 
-                    if (result?.Probability is { } number)
-                    {
-                        if (!explainDecision) return new SpamRequestResult(ResultType.Evaluated, number);
-
-
-                        var explanation = ExplanationRegex().Match(responseText);
-                        if (!explanation.Success)
-                            return new SpamRequestResult(ResultType.Evaluated, number);
-
-                        var explanationJson = explanation.Groups[0].Value;
-                        var explanationResult = JsonSerializer.Deserialize<SpamExplanationResult>(explanationJson);
-
-                        return new SpamRequestResult(ResultType.Evaluated, number, explanationResult?.Explanation);
-                    }
+                    return new SpamRequestResult(ResultType.Evaluated, number, explanationResult?.Explanation);
                 }
 
                 logger.LogWarning("Unexpected answer from AI: {content}", completion.Content[0].Text);

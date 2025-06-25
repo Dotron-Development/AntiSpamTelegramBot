@@ -1,10 +1,16 @@
 {
   "version": "2.0",
   "logging": {
+    // this log configuration affect the only the function host
+    // the rest of the logging configuration is in the appsettings.json
     "logLevel": {
-      "default": "Information",
-      "Function": "Information",
-      "TelegramAntiSpamBot": "Debug"
+      "default": "Debug",
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.Hosting": "Warning",
+      "Host": "Warning",
+      "Microsoft.Extensions.Hosting": "Warning",
+      "Microsoft.Azure.WebJobs": "Warning",
+      "Function": "Debug"
     },
     "applicationInsights": {
       "samplingSettings": {

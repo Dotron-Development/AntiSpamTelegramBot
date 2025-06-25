@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+
 IHostBuilder builder = new HostBuilder();
 
 builder.ConfigureFunctionsWorkerDefaults(b =>
@@ -9,9 +11,13 @@ builder.ConfigureFunctionsWorkerDefaults(b =>
     services.AddApplicationInsightsTelemetryWorkerService();
     services.ConfigureFunctionsApplicationInsights();
 })
-.ConfigureLogging(logging =>
+.ConfigureAppConfiguration(configurationBuilder =>
 {
-    logging.Services.Configure<LoggerFilterOptions>(options =>
+    configurationBuilder.AddJsonFile("appsettings.json");
+})
+.ConfigureLogging((context, loggingBuilder) =>
+{
+    loggingBuilder.Services.Configure<LoggerFilterOptions>((options) =>
     {
         var defaultRule = options.Rules.FirstOrDefault(rule => rule.ProviderName
             == "Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider");
@@ -20,6 +26,8 @@ builder.ConfigureFunctionsWorkerDefaults(b =>
             options.Rules.Remove(defaultRule);
         }
     });
+    
+    loggingBuilder.AddConfiguration(context.Configuration.GetSection("Logging"));
 });
 
  
