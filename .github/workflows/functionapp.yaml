@@ -79,4 +79,4 @@ jobs:
           az functionapp config set \
             --name ${{ inputs.function_app_name }} \
             --resource-group ${{ inputs.resource_group_name }} \
-            --set keyVaultReferenceIdentity=${{ inputs.function_app_identity_id }}
+            --setings "keyVaultReferenceIdentity=${{ inputs.function_app_identity_id }}"
