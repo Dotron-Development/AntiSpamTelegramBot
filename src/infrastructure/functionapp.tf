@@ -41,7 +41,15 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   runtime_version             = "9.0"
   instance_memory_in_mb       = 2048
 
-  site_config {}
+  site_config {
+    application_insights_connection_string = azurerm_application_insights.appinsights.connection_string
+    application_insights_key               = azurerm_application_insights.appinsights.instrumentation_key
+  }
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.functionapp_identity.id]
+  }
 
   app_settings = {
 
