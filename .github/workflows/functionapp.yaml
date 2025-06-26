@@ -59,9 +59,7 @@ jobs:
       - name: "Publish Using Dotnet"
         shell: bash
         run: |
-          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
           dotnet publish "${{ env.WORKING_DIRECTORY }}" --configuration Release --os linux --arch x64 --output "${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}"
-          popd
 
       - name: Publish Artifacts
         uses: actions/upload-artifact@v4
