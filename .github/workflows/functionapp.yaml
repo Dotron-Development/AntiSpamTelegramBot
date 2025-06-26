@@ -64,10 +64,10 @@ jobs:
           popd
 
       - name: Publish Artifacts
-          uses: actions/upload-artifact@v4
-          with:
-            name: functionapp
-            path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: functionapp
+          path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
 
       - name: Deploy to Azure Function App
         uses: Azure/functions-action@v1
