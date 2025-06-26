@@ -12,7 +12,7 @@ resource "azurerm_storage_account" "function_storage" {
 
 resource "azurerm_storage_container" "function_storage_container" {
   name                  = "${local.function_app_name}-flexcontrainer"
-  storage_account_id    = azurerm_storage_account.example.id
+  storage_account_id    = azurerm_storage_account.function_storage.id
   container_access_type = "private"
 }
 
@@ -27,7 +27,7 @@ resource "azurerm_service_plan" "function_sp" {
   tags = local.tags
 }
 
-resource "azurerm_function_app_flex_consumption" "function_sp" {
+resource "azurerm_function_app_flex_consumption" "function_app" {
   name                = local.function_app_name
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
@@ -39,7 +39,6 @@ resource "azurerm_function_app_flex_consumption" "function_sp" {
   storage_access_key          = azurerm_storage_account.function_storage.primary_access_key
   runtime_name                = "dotnet-isolated"
   runtime_version             = "9.0"
-  maximum_instance_count      = 1
   instance_memory_in_mb       = 2048
 
   site_config {}

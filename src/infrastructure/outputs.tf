@@ -3,6 +3,6 @@ output "resource_group_name" {
 }
 
 output "functionapp_name" {
-  value = azurerm_windows_function_app.function_app.name
+  value = azurerm_function_app_flex_consumption.function_app.name
 }
 

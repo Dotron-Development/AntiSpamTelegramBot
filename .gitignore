@@ -400,4 +400,5 @@ FodyWeavers.xsd
 
 # Terraform
 .terraform/
+.terraform.lock.hcl
 src/bot/TelegramAntiSpamBot.Initializer/Properties/launchSettings.json
