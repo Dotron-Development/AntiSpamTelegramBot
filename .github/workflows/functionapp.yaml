@@ -24,16 +24,14 @@ permissions:
   contents: read
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: "bot/TelegramAntiSpamBot.Functions"
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: "bot/TelegramAntiSpamBot.Functions/published"
+  WORKING_DIRECTORY: src/bot/TelegramAntiSpamBot.Functions
   DOTNET_VERSION: "9.0.x"
   DOTNET_INSTALL_DIR: "./.dotnet"
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src
 
     environment: ${{ inputs.environment }}
     steps:
@@ -62,29 +60,20 @@ jobs:
         shell: bash
         run: |
           pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-          dotnet publish --configuration Release --os win --arch x64 --output ./output
+          dotnet publish "${{ env.WORKING_DIRECTORY }}" --configuration Release --os linux --arch x64 --output "${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}"
           popd
 
-      - name: Zip published output
-        run: |
-          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
-          zip -r app.zip .
-          popd
-
-      - name: Upload publishing artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app
-          path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
+      - name: Publish Artifacts
+          uses: actions/upload-artifact@v4
+          with:
+            name: functionapp
+            path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
 
       - name: Deploy to Azure Function App
-        run: |
-          echo "Resource Group Name: ${{ inputs.resource_group_name }}"
-          echo "Function App Name: ${{ inputs.function_app_name }}"
-
-          RESOURCE_GROUP_NAME=${{ inputs.resource_group_name }}
-          FUNCTION_APP_NAME=${{ inputs.function_app_name }}
-          az functionapp deployment source config-zip --resource-group $RESOURCE_GROUP_NAME --name $FUNCTION_APP_NAME --src ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
 
       - name: Set Key Vault Reference Identity
         run: |

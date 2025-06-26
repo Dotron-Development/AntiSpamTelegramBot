@@ -38,7 +38,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   storage_authentication_type = "StorageAccountConnectionString"
   storage_access_key          = azurerm_storage_account.function_storage.primary_access_key
   runtime_name                = "dotnet-isolated"
-  runtime_version             = "9"
+  runtime_version             = "9.0"
   instance_memory_in_mb       = 2048
 
   site_config {
