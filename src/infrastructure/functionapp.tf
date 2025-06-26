@@ -1,3 +1,6 @@
+locals {
+  function_app_name = "fn-${local.appName}-${var.environment_prefix}"
+}
 resource "azurerm_storage_account" "function_storage" {
   name                     = "satgbotfnapp${var.environment_prefix}"
   resource_group_name      = azurerm_resource_group.rg.name
@@ -7,41 +10,39 @@ resource "azurerm_storage_account" "function_storage" {
   tags                     = local.tags
 }
 
+resource "azurerm_storage_container" "function_storage_container" {
+  name                  = "${local.function_app_name}-flexcontrainer"
+  storage_account_id    = azurerm_storage_account.example.id
+  container_access_type = "private"
+}
+
 resource "azurerm_service_plan" "function_sp" {
   name                = "sp-${local.appName}-fn-${var.environment_prefix}"
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
 
-  os_type  = "Windows"
-  sku_name = "Y1"
+  os_type  = "Linux"
+  sku_name = "FC1"
 
   tags = local.tags
 }
 
-resource "azurerm_windows_function_app" "function_app" {
-  name                            = "fn-${local.appName}-${var.environment_prefix}"
-  location                        = var.location
-  resource_group_name             = azurerm_resource_group.rg.name
-  service_plan_id                 = azurerm_service_plan.function_sp.id
-  storage_account_name            = azurerm_storage_account.function_storage.name
-  storage_account_access_key      = azurerm_storage_account.function_storage.primary_access_key
-  key_vault_reference_identity_id = azurerm_user_assigned_identity.functionapp_identity.id
-  https_only                      = true
+resource "azurerm_function_app_flex_consumption" "function_sp" {
+  name                = local.function_app_name
+  location            = var.location
+  resource_group_name = azurerm_resource_group.rg.name
+  service_plan_id     = azurerm_service_plan.function_sp.id
 
-  site_config {
-    always_on                              = false
-    app_scale_limit                        = 5
-    use_32_bit_worker                      = false
-    application_insights_connection_string = azurerm_application_insights.appinsights.connection_string
-    application_insights_key               = azurerm_application_insights.appinsights.instrumentation_key
+  storage_container_type      = "blobContainer"
+  storage_container_endpoint  = "${azurerm_storage_account.function_storage.primary_blob_endpoint}${azurerm_storage_container.function_storage_container.name}"
+  storage_authentication_type = "StorageAccountConnectionString"
+  storage_access_key          = azurerm_storage_account.function_storage.primary_access_key
+  runtime_name                = "dotnet-isolated"
+  runtime_version             = "9.0"
+  maximum_instance_count      = 1
+  instance_memory_in_mb       = 2048
 
-    application_stack {
-      dotnet_version              = "v9.0"
-      use_dotnet_isolated_runtime = true
-    }
-  }
-
-  functions_extension_version = "~4"
+  site_config {}
 
   app_settings = {
     "WEBSITE_RUN_FROM_PACKAGE" = "1"
@@ -60,12 +61,57 @@ resource "azurerm_windows_function_app" "function_app" {
     "TelegramBotConfiguration__Token"               = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
   }
 
-  identity {
-    type = "UserAssigned"
-    identity_ids = [
-      azurerm_user_assigned_identity.functionapp_identity.id
-    ]
-  }
-
   tags = local.tags
 }
+
+# resource "azurerm_windows_function_app" "function_app" {
+#   name                            = "fn-${local.appName}-${var.environment_prefix}"
+#   location                        = var.location
+#   resource_group_name             = azurerm_resource_group.rg.name
+#   service_plan_id                 = azurerm_service_plan.function_sp.id
+#   storage_account_name            = azurerm_storage_account.function_storage.name
+#   storage_account_access_key      = azurerm_storage_account.function_storage.primary_access_key
+#   key_vault_reference_identity_id = azurerm_user_assigned_identity.functionapp_identity.id
+#   https_only                      = true
+
+#   site_config {
+#     always_on                              = false
+#     app_scale_limit                        = 5
+#     use_32_bit_worker                      = false
+#     application_insights_connection_string = azurerm_application_insights.appinsights.connection_string
+#     application_insights_key               = azurerm_application_insights.appinsights.instrumentation_key
+
+#     application_stack {
+#       dotnet_version              = "v9.0"
+#       use_dotnet_isolated_runtime = true
+#     }
+#   }
+
+#   functions_extension_version = "~4"
+
+#   app_settings = {
+#     "WEBSITE_RUN_FROM_PACKAGE" = "1"
+#     "FUNCTIONS_WORKER_RUNTIME" = "dotnet-isolated"
+
+#     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = module.global_constants.image_text_extraction_model_name
+#     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = module.global_constants.spam_recognition_model_name
+#     "OpenAiServicesConfiguration__ServiceUrl"                 = module.avm-res-cognitiveservices-account.endpoint
+
+#     "AzureTablesConfiguration__StorageAccountUrl" = azurerm_storage_account.main_storage.primary_web_endpoint
+
+#     "TelegramBotConfiguration__DebugAiResponse"     = "false"
+#     "TelegramBotConfiguration__ForwardSpamToChatId" = "-1002395980780"
+#     "TelegramBotConfiguration__BotName"             = var.botName,
+#     "TelegramBotConfiguration__SecretHeader"        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_secret_header.id})"
+#     "TelegramBotConfiguration__Token"               = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
+#   }
+
+#   identity {
+#     type = "UserAssigned"
+#     identity_ids = [
+#       azurerm_user_assigned_identity.functionapp_identity.id
+#     ]
+#   }
+
+#   tags = local.tags
+# }
