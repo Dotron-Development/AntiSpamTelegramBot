@@ -35,6 +35,7 @@ jobs:
     outputs:
       resource_group_name: ${{ steps.generate-outputs.outputs.resource_group_name }}
       functionapp_name: ${{ steps.generate-outputs.outputs.functionapp_name }}
+      function_app_identity_id: ${{ steps.generate-outputs.outputs.function_app_identity_id }}
 
     defaults:
       run:
