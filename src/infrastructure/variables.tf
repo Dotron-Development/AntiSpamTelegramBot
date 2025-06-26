@@ -10,27 +10,8 @@ variable "location" {
   type = string
 }
 
-variable "application_owner_object_id" {
-  type = string
-}
-
-variable "openai_state_resource_group_name" {
+variable "keyvault_administrator_object_id" {
   description = "The name of the terraform backend resource group name."
-  type        = string
-}
-
-variable "openai_state_storage_account_name" {
-  description = "The name of the terraform backend storage account."
-  type        = string
-}
-
-variable "openai_state_container_name" {
-  description = "The name of the terraform backend container."
-  type        = string
-}
-
-variable "openai_state_key" {
-  description = "The main state file key (path)."
   type        = string
 }
 
@@ -73,4 +54,14 @@ variable "disable_public_access" {
 variable "botName" {
   description = "The name of the bot. Example: @someBotName"
   type        = string
+}
+
+variable "image_text_extractor_capacity" {
+  description = "The capacity of the image text extractor deployment."
+  type        = number
+}
+
+variable "spam_recognition_capacity" {
+  description = "The capacity of the spam recognition deployment."
+  type        = number
 }

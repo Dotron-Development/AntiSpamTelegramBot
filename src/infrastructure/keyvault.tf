@@ -1,7 +1,7 @@
 resource "azurerm_key_vault" "kv" {
   name                        = "${local.kv_name}-${var.environment_prefix}"
   location                    = var.location
-  resource_group_name         = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name         = azurerm_resource_group.rg.name
   enabled_for_disk_encryption = true
   tenant_id                   = data.azurerm_client_config.current.tenant_id
   soft_delete_retention_days  = 7
@@ -23,25 +23,25 @@ resource "azurerm_key_vault" "kv" {
 resource "azurerm_private_dns_zone" "private_dns" {
   count               = var.disable_public_access ? 1 : 0
   name                = "${local.kv_name}-${var.environment_prefix}.privatelink.vaultcore.azure.net"
-  resource_group_name = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name = azurerm_resource_group.rg.name
   tags                = local.tags
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_vnet_link" {
   count                 = var.disable_public_access ? 1 : 0
   name                  = "vnl-${local.kv_name}-${var.environment_prefix}"
-  virtual_network_id    = azurerm_virtual_network.vnet.id
+  virtual_network_id    = azurerm_virtual_network.vnet[0].id
   private_dns_zone_name = azurerm_private_dns_zone.private_dns[0].name
-  resource_group_name   = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name   = azurerm_resource_group.rg.name
   tags                  = local.tags
 }
 
 resource "azurerm_private_endpoint" "kv_pe" {
   count                         = var.disable_public_access ? 1 : 0
   name                          = "pe-${local.kv_name}-${var.environment_prefix}"
-  subnet_id                     = azurerm_subnet.subnet1.id
+  subnet_id                     = azurerm_subnet.subnet1[0].id
   location                      = var.location
-  resource_group_name           = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name           = azurerm_resource_group.rg.name
   custom_network_interface_name = "nic-${local.kv_name}-pe-${var.environment_prefix}"
 
   private_service_connection {
@@ -65,7 +65,7 @@ resource "azurerm_private_dns_a_record" "keyvault_a_record" {
   count               = var.disable_public_access ? 1 : 0
   name                = "@"
   zone_name           = azurerm_private_dns_zone.private_dns[0].name
-  resource_group_name = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name = azurerm_resource_group.rg.name
   ttl                 = 300
   records = [
     azurerm_private_endpoint.kv_pe[0].ip_configuration[0].private_ip_address,

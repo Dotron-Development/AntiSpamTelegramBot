@@ -5,7 +5,7 @@ resource "azurerm_private_endpoint" "kv_runner_pe" {
   name                          = "pe-runner-${local.kv_name}-${var.environment_prefix}"
   subnet_id                     = data.azurerm_subnet.github_runner_vnet_subnet.id
   location                      = var.location
-  resource_group_name           = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name           = azurerm_resource_group.rg.name
   custom_network_interface_name = "nic-pe-runner-${local.kv_name}-${var.environment_prefix}"
 
   private_service_connection {
@@ -23,7 +23,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_runner_vnet_l
   name                  = "vnl-runner-${local.kv_name}-${var.environment_prefix}"
   virtual_network_id    = data.azurerm_virtual_network.github_runner_vnet.id
   private_dns_zone_name = azurerm_private_dns_zone.private_dns[0].name
-  resource_group_name   = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name   = azurerm_resource_group.rg.name
 
   tags = local.tags
 }

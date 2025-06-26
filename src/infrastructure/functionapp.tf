@@ -1,6 +1,6 @@
 resource "azurerm_storage_account" "function_storage" {
   name                     = "satgbotfnapp${var.environment_prefix}"
-  resource_group_name      = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name      = azurerm_resource_group.rg.name
   location                 = var.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
@@ -10,7 +10,7 @@ resource "azurerm_storage_account" "function_storage" {
 resource "azurerm_service_plan" "function_sp" {
   name                = "sp-${local.appName}-fn-${var.environment_prefix}"
   location            = var.location
-  resource_group_name = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name = azurerm_resource_group.rg.name
 
   os_type  = "Windows"
   sku_name = "Y1"
@@ -21,7 +21,7 @@ resource "azurerm_service_plan" "function_sp" {
 resource "azurerm_windows_function_app" "function_app" {
   name                            = "fn-${local.appName}-${var.environment_prefix}"
   location                        = var.location
-  resource_group_name             = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  resource_group_name             = azurerm_resource_group.rg.name
   service_plan_id                 = azurerm_service_plan.function_sp.id
   storage_account_name            = azurerm_storage_account.function_storage.name
   storage_account_access_key      = azurerm_storage_account.function_storage.primary_access_key
@@ -49,7 +49,7 @@ resource "azurerm_windows_function_app" "function_app" {
 
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = module.global_constants.image_text_extraction_model_name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = module.global_constants.spam_recognition_model_name
-    "OpenAiServicesConfiguration__ServiceUrl"                 = data.terraform_remote_state.openai_data.outputs.openai_service_url
+    "OpenAiServicesConfiguration__ServiceUrl"                 = module.avm-res-cognitiveservices-account.endpoint
 
     "AzureTablesConfiguration__StorageAccountUrl" = azurerm_storage_account.main_storage.primary_web_endpoint
 

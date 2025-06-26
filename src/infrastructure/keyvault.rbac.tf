@@ -2,7 +2,7 @@
 resource "azurerm_role_assignment" "owner_allow_all" {
   scope                = azurerm_key_vault.kv.id
   role_definition_name = "Key Vault Administrator"
-  principal_id         = var.application_owner_object_id
+  principal_id         = var.keyvault_administrator_object_id
 }
 
 # allows the azure functions to read secrets
