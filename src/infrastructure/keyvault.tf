@@ -16,10 +16,9 @@ resource "azurerm_key_vault" "kv" {
     bypass         = "AzureServices"
     default_action = "Deny"
 
-    # access from github runner subnet to key vault
     # only if public access is enabled
+    # access from github runner subnet to key vault
     virtual_network_subnet_ids = !var.disable_public_access ? [
-      azurerm_subnet.subnet1.id,
       data.azurerm_subnet.github_runner_vnet_subnet.id
     ] : []
   }
