@@ -11,7 +11,7 @@ variable "location" {
 }
 
 variable "keyvault_administrator_object_id" {
-  description = "The name of the terraform backend resource group name."
+  description = "The id of the KV administrator."
   type        = string
 }
 
