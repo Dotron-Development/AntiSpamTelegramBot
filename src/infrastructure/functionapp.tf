@@ -44,7 +44,6 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   site_config {}
 
   app_settings = {
-    "WEBSITE_RUN_FROM_PACKAGE" = "1"
 
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = module.global_constants.image_text_extraction_model_name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = module.global_constants.spam_recognition_model_name
