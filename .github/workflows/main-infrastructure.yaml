@@ -88,9 +88,11 @@ jobs:
         run: |
           RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name)
           FUNCTION_APP_NAME=$(terraform output -raw functionapp_name)
-          if [ -z "$RESOURCE_GROUP_NAME" ] || [ -z "$FUNCTION_APP_NAME" ]; then
-            echo "Error: RESOURCE_GROUP_NAME or FUNCTION_APP_NAME is empty."
+          FUNCTION_APP_IDENTITY_ID=$(terraform output -raw function_app_identity_id)
+          if [ -z "$RESOURCE_GROUP_NAME" ] || [ -z "$FUNCTION_APP_NAME" ] || [ -z "$FUNCTION_APP_IDENTITY_ID" ]; then
+            echo "Error: RESOURCE_GROUP_NAME or FUNCTION_APP_NAME or FUNCTION_APP_IDENTITY_ID is empty."
             exit 1
           fi
           echo "resource_group_name=$RESOURCE_GROUP_NAME" >> $GITHUB_OUTPUT
           echo "functionapp_name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
+          echo "function_app_identity_id=$FUNCTION_APP_IDENTITY_ID" >> $GITHUB_OUTPUT

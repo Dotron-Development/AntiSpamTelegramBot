@@ -11,6 +11,10 @@ on:
         description: "The name of the function app"
         required: true
         type: string
+      function_app_identity_id:
+        description: "The function app identity ID for the Key Vault reference"
+        required: true
+        type: string
       environment:
         required: true
         type: string
@@ -81,3 +85,11 @@ jobs:
           RESOURCE_GROUP_NAME=${{ inputs.resource_group_name }}
           FUNCTION_APP_NAME=${{ inputs.function_app_name }}
           az functionapp deployment source config-zip --resource-group $RESOURCE_GROUP_NAME --name $FUNCTION_APP_NAME --src ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
+
+      - name: Set Key Vault Reference Identity
+        run: |
+          echo "Setting Key Vault reference identity..."
+          az functionapp config set \
+            --name ${{ inputs.function_app_name }} \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --key-vault-reference-identity ${{ inputs.function_app_identity_id }}
