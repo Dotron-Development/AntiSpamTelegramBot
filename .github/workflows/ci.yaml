@@ -11,12 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  deploy-openai-infrastructure-to-dev:
-    uses: ./.github/workflows/openai-infrastructure.yaml
-    with:
-      environment: dev
-    secrets: inherit
-
   deploy-main-infrastructure-to-dev:
     needs: deploy-openai-infrastructure-to-dev
     uses: ./.github/workflows/main-infrastructure.yaml
@@ -31,15 +25,6 @@ jobs:
       environment: dev
       resource_group_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.resource_group_name }}
       function_app_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.functionapp_name }}
-    secrets: inherit
-
-  deploy-openai-infrastructure-to-prod:
-    needs:
-      - deploy-main-infrastructure-to-dev
-      - deploy-functionapp-to-dev
-    uses: ./.github/workflows/openai-infrastructure.yaml
-    with:
-      environment: prod
     secrets: inherit
 
   deploy-main-infrastructure-to-prod:
