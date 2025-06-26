@@ -45,7 +45,6 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
 
   app_settings = {
     "WEBSITE_RUN_FROM_PACKAGE" = "1"
-    "FUNCTIONS_WORKER_RUNTIME" = "dotnet-isolated"
 
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = module.global_constants.image_text_extraction_model_name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = module.global_constants.spam_recognition_model_name
