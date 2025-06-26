@@ -40,4 +40,5 @@ jobs:
       environment: prod
       resource_group_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.resource_group_name }}
       function_app_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.functionapp_name }}
+      function_app_identity_id: ${{ needs.deploy-main-infrastructure-to-prod.outputs.function_app_identity_id }}
     secrets: inherit
