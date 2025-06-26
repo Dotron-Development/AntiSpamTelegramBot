@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   deploy-main-infrastructure-to-dev:
-    needs: deploy-openai-infrastructure-to-dev
     uses: ./.github/workflows/main-infrastructure.yaml
     with:
       environment: dev
@@ -28,7 +27,6 @@ jobs:
     secrets: inherit
 
   deploy-main-infrastructure-to-prod:
-    needs: deploy-openai-infrastructure-to-prod
     uses: ./.github/workflows/main-infrastructure.yaml
     with:
       environment: prod
