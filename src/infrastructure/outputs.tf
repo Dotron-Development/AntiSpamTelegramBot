@@ -7,5 +7,5 @@ output "functionapp_name" {
 }
 
 output "function_app_identity_id" {
-  value = azurerm_user_assigned_identity.functionapp_identity.principal_id
+  value = azurerm_user_assigned_identity.functionapp_identity.id
 }
