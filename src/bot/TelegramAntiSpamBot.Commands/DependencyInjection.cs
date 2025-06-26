@@ -1,7 +1,4 @@
-﻿using Microsoft.Extensions.Options;
-using TelegramAntispamBot.Configuration;
-
-namespace TelegramAntiSpamBot.Commands
+﻿namespace TelegramAntiSpamBot.Commands
 {
     public static class DependencyInjection
     {

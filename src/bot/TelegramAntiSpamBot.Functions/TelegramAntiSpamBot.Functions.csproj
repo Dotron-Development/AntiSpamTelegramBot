@@ -18,7 +18,7 @@
 		<PackageReference Include="Telegram.Bot" Version="22.5.1" />
 	</ItemGroup>
 	<ItemGroup>
-		<ProjectReference Include="..\..\..\TelegramAntiSpamBot.Commands\TelegramAntiSpamBot.Commands.csproj" />
+		<ProjectReference Include="..\TelegramAntiSpamBot.Commands\TelegramAntiSpamBot.Commands.csproj" />
 		<ProjectReference Include="..\TelegramAntiSpamBot.OpenAI\TelegramAntiSpamBot.OpenAI.csproj" />
 		<ProjectReference Include="..\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj" />
 	</ItemGroup>

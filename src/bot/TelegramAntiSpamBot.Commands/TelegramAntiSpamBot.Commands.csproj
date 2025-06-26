@@ -11,8 +11,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\bot\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj" />
     <ProjectReference Include="..\TelegramAntispamBot.Configuration\TelegramAntispamBot.Configuration.csproj" />
+    <ProjectReference Include="..\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj" />
   </ItemGroup>
 
 </Project>
