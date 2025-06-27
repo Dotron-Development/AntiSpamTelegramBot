@@ -82,14 +82,13 @@ resource "azurerm_service_plan" "temp_sp" {
 }
 
 resource "azurerm_windows_function_app" "temp" {
-  name                            = "fn-temp-${local.appName}-${var.environment_prefix}"
-  location                        = var.location
-  resource_group_name             = azurerm_resource_group.rg.name
-  service_plan_id                 = azurerm_service_plan.temp_sp.id
-  storage_account_name            = azurerm_storage_account.function_storage.name
-  storage_account_access_key      = azurerm_storage_account.function_storage.primary_access_key
-  key_vault_reference_identity_id = azurerm_user_assigned_identity.functionapp_identity.id
-  https_only                      = true
+  name                       = "fn-temp-${local.appName}-${var.environment_prefix}"
+  location                   = var.location
+  resource_group_name        = azurerm_resource_group.rg.name
+  service_plan_id            = azurerm_service_plan.temp_sp.id
+  storage_account_name       = azurerm_storage_account.function_storage.name
+  storage_account_access_key = azurerm_storage_account.function_storage.primary_access_key
+  https_only                 = true
 
   site_config {
     always_on                              = false
