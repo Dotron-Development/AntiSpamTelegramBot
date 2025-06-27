@@ -14,9 +14,9 @@ on:
       functionapp_name:
         description: "The name of the function app"
         value: ${{ jobs.main-infrastructure.outputs.functionapp_name }}
-      function_app_identity_id_encoded:
-        description: "The function app identity ID for the Key Vault reference. Encoded."
-        value: ${{ jobs.main-infrastructure.outputs.function_app_identity_id_encoded }}
+      function_app_identity_id:
+        description: "The function app identity ID for the Key Vault reference"
+        value: ${{ jobs.main-infrastructure.outputs.function_app_identity_id }}
 
 env:
   # service principal credentials
@@ -35,7 +35,7 @@ jobs:
     outputs:
       resource_group_name: ${{ steps.generate-outputs.outputs.resource_group_name }}
       functionapp_name: ${{ steps.generate-outputs.outputs.functionapp_name }}
-      function_app_identity_id_encoded: ${{ steps.generate-outputs.outputs.function_app_identity_id_encoded }}
+      function_app_identity_id: ${{ steps.generate-outputs.outputs.function_app_identity_id }}
 
     defaults:
       run:
@@ -99,5 +99,4 @@ jobs:
           fi
           echo "resource_group_name=$RESOURCE_GROUP_NAME" >> $GITHUB_OUTPUT
           echo "functionapp_name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
-          ENCODED_IDENTITY=$(echo "$FUNCTION_APP_IDENTITY_ID" | base64 -w 0)
-          echo "function_app_identity_id_encoded=$ENCODED_IDENTITY" >> $GITHUB_OUTPUT
+          echo "function_app_identity_id=$FUNCTION_APP_IDENTITY_ID" >> $GITHUB_OUTPUT

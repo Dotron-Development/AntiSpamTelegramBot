@@ -68,3 +68,46 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
 
   tags = local.tags
 }
+
+
+resource "azurerm_service_plan" "temp_sp" {
+  name                = "sp-temp-${local.appName}-fn-${var.environment_prefix}"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  os_type  = "Windows"
+  sku_name = "Y1"
+
+  tags = local.tags
+}
+
+resource "azurerm_windows_function_app" "temp" {
+  name                            = "fn-temp-${local.appName}-${var.environment_prefix}"
+  location                        = var.location
+  resource_group_name             = azurerm_resource_group.rg.name
+  service_plan_id                 = azurerm_service_plan.temp_sp.id
+  storage_account_name            = azurerm_storage_account.function_storage.name
+  storage_account_access_key      = azurerm_storage_account.function_storage.primary_access_key
+  key_vault_reference_identity_id = azurerm_user_assigned_identity.functionapp_identity.id
+  https_only                      = true
+
+  site_config {
+    always_on                              = false
+    app_scale_limit                        = 5
+    use_32_bit_worker                      = false
+    application_insights_connection_string = azurerm_application_insights.appinsights.connection_string
+    application_insights_key               = azurerm_application_insights.appinsights.instrumentation_key
+
+    application_stack {
+      dotnet_version              = "v9.0"
+      use_dotnet_isolated_runtime = true
+    }
+  }
+
+  identity {
+    type = "UserAssigned"
+    identity_ids = [
+      azurerm_user_assigned_identity.functionapp_identity.id
+    ]
+  }
+}

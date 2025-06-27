@@ -11,8 +11,8 @@ on:
         description: "The name of the function app"
         required: true
         type: string
-      function_app_identity_id_encoded:
-        description: "Base64 encoded function app identity resource ID"
+      function_app_identity_id:
+        description: "Function app identity resource ID"
         required: true
         type: string
       environment:
@@ -46,21 +46,18 @@ jobs:
             exit 1
           fi
 
-      - name: Decode Identity ID and Setup Environment
-        id: decode-identity
+      - name: Setup Environment
+        id: setup-env
         run: |
-          # Decode the base64 encoded identity ID
-          DECODED_IDENTITY_ID=$(echo "${{ inputs.function_app_identity_id_encoded }}" | base64 -d)
-
-          # Validate the decoded value
-          if [ -z "$DECODED_IDENTITY_ID" ]; then
-            echo "❌ Error: Failed to decode function app identity ID"
+          # Validate the identity ID value
+          if [ -z "${{ inputs.function_app_identity_id }}" ]; then
+            echo "❌ Error: Function app identity ID is empty"
             exit 1
           fi
 
-          echo "✅ Successfully decoded identity ID"
+          echo "✅ Function app identity ID validated"
           # Make it available to subsequent steps as environment variable
-          echo "DECODED_IDENTITY_ID=$DECODED_IDENTITY_ID" >> $GITHUB_ENV
+          echo "FUNCTION_APP_IDENTITY_ID=${{ inputs.function_app_identity_id }}" >> $GITHUB_ENV
 
       - name: "Azure login"
         uses: azure/login@v2
@@ -95,4 +92,4 @@ jobs:
           az functionapp config set \
             --name ${{ inputs.function_app_name }} \
             --resource-group ${{ inputs.resource_group_name }} \
-            --setings "keyVaultReferenceIdentity=${{ env.DECODED_IDENTITY_ID }}"
+            --setings "keyVaultReferenceIdentity=${{ env.FUNCTION_APP_IDENTITY_ID }}"

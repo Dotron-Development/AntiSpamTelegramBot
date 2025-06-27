@@ -47,6 +47,8 @@ namespace TelegramAntiSpamBot.Functions
                         messageContent = MergeMessageContent(messageContent, imageText);
                     }
 
+                    logger.LogInformation("Message content: {messageContent}", messageContent);
+
                     // Step 3. Check message content for spam
                     if (messageContent.Length > 30 || imageUrl is not null)
                     {
@@ -105,7 +107,14 @@ namespace TelegramAntiSpamBot.Functions
 
             if (botConfig.Value.ForwardSpamToChatId != null)
             {
-                await bot.ForwardMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), chatId, messageId);
+                try
+                {
+                    await bot.ForwardMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), chatId, messageId);
+                }
+                catch (Exception e)
+                {
+                    logger.LogError(e, "Unable to forward the message to chat id {chatId}", chatId);
+                }
             }
 
             await bot.DeleteMessage(chatId, messageId);
