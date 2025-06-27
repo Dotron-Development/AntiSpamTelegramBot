@@ -104,6 +104,21 @@ resource "azurerm_windows_function_app" "temp" {
     }
   }
 
+  app_settings = {
+
+    "OpenAiServicesConfiguration__ImageRecognitionDeployment" = module.global_constants.image_text_extraction_model_name
+    "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = module.global_constants.spam_recognition_model_name
+    "OpenAiServicesConfiguration__ServiceUrl"                 = module.avm-res-cognitiveservices-account.endpoint
+
+    "AzureTablesConfiguration__StorageAccountUrl" = azurerm_storage_account.main_storage.primary_web_endpoint
+
+    "TelegramBotConfiguration__DebugAiResponse"     = "false"
+    "TelegramBotConfiguration__ForwardSpamToChatId" = "-1002395980780"
+    "TelegramBotConfiguration__BotName"             = var.botName,
+    "TelegramBotConfiguration__SecretHeader"        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_secret_header.id})"
+    "TelegramBotConfiguration__Token"               = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
+  }
+
   identity {
     type = "UserAssigned"
     identity_ids = [
