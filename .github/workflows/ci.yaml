@@ -28,12 +28,14 @@ jobs:
 
   deploy-main-infrastructure-to-prod:
     timeout-minutes: 10
+    environment: prod
     uses: ./.github/workflows/main-infrastructure.yaml
     with:
       environment: prod
     secrets: inherit
 
   deploy-functionapp-to-prod:
+    environment: prod
     needs: deploy-main-infrastructure-to-prod
     uses: ./.github/workflows/functionapp.yaml
     with:
