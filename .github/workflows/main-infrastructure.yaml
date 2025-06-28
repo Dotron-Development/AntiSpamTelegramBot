@@ -14,9 +14,9 @@ on:
       functionapp_name:
         description: "The name of the function app"
         value: ${{ jobs.main-infrastructure.outputs.functionapp_name }}
-      function_app_identity_id:
-        description: "The function app identity ID for the Key Vault reference"
-        value: ${{ jobs.main-infrastructure.outputs.function_app_identity_id }}
+      function_app_identity_name:
+        description: "The function app identity name for the Key Vault reference"
+        value: ${{ jobs.main-infrastructure.outputs.function_app_identity_name }}
 
 env:
   # service principal credentials
@@ -35,7 +35,7 @@ jobs:
     outputs:
       resource_group_name: ${{ steps.generate-outputs.outputs.resource_group_name }}
       functionapp_name: ${{ steps.generate-outputs.outputs.functionapp_name }}
-      function_app_identity_id: ${{ steps.generate-outputs.outputs.function_app_identity_id }}
+      function_app_identity_name: ${{ steps.generate-outputs.outputs.function_app_identity_name }}
 
     defaults:
       run:
@@ -92,11 +92,11 @@ jobs:
         run: |
           RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name)
           FUNCTION_APP_NAME=$(terraform output -raw functionapp_name)
-          FUNCTION_APP_IDENTITY_ID=$(terraform output -raw function_app_identity_id)
-          if [ -z "$RESOURCE_GROUP_NAME" ] || [ -z "$FUNCTION_APP_NAME" ] || [ -z "$FUNCTION_APP_IDENTITY_ID" ]; then
-            echo "Error: RESOURCE_GROUP_NAME or FUNCTION_APP_NAME or FUNCTION_APP_IDENTITY_ID is empty."
+          FUNCTION_APP_IDENTITY_NAME=$(terraform output -raw function_app_identity_name)
+          if [ -z "$RESOURCE_GROUP_NAME" ] || [ -z "$FUNCTION_APP_NAME" ] || [ -z "$FUNCTION_APP_IDENTITY_NAME" ]; then
+            echo "Error: RESOURCE_GROUP_NAME or FUNCTION_APP_NAME or FUNCTION_APP_IDENTITY_NAME is empty."
             exit 1
           fi
           echo "resource_group_name=$RESOURCE_GROUP_NAME" >> $GITHUB_OUTPUT
           echo "functionapp_name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
-          echo "function_app_identity_id=$FUNCTION_APP_IDENTITY_ID" >> $GITHUB_OUTPUT
+          echo "function_app_identity_name=$FUNCTION_APP_IDENTITY_NAME" >> $GITHUB_OUTPUT

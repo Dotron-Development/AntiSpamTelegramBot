@@ -3,7 +3,7 @@ name: ci
 on:
   push:
     branches:
-      - main
+      function_app_identity_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.function_app_identity_name }}    - main
   workflow_dispatch:
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
       environment: dev
       resource_group_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.resource_group_name }}
       function_app_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.functionapp_name }}
-      function_app_identity_id: ${{ needs.deploy-main-infrastructure-to-dev.outputs.function_app_identity_id }}
+      function_app_identity_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.function_app_identity_name }}
     secrets: inherit
 
   deploy-main-infrastructure-to-prod:
@@ -40,5 +40,5 @@ jobs:
       environment: prod
       resource_group_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.resource_group_name }}
       function_app_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.functionapp_name }}
-      function_app_identity_id: ${{ needs.deploy-main-infrastructure-to-prod.outputs.function_app_identity_id }}
+      function_app_identity_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.function_app_identity_name }}
     secrets: inherit

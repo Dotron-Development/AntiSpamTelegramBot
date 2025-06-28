@@ -11,8 +11,8 @@ on:
         description: "The name of the function app"
         required: true
         type: string
-      function_app_identity_id:
-        description: "Function app identity resource ID"
+      function_app_identity_name:
+        description: "Function app identity resource name"
         required: true
         type: string
       environment:
@@ -49,15 +49,15 @@ jobs:
       - name: Setup Environment
         id: setup-env
         run: |
-          # Validate the identity ID value
-          if [ -z "${{ inputs.function_app_identity_id }}" ]; then
-            echo "❌ Error: Function app identity ID is empty"
+          # Validate the identity name value
+          if [ -z "${{ inputs.function_app_identity_name }}" ]; then
+            echo "❌ Error: Function app identity name is empty"
             exit 1
           fi
 
-          echo "✅ Function app identity ID validated"
+          echo "✅ Function app identity name validated"
           # Make it available to subsequent steps as environment variable
-          echo "FUNCTION_APP_IDENTITY_ID=${{ inputs.function_app_identity_id }}" >> $GITHUB_ENV
+          echo "FUNCTION_APP_IDENTITY_NAME=${{ inputs.function_app_identity_name }}" >> $GITHUB_ENV
 
       - name: "Azure login"
         uses: azure/login@v2
@@ -89,7 +89,7 @@ jobs:
       - name: Set Key Vault Reference Identity
         run: |
           echo "Setting Key Vault reference identity..."
-          az functionapp config set \
+          az functionapp update \
             --name ${{ inputs.function_app_name }} \
             --resource-group ${{ inputs.resource_group_name }} \
-            --setings "keyVaultReferenceIdentity=${{ env.FUNCTION_APP_IDENTITY_ID }}"
+            --set keyVaultReferenceIdentity="/subscriptions/${{ secrets.ARM_SUBSCRIPTION_ID }}/resourcegroups/${{ inputs.resource_group_name }}/providers/microsoft.managedidentity/userassignedidentities/${{ env.FUNCTION_APP_IDENTITY_NAME }}"
