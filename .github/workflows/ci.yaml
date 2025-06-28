@@ -27,6 +27,7 @@ jobs:
     secrets: inherit
 
   deploy-main-infrastructure-to-prod:
+    timeout-minutes: 10
     uses: ./.github/workflows/main-infrastructure.yaml
     with:
       environment: prod
