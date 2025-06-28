@@ -31,8 +31,8 @@ jobs:
     with:
       environment: prod
     secrets: inherit
-    timeout-minutes: 10
     environment: prod
+    timeout-minutes: 10
 
   deploy-functionapp-to-prod:
     needs: deploy-main-infrastructure-to-prod
