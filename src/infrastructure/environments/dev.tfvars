@@ -8,3 +8,4 @@ disable_public_access              = false
 botName                            = "@DevTgAIAntiSpamBot"
 image_text_extractor_capacity      = 10
 spam_recognition_capacity          = 10
+forwardSpamToChatId                = "-4835847055"
