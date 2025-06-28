@@ -2,8 +2,7 @@ name: ci
 
 on:
   push:
-    branches:
-      function_app_identity_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.function_app_identity_name }}    - main
+    branches: main
   workflow_dispatch:
 
 permissions:
