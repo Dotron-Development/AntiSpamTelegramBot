@@ -10,7 +10,8 @@
       "Host": "Warning",
       "Microsoft.Extensions.Hosting": "Warning",
       "Microsoft.Azure.WebJobs": "Warning",
-      "Function": "Debug"
+      "Function": "Debug",
+      "Host.Triggers.Sync" : "Warning"
     },
     "applicationInsights": {
       "samplingSettings": {
