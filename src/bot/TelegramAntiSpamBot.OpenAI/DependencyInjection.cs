@@ -13,8 +13,13 @@
             {
                 var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>();
                 var client = new AzureOpenAIClient(
-                    new Uri(config.Value.ServiceUrl), 
-                    new DefaultAzureCredential());
+                    new Uri(config.Value.ServiceUrl),
+                    config.Value.OpenAiIdentityClientId != null
+                        ? new DefaultAzureCredential(new DefaultAzureCredentialOptions()
+                        {
+                            ManagedIdentityClientId = config.Value.OpenAiIdentityClientId
+                        })
+                        : new DefaultAzureCredential());
                 var chatClient = client.GetChatClient(config.Value.SpamRecognitionDeployment);
                 return chatClient;
             });
@@ -24,7 +29,12 @@
                 var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>();
                 var client = new AzureOpenAIClient(
                     new Uri(config.Value.ServiceUrl),
-                    new DefaultAzureCredential());
+                    config.Value.OpenAiIdentityClientId != null
+                        ? new DefaultAzureCredential(new DefaultAzureCredentialOptions()
+                        {
+                            ManagedIdentityClientId = config.Value.OpenAiIdentityClientId
+                        })
+                        : new DefaultAzureCredential());
                 var chatClient = client.GetChatClient(config.Value.ImageRecognitionDeployment);
                 return chatClient;
             });
