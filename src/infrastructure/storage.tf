@@ -8,21 +8,21 @@ resource "azurerm_storage_account" "main_storage" {
 }
 
 resource "azurerm_storage_table" "spam_stats" {
-  name                 = "spam_stats"
+  name                 = "SpamStats"
   storage_account_name = azurerm_storage_account.main_storage.name
 }
 
 resource "azurerm_storage_table" "spam_history" {
-  name                 = "spam_history"
+  name                 = "SpamHistory"
   storage_account_name = azurerm_storage_account.main_storage.name
 }
 
 resource "azurerm_storage_table" "spam_hash" {
-  name                 = "spam_hash"
+  name                 = "SpamHash"
   storage_account_name = azurerm_storage_account.main_storage.name
 }
 
 resource "azurerm_storage_table" "message_count" {
-  name                 = "message_count"
+  name                 = "MessageCount"
   storage_account_name = azurerm_storage_account.main_storage.name
 }
