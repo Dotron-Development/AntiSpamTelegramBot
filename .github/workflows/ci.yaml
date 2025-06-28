@@ -27,15 +27,14 @@ jobs:
     secrets: inherit
 
   deploy-main-infrastructure-to-prod:
-    timeout-minutes: 10
-    environment: prod
     uses: ./.github/workflows/main-infrastructure.yaml
     with:
       environment: prod
     secrets: inherit
+    timeout-minutes: 10
+    environment: prod
 
   deploy-functionapp-to-prod:
-    environment: prod
     needs: deploy-main-infrastructure-to-prod
     uses: ./.github/workflows/functionapp.yaml
     with:
@@ -44,3 +43,4 @@ jobs:
       function_app_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.functionapp_name }}
       function_app_identity_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.function_app_identity_name }}
     secrets: inherit
+    environment: prod
