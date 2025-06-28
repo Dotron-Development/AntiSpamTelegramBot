@@ -31,8 +31,6 @@ jobs:
     with:
       environment: prod
     secrets: inherit
-    environment: prod
-    timeout-minutes: 10
 
   deploy-functionapp-to-prod:
     needs: deploy-main-infrastructure-to-prod
@@ -43,4 +41,3 @@ jobs:
       function_app_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.functionapp_name }}
       function_app_identity_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.function_app_identity_name }}
     secrets: inherit
-    environment: prod
