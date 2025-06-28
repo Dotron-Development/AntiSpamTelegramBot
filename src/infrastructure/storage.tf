@@ -6,3 +6,23 @@ resource "azurerm_storage_account" "main_storage" {
   account_replication_type = "GRS"
   tags                     = local.tags
 }
+
+resource "azurerm_storage_table" "spam_stats" {
+  name                 = "spam_stats"
+  storage_account_name = azurerm_storage_account.main_storage.name
+}
+
+resource "azurerm_storage_table" "spam_history" {
+  name                 = "spam_history"
+  storage_account_name = azurerm_storage_account.main_storage.name
+}
+
+resource "azurerm_storage_table" "spam_hash" {
+  name                 = "spam_hash"
+  storage_account_name = azurerm_storage_account.main_storage.name
+}
+
+resource "azurerm_storage_table" "message_count" {
+  name                 = "message_count"
+  storage_account_name = azurerm_storage_account.main_storage.name
+}
