@@ -21,12 +21,17 @@ variable "telegram_bot_token" {
   sensitive   = true
 }
 
+variable "forwardSpamToChatId" {
+  description = "Forward spam messages to group Id."
+  type        = string
+  sensitive   = true
+}
+
 variable "telegram_bot_secret_header" {
   description = "The secret header for the telegram bot."
   type        = string
   sensitive   = true
 }
-
 
 variable "github_runners_vnet_name" {
   description = "The name of the virtual network for the github runners."
