@@ -57,7 +57,8 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = module.global_constants.spam_recognition_model_name
     "OpenAiServicesConfiguration__ServiceUrl"                 = module.avm-res-cognitiveservices-account.endpoint
 
-    "AzureTablesConfiguration__StorageAccountUrl" = azurerm_storage_account.main_storage.primary_web_endpoint
+    "AzureTablesConfiguration__StorageAccountUrl"     = azurerm_storage_account.main_storage.primary_web_endpoint
+    "AzureTablesConfiguration__TableIdentityClientId" = azurerm_user_assigned_identity.functionapp_identity.client_id
 
     "TelegramBotConfiguration__DebugAiResponse"     = "false"
     "TelegramBotConfiguration__ForwardSpamToChatId" = var.forwardSpamToChatId,

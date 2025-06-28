@@ -7,5 +7,7 @@ namespace TelegramAntiSpamBot.Persistence
         [Required]
         public required string StorageAccountUrl { get; init; }
 
+        public string? TableIdentityClientId { get; init; }
+
     }
 }
