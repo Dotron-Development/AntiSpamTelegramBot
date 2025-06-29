@@ -45,7 +45,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_vnet_link" {
 resource "azurerm_private_endpoint" "kv_pe" {
   count                         = var.disable_public_access ? 1 : 0
   name                          = "pe-${local.kv_name}-${var.environment_prefix}"
-  subnet_id                     = azurerm_subnet.subnet1.id
+  subnet_id                     = azurerm_subnet.subnet2_kv[0].id
   location                      = var.location
   resource_group_name           = azurerm_resource_group.rg.name
   custom_network_interface_name = "nic-${local.kv_name}-pe-${var.environment_prefix}"

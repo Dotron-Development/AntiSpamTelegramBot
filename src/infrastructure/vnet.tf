@@ -12,7 +12,8 @@ resource "azurerm_subnet" "subnet1_functions" {
   name                 = "subnet1-function-${var.environment_prefix}"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.1.0/28"] # 16 IPs, 11 usable.
+  address_prefixes     = ["10.0.1.0/28"] # 16 IPs, 11 usable. range - 10.0.1.0 - 10.0.1.15
+
 
   delegation {
     name = "delegation"
@@ -21,4 +22,12 @@ resource "azurerm_subnet" "subnet1_functions" {
       name = "Microsoft.App/environments"
     }
   }
+}
+
+resource "azurerm_subnet" "subnet2_kv" {
+  count                = var.disable_public_access ? 1 : 0
+  name                 = "subnet2-kv-${var.environment_prefix}"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = ["10.0.1.16/28"] # 16 IPs, 11 usable. range - range - 10.0.1.16 - 10.0.1.31
 }
