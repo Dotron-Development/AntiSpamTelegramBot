@@ -53,6 +53,9 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   }
 
   app_settings = merge({
+    "KeyVaultConfiguration__KeyVaultUrl"              = azurerm_key_vault.kv.vault_uri
+    "KeyVaultConfiguration__KeyVaultIdentityClientId" = azurerm_user_assigned_identity.functionapp_identity.client_id
+
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = module.global_constants.image_text_extraction_model_name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = module.global_constants.spam_recognition_model_name
     "OpenAiServicesConfiguration__ServiceUrl"                 = module.avm-res-cognitiveservices-account.endpoint

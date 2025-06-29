@@ -10,38 +10,28 @@
                 .ValidateOnStart();
 
             serviceCollection.AddKeyedScoped("SpamDetector", (provider, _) =>
-            {
-                var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>();
-                var client = new AzureOpenAIClient(
-                    new Uri(config.Value.ServiceUrl),
-                    config.Value.OpenAiIdentityClientId != null
-                        ? new DefaultAzureCredential(new DefaultAzureCredentialOptions()
-                        {
-                            ManagedIdentityClientId = config.Value.OpenAiIdentityClientId
-                        })
-                        : new DefaultAzureCredential());
-                var chatClient = client.GetChatClient(config.Value.SpamRecognitionDeployment);
-                return chatClient;
-            });
+                CreateChatClient(provider, config => config.SpamRecognitionDeployment));
 
             serviceCollection.AddKeyedScoped("ImageAnalyzer", (provider, _) =>
-            {
-                var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>();
-                var client = new AzureOpenAIClient(
-                    new Uri(config.Value.ServiceUrl),
-                    config.Value.OpenAiIdentityClientId != null
-                        ? new DefaultAzureCredential(new DefaultAzureCredentialOptions()
-                        {
-                            ManagedIdentityClientId = config.Value.OpenAiIdentityClientId
-                        })
-                        : new DefaultAzureCredential());
-                var chatClient = client.GetChatClient(config.Value.ImageRecognitionDeployment);
-                return chatClient;
-            });
+                CreateChatClient(provider, config => config.ImageRecognitionDeployment));
 
             serviceCollection.AddSingleton<SpamDetectionInstructions>();
             serviceCollection.AddScoped<ISpamDetectionService, SpamDetectionService>();
             return serviceCollection;
+        }
+
+        private static ChatClient CreateChatClient(IServiceProvider provider, Func<OpenAiServicesConfiguration, string> deploymentSelector)
+        {
+            var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>();
+            var client = new AzureOpenAIClient(
+                new Uri(config.Value.ServiceUrl),
+                config.Value.OpenAiIdentityClientId != null
+                    ? new DefaultAzureCredential(new DefaultAzureCredentialOptions()
+                    {
+                        ManagedIdentityClientId = config.Value.OpenAiIdentityClientId
+                    })
+                    : new DefaultAzureCredential());
+            return client.GetChatClient(deploymentSelector(config.Value));
         }
     }
 }

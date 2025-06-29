@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
+using TelegramAntiSpamBot.Functions;
 
 IHostBuilder builder = new HostBuilder();
+
 
 builder.ConfigureFunctionsWorkerDefaults(b =>
 {
@@ -30,6 +32,13 @@ builder.ConfigureFunctionsWorkerDefaults(b =>
     loggingBuilder.AddConfiguration(context.Configuration.GetSection("Logging"));
 });
 
+// todo: temp solution. Should be removed as soon as Microsoft fix Flex Consumption Key Vault references
+builder.ConfigureAppConfiguration((context, configurationBuilder) =>
+{
+    var kvConfig = new KeyVaultConfiguration();
+    context.Configuration.Bind(kvConfig);
+    configurationBuilder.AddCustomKeyVault(kvConfig);
+});
  
 builder.ConfigureServices(collection =>
 {
