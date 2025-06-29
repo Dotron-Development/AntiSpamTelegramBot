@@ -52,20 +52,18 @@ Analyze the message for certain spam indicators, such as offers, monetary claims
 
 Input:
 
-```json
 {
-  "Message": "заработайте до 500 долларов в неделю",
+  "Message": "Earn up to 100 dollars a day. Contact me in private messages",
   "UserMessageCount": 8
 }
-```
 
 Output:
 
-```json
+
 {
   "Probability": <calculated_value>
 }
-```
+
 
 ## Notes
 
@@ -73,4 +71,4 @@ Output:
 - Consider both message and user activity to derive the final probability.
 - Handle edge cases, such as missing fields or unexpected input formats, gracefully.
 - If input format is invalid, DO NOT ANALYZE content and specify the reason why, return `{"Error": "Unable to analyze the content", "Reason": <reason>}`
-- DO NOT use markdown for JSON output
+- DO NOT use markdown or quotes for output. Return pure JSON.

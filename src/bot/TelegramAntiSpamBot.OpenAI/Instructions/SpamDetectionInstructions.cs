@@ -10,7 +10,7 @@
 
             if (explainDecision)
             {
-                instructions += "\n\r- Add step-by-step but short explanation of the results after output in the following format to the json with probability" +
+                instructions += "\n\r- Add step-by-step but short explanation of the results after output in the following format to the output json with probability" +
                                 " \"Explanation\": <explanation>";
             }
 

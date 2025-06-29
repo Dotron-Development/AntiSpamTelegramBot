@@ -11,7 +11,7 @@
       "Microsoft.Extensions.Hosting": "Warning",
       "Microsoft.Azure.WebJobs": "Warning",
       "Function": "Debug",
-      "Host.Triggers.Sync" : "Warning"
+      "Kudu.Legion.DeploymentSteps": "Warning"
     },
     "applicationInsights": {
       "samplingSettings": {
