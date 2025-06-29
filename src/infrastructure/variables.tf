@@ -56,7 +56,7 @@ variable "disable_public_access" {
   type        = bool
 }
 
-variable "botName" {
+variable "bot_name" {
   description = "The name of the bot. Example: @someBotName"
   type        = string
 }
@@ -69,4 +69,10 @@ variable "image_text_extractor_capacity" {
 variable "spam_recognition_capacity" {
   description = "The capacity of the spam recognition deployment."
   type        = number
+}
+
+variable "debug_ai_response" {
+  description = "Enable debugging of AI responses."
+  type        = bool
+  nullable    = true
 }
