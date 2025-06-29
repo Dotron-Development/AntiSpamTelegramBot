@@ -40,6 +40,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   runtime_name                      = "dotnet-isolated"
   runtime_version                   = "9.0"
   instance_memory_in_mb             = 2048
+  virtual_network_subnet_id         = azurerm_subnet.subnet1.id
 
   site_config {
     application_insights_connection_string = azurerm_application_insights.appinsights.connection_string
