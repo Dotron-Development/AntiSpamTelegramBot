@@ -11,28 +11,42 @@ resource "azurerm_key_vault" "kv" {
 
 
   ## network rules
-  public_network_access_enabled = false
+  public_network_access_enabled = !var.disable_public_access
+
+  network_acls {
+    bypass         = "None"
+    default_action = "Deny"
+
+    # only if public access is enabled
+    virtual_network_subnet_ids = !var.disable_public_access ? [
+      data.azurerm_subnet.github_runner_vnet_subnet.id,
+      azurerm_subnet.subnet1_functions.id
+    ] : []
+  }
 
   tags = local.tags
 }
 
 resource "azurerm_private_dns_zone" "private_dns" {
+  count               = var.disable_public_access ? 1 : 0
   name                = "${local.kv_name}-${var.environment_prefix}.privatelink.vaultcore.azure.net"
   resource_group_name = azurerm_resource_group.rg.name
   tags                = local.tags
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_vnet_link" {
+  count                 = var.disable_public_access ? 1 : 0
   name                  = "vnl-${local.kv_name}-${var.environment_prefix}"
   virtual_network_id    = azurerm_virtual_network.vnet.id
-  private_dns_zone_name = azurerm_private_dns_zone.private_dns.name
+  private_dns_zone_name = azurerm_private_dns_zone.private_dns[0].name
   resource_group_name   = azurerm_resource_group.rg.name
   tags                  = local.tags
 }
 
 resource "azurerm_private_endpoint" "kv_pe" {
+  count                         = var.disable_public_access ? 1 : 0
   name                          = "pe-${local.kv_name}-${var.environment_prefix}"
-  subnet_id                     = azurerm_subnet.subnet2_kv.id
+  subnet_id                     = azurerm_subnet.subnet2_kv[0].id
   location                      = var.location
   resource_group_name           = azurerm_resource_group.rg.name
   custom_network_interface_name = "nic-${local.kv_name}-pe-${var.environment_prefix}"
@@ -46,7 +60,7 @@ resource "azurerm_private_endpoint" "kv_pe" {
 
   ip_configuration {
     name               = "ip-${local.kv_name}-${var.environment_prefix}"
-    private_ip_address = "10.0.2.33"
+    private_ip_address = "10.0.1.33"
     subresource_name   = "vault"
     member_name        = "default"
   }
@@ -55,13 +69,14 @@ resource "azurerm_private_endpoint" "kv_pe" {
 }
 
 resource "azurerm_private_dns_a_record" "keyvault_a_record" {
+  count               = var.disable_public_access ? 1 : 0
   name                = "@"
-  zone_name           = azurerm_private_dns_zone.private_dns.name
+  zone_name           = azurerm_private_dns_zone.private_dns[0].name
   resource_group_name = azurerm_resource_group.rg.name
   ttl                 = 300
   records = [
-    azurerm_private_endpoint.kv_pe.ip_configuration[0].private_ip_address,
-    azurerm_private_endpoint.kv_runner_pe.private_service_connection[0].private_ip_address
+    azurerm_private_endpoint.kv_pe[0].ip_configuration[0].private_ip_address,
+    azurerm_private_endpoint.kv_runner_pe[0].private_service_connection[0].private_ip_address
   ]
 
   tags = local.tags
