@@ -7,9 +7,18 @@ resource "azurerm_virtual_network" "vnet" {
   tags = local.tags
 }
 
-resource "azurerm_subnet" "subnet1" {
-  name                 = "subnet1-${var.environment_prefix}"
+# Create a subnet for the function apps
+resource "azurerm_subnet" "subnet1_functions" {
+  name                 = "subnet1-function-${var.environment_prefix}"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.1.0/24"]
+  address_prefixes     = ["10.0.1.0/28"] # 16 IPs, 11 usable.
+
+  delegation {
+    name = "delegation"
+
+    service_delegation {
+      name = "Microsoft.App/environments"
+    }
+  }
 }
