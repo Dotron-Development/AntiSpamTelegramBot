@@ -14,7 +14,6 @@ resource "azurerm_subnet" "subnet1_functions" {
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.1.0/28"] # 16 IPs, 11 usable. range - 10.0.1.0 - 10.0.1.15
 
-
   delegation {
     name = "delegation"
 
@@ -22,6 +21,8 @@ resource "azurerm_subnet" "subnet1_functions" {
       name = "Microsoft.App/environments"
     }
   }
+
+  depends_on = [azurerm_resource_provider_registration.microsoft_app]
 }
 
 resource "azurerm_subnet" "subnet2_kv" {
