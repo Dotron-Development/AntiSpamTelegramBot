@@ -17,9 +17,9 @@ resource "azurerm_key_vault" "kv" {
     default_action = "Allow"
 
     # only if public access is enabled
-    # access from github runner subnet to key vault
     virtual_network_subnet_ids = !var.disable_public_access ? [
-      data.azurerm_subnet.github_runner_vnet_subnet.id
+      data.azurerm_subnet.github_runner_vnet_subnet.id,
+      azurerm_subnet.subnet1_functions.id
     ] : []
   }
 

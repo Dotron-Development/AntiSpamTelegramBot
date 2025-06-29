@@ -22,6 +22,8 @@ resource "azurerm_subnet" "subnet1_functions" {
     }
   }
 
+  service_endpoints = ["Microsoft.KeyVault", "Microsoft.Storage"]
+
   depends_on = [azurerm_resource_provider_registration.microsoft_app]
 }
 
