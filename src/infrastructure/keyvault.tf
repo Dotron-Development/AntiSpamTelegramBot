@@ -61,7 +61,7 @@ resource "azurerm_private_dns_a_record" "keyvault_a_record" {
   ttl                 = 300
   records = [
     azurerm_private_endpoint.kv_pe.ip_configuration[0].private_ip_address,
-    azurerm_private_endpoint.kv_runner_pe.private_service_connection.private_ip_address
+    azurerm_private_endpoint.kv_runner_pe.private_service_connection[0].private_ip_address
   ]
 
   tags = local.tags
