@@ -63,8 +63,8 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
 
     "TelegramBotConfiguration__ForwardSpamToChatId" = var.forwardSpamToChatId,
     "TelegramBotConfiguration__BotName"             = var.bot_name,
-    "TelegramBotConfiguration__SecretHeader"        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_secret_header.id})"
-    "TelegramBotConfiguration__Token"               = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
+    # "TelegramBotConfiguration__SecretHeader"        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_secret_header.id})"
+    # "TelegramBotConfiguration__Token"               = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
     }, var.debug_ai_response != null ? {
     "TelegramBotConfiguration__DebugAiResponse" = var.debug_ai_response
   } : {})
