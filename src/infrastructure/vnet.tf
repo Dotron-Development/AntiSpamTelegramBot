@@ -21,8 +21,6 @@ resource "azurerm_subnet" "subnet1_functions" {
       name = "Microsoft.App/environments"
     }
   }
-
-  depends_on = [azurerm_resource_provider_registration.microsoft_app]
 }
 
 resource "azurerm_subnet" "subnet2_kv" {
