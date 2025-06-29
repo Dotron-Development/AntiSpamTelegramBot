@@ -22,7 +22,9 @@ resource "azurerm_subnet" "subnet1_functions" {
     }
   }
 
-  service_endpoints = ["Microsoft.KeyVault", "Microsoft.Storage"]
+  # only if public access is enabled
+  # not needed for private links
+  service_endpoints = !var.disable_public_access ? ["Microsoft.KeyVault", "Microsoft.Storage"] : []
 
   depends_on = [azurerm_resource_provider_registration.microsoft_app]
 }

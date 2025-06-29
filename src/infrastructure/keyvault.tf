@@ -14,7 +14,7 @@ resource "azurerm_key_vault" "kv" {
 
   network_acls {
     bypass         = "AzureServices"
-    default_action = "Allow"
+    default_action = "Deny"
 
     # only if public access is enabled
     virtual_network_subnet_ids = !var.disable_public_access ? [
