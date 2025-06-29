@@ -12,7 +12,7 @@ resource "azurerm_subnet" "subnet1_functions" {
   name                 = "subnet1-function-${var.environment_prefix}"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.1.0/28"] # 16 IPs, 11 usable. range - 10.0.1.0 - 10.0.1.15
+  address_prefixes     = ["10.0.1.0/24"]
 
   delegation {
     name = "delegation"
@@ -34,5 +34,5 @@ resource "azurerm_subnet" "subnet2_kv" {
   name                 = "subnet2-kv-${var.environment_prefix}"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.1.16/28"] # 16 IPs, 11 usable. range - range - 10.0.1.16 - 10.0.1.31
+  address_prefixes     = ["10.0.1.16/24"]
 }
