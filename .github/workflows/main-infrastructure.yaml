@@ -29,7 +29,6 @@ jobs:
   main-infrastructure:
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
-    timeout-minutes: 30
 
     outputs:
       resource_group_name: ${{ steps.generate-outputs.outputs.resource_group_name }}
