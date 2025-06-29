@@ -2,12 +2,13 @@ resource "azurerm_key_vault" "kv" {
   name                        = "${local.kv_name}-${var.environment_prefix}"
   location                    = var.location
   resource_group_name         = azurerm_resource_group.rg.name
-  enabled_for_disk_encryption = true
+  enabled_for_disk_encryption = false
   tenant_id                   = data.azurerm_client_config.current.tenant_id
   soft_delete_retention_days  = 7
   purge_protection_enabled    = false
   sku_name                    = "standard"
   enable_rbac_authorization   = true
+
 
   ## network rules
   public_network_access_enabled = !var.disable_public_access
