@@ -13,7 +13,7 @@ resource "azurerm_key_vault" "kv" {
   public_network_access_enabled = !var.disable_public_access
 
   network_acls {
-    bypass         = "AzureServices"
+    bypass         = "None"
     default_action = "Deny"
 
     # only if public access is enabled
