@@ -58,7 +58,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     "OpenAiServicesConfiguration__ServiceUrl"                 = module.avm-res-cognitiveservices-account.endpoint
     "OpenAiServicesConfiguration__OpenAiIdentityClientId"     = azurerm_user_assigned_identity.functionapp_identity.client_id
 
-    "AzureTablesConfiguration__StorageAccountUrl"     = azurerm_storage_account.data_storage.primary_web_endpoint
+    "AzureTablesConfiguration__StorageAccountUrl"     = azurerm_storage_account.data_storage.primary_table_endpoint
     "AzureTablesConfiguration__TableIdentityClientId" = azurerm_user_assigned_identity.functionapp_identity.client_id
 
     "TelegramBotConfiguration__ForwardSpamToChatId" = var.forwardSpamToChatId,
