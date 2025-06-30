@@ -1,5 +1,3 @@
-using TelegramAntispamBot.Configuration;
-
 namespace TelegramAntiSpamBot.Functions
 {
     public class AntiSpamBotWebHook(ILogger<AntiSpamBotWebHook> logger,
