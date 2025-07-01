@@ -16,7 +16,7 @@ module "avm-res-cognitiveservices-account" {
         version = module.global_constants.spam_recognition_model_version
       }
       scale = {
-        type     = "Standard"
+        type     = "GlobalStandard"
         capacity = var.spam_recognition_capacity
       }
     },
@@ -29,7 +29,7 @@ module "avm-res-cognitiveservices-account" {
         version = module.global_constants.image_text_extraction_model_version
       }
       scale = {
-        type     = "Standard"
+        type     = "GlobalStandard"
         capacity = var.image_text_extractor_capacity
       }
     }
