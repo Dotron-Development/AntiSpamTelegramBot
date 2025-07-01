@@ -5,20 +5,20 @@ output "location" {
 
 output "spam_recognition_model_name" {
   description = "Model for spam recognition"
-  value       = "gpt-4o"
+  value       = "GPT-4.1-mini"
 }
 
 output "spam_recognition_model_version" {
   description = "Model version for spam recognition"
-  value       = "2024-05-13"
+  value       = "2025-04-14"
 }
 
 output "image_text_extraction_model_name" {
   description = "Model for spam recognition"
-  value       = "gpt-4o-mini"
+  value       = "GPT-4.1-nano"
 }
 
 output "image_text_extraction_model_version" {
   description = "Model version for spam recognition"
-  value       = "2024-07-18"
+  value       = "2025-04-14"
 }

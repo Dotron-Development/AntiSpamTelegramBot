@@ -75,6 +75,12 @@ namespace TelegramAntiSpamBot.Functions
                         logger.LogInformation("SPAM DETECTION RESULT: {probability}. EXPLANATION: {explanation}",
                             spamDetectionResult.Probability, spamDetectionResult.Explanation);
 
+                        if (spamDetectionResult.ResultType == ResultType.Error)
+                        {
+                            logger.LogError("Spam detection service returned error for message: {messageContent}", messageContent);
+                            return req.CreateResponse(HttpStatusCode.InternalServerError);
+                        }
+
                         if (spamDetectionResult.Probability >= 90)
                         {
                             await HandleSpam(message, messageContent,

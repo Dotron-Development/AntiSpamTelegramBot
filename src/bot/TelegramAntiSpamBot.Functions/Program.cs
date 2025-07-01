@@ -1,6 +1,4 @@
 using Microsoft.Extensions.Configuration;
-using TelegramAntiSpamBot.Functions;
-using static System.Net.WebRequestMethods;
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
 using Azure.Extensions.AspNetCore.Configuration.Secrets;
@@ -34,7 +32,7 @@ builder.ConfigureFunctionsWorkerDefaults(b =>
             })
             : new DefaultAzureCredential();
 
-        configurationBuilder.AddAzureKeyVault(new Uri(keyVaultConfig.KeyVaultUrl), credential, new Azure.Extensions.AspNetCore.Configuration.Secrets.AzureKeyVaultConfigurationOptions
+        configurationBuilder.AddAzureKeyVault(new Uri(keyVaultConfig.KeyVaultUrl), credential, new AzureKeyVaultConfigurationOptions
         {
             Manager = new TelegramBotKeyVaultSecretManager()
         });
