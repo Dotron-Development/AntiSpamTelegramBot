@@ -5,7 +5,7 @@ output "location" {
 
 output "spam_recognition_model_name" {
   description = "Model for spam recognition"
-  value       = "GPT-4.1-mini"
+  value       = "gpt-4.1-mini"
 }
 
 output "spam_recognition_model_version" {
@@ -15,10 +15,10 @@ output "spam_recognition_model_version" {
 
 output "image_text_extraction_model_name" {
   description = "Model for spam recognition"
-  value       = "GPT-4.1-nano"
+  value       = "gpt-4.1-nano"
 }
 
 output "image_text_extraction_model_version" {
-  description = "Model version for spam recognition"
+  description = "Model version for image recognition"
   value       = "2025-04-14"
 }
