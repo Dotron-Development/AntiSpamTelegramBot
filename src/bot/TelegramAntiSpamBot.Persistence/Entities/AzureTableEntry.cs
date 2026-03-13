@@ -1,6 +1,6 @@
-﻿namespace TelegramAntiSpamBot.Persistence
+﻿namespace TelegramAntiSpamBot.Persistence.Entities
 {
-    public class AzureTableEntry : ITableEntity
+    internal class AzureTableEntry : ITableEntity
     {
         public required string PartitionKey { get; set; }
         public required string RowKey { get; set; }

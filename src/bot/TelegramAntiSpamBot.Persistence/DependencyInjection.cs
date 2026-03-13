@@ -1,9 +1,9 @@
-﻿
-
-namespace TelegramAntiSpamBot.Persistence
+﻿namespace TelegramAntiSpamBot.Persistence
 {
     public static class DependencyInjection
     {
+        private static readonly string[] TableNames = ["SpamHistory", "MessageCount", "SpamHash", "SpamStats"];
+
         public static IServiceCollection AddPersistence(this IServiceCollection serviceCollection)
         {
             serviceCollection.AddOptions<AzureTablesConfiguration>()
@@ -11,37 +11,26 @@ namespace TelegramAntiSpamBot.Persistence
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
 
-            serviceCollection.AddKeyedScoped("SpamHistory",(provider, _) =>
+            foreach (var tableName in TableNames)
             {
-                var options = provider.GetRequiredService<IOptions<AzureTablesConfiguration>>();
-                var tableClient = new TableClient(
-                    new Uri(options.Value.StorageAccountUrl),
-                    "SpamHistory",
-                   new DefaultAzureCredential());
-                return tableClient;
-            });
+                serviceCollection.AddKeyedScoped(tableName, (provider, _) =>
+                {
+                    var options = provider.GetRequiredService<IOptions<AzureTablesConfiguration>>();
+                    var tableClient = new TableClient(
+                        new Uri(options.Value.StorageAccountUrl),
+                        tableName,
+                        options.Value.TableIdentityClientId != null
+                            ? new DefaultAzureCredential(new DefaultAzureCredentialOptions()
+                            {
+                                ManagedIdentityClientId = options.Value.TableIdentityClientId
+                            })
+                            : new DefaultAzureCredential());
 
-            serviceCollection.AddKeyedScoped("MessageCount", (provider, _) =>
-            {
-                var options = provider.GetRequiredService<IOptions<AzureTablesConfiguration>>();
-                var tableClient = new TableClient(
-                    new Uri(options.Value.StorageAccountUrl),
-                    "MessageCount",
-                   new DefaultAzureCredential());
-                return tableClient;
-            });
+                    return tableClient;
+                });
+            }
 
-            serviceCollection.AddKeyedScoped("SpamHash", (provider, _) =>
-            {
-                var options = provider.GetRequiredService<IOptions<AzureTablesConfiguration>>();
-                var tableClient = new TableClient(
-                    new Uri(options.Value.StorageAccountUrl),
-                    "SpamHash",
-                    new DefaultAzureCredential());
-                return tableClient;
-            });
-
-            serviceCollection.AddTransient<AntiSpamBotRepository>();
+            serviceCollection.AddTransient<IAntiSpamBotRepository, AntiSpamBotRepository>();
             return serviceCollection;
         }
     }

@@ -1,15 +1,28 @@
-﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.12.35506.116
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.11010.61
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Functions", "src\bot\TelegramAntiSpamBot.Functions\TelegramAntiSpamBot.Functions.csproj", "{2B3D4958-8B77-484B-9972-C4AF8CDE30BB}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.OpenAI", "src\bot\TelegramAntiSpamBot.OpenAI\TelegramAntiSpamBot.OpenAI.csproj", "{E9DD044B-2BF1-4E5E-8F8F-75598EE44BB3}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Persistence", "src\bot\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj", "{F5BE1D91-3D91-4011-BCB0-79653FC9BD67}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Initializer", "src\bot\TelegramAntiSpamBot.Initializer\TelegramAntiSpamBot.Initializer.csproj", "{3E88F004-F387-4935-9CCF-5F550951646A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Commands", "src\bot\TelegramAntiSpamBot.Commands\TelegramAntiSpamBot.Commands.csproj", "{885A605F-A1D2-4925-82C9-F23BB2708BAB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntispamBot.Configuration", "src\bot\TelegramAntispamBot.Configuration\TelegramAntispamBot.Configuration.csproj", "{6E8CC0E5-F1CE-41F7-B788-8A14C7031A49}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.IntegrationTests", "tests\TelegramAntiSpamBot.IntegrationTests\TelegramAntiSpamBot.IntegrationTests.csproj", "{537A2C35-CEC7-4B85-8A9A-4DF723EB19A3}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{D95916E0-6184-4700-B630-9EBC63B0F8A1}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Build", "Build", "{B8C9D0E1-F2A3-4B5C-6D7E-8F9A0B1C2D3E}"
+	ProjectSection(SolutionItems) = preProject
+		Directory.Build.props = Directory.Build.props
+		Directory.Packages.props = Directory.Packages.props
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Functions", "src\bot\TelegramAntiSpamBot.Functions\TelegramAntiSpamBot.Functions.csproj", "{ACCE27DF-CE07-4C1E-AC4B-081F8F5DA0D4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -17,10 +30,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{2B3D4958-8B77-484B-9972-C4AF8CDE30BB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2B3D4958-8B77-484B-9972-C4AF8CDE30BB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2B3D4958-8B77-484B-9972-C4AF8CDE30BB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2B3D4958-8B77-484B-9972-C4AF8CDE30BB}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E9DD044B-2BF1-4E5E-8F8F-75598EE44BB3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E9DD044B-2BF1-4E5E-8F8F-75598EE44BB3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E9DD044B-2BF1-4E5E-8F8F-75598EE44BB3}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -33,8 +42,30 @@ Global
 		{3E88F004-F387-4935-9CCF-5F550951646A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3E88F004-F387-4935-9CCF-5F550951646A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3E88F004-F387-4935-9CCF-5F550951646A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{885A605F-A1D2-4925-82C9-F23BB2708BAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{885A605F-A1D2-4925-82C9-F23BB2708BAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{885A605F-A1D2-4925-82C9-F23BB2708BAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{885A605F-A1D2-4925-82C9-F23BB2708BAB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6E8CC0E5-F1CE-41F7-B788-8A14C7031A49}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6E8CC0E5-F1CE-41F7-B788-8A14C7031A49}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6E8CC0E5-F1CE-41F7-B788-8A14C7031A49}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6E8CC0E5-F1CE-41F7-B788-8A14C7031A49}.Release|Any CPU.Build.0 = Release|Any CPU
+		{537A2C35-CEC7-4B85-8A9A-4DF723EB19A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{537A2C35-CEC7-4B85-8A9A-4DF723EB19A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{537A2C35-CEC7-4B85-8A9A-4DF723EB19A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{537A2C35-CEC7-4B85-8A9A-4DF723EB19A3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ACCE27DF-CE07-4C1E-AC4B-081F8F5DA0D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ACCE27DF-CE07-4C1E-AC4B-081F8F5DA0D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ACCE27DF-CE07-4C1E-AC4B-081F8F5DA0D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ACCE27DF-CE07-4C1E-AC4B-081F8F5DA0D4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{537A2C35-CEC7-4B85-8A9A-4DF723EB19A3} = {D95916E0-6184-4700-B630-9EBC63B0F8A1}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {AD045C34-CD5F-4C30-9AF4-CDE489AA737A}
 	EndGlobalSection
 EndGlobal

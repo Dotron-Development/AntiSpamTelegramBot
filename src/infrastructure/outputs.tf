@@ -1,8 +1,11 @@
 output "resource_group_name" {
-  value = data.terraform_remote_state.openai_data.outputs.resource_group_name
+  value = azurerm_resource_group.rg.name
 }
 
 output "functionapp_name" {
-  value = azurerm_windows_function_app.function_app.name
+  value = azurerm_function_app_flex_consumption.function_app.name
 }
 
+output "function_app_identity_name" {
+  value = azurerm_user_assigned_identity.functionapp_identity.name
+}

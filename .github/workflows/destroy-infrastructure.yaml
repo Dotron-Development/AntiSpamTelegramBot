@@ -1,12 +1,13 @@
-name: openai-infrastructure
-
+name: destroy-infrastructure
 on:
   workflow_call:
     inputs:
       environment:
         required: true
         type: string
+
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   # service principal credentials
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
@@ -14,13 +15,13 @@ env:
   ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
 
 jobs:
-  openaiservices-infrastructure:
+  destroy-main-infrastructure:
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
 
     defaults:
       run:
-        working-directory: src/infrastructure/openai
+        working-directory: src/infrastructure
 
     steps:
       - name: Checkout code
@@ -45,17 +46,26 @@ jobs:
           AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
           AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
           AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
-          AZ_OPENAI_STATE_FILE_KEY: "openai.terraform.tfstate"
+          AZ_MAIN_STATE_FILE_KEY: "terraform.tfstate"
         run: |
           terraform init \
-            -backend-config="storage_account_name=$AZ_TERRAFORM_BACKEND_STORAGEACCOUNT"  \
-            -backend-config="container_name=$AZ_BACKEND_CONTAINER_NAME" \
-            -backend-config="key=$AZ_OPENAI_STATE_FILE_KEY" \
-            -backend-config="resource_group_name=$AZ_TERRAFORM_BACKEND_RESOURCEGROUP"
+            -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
+            -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
+            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
 
       - name: Terraform Plan
+        env:
+          AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
+          AZ_OPENAI_STATE_FILE_KEY: "openai.terraform.tfstate"
+          AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
+          AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
+          AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
         run: |
-          terraform plan -out=tfplan -var-file=environments/${{ inputs.environment }}.tfvars
+          terraform plan -destroy -out=destroy.tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
+            -var="keyvault_administrator_object_id=${AZ_OWNER_OBJECT_ID}" \
+            -var="telegram_bot_token=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            -var="telegram_bot_secret_header=${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}"
 
-      - name: Apply Terraform plan
-        run: terraform apply tfplan
+      - name: Terraform Apply
+        run: terraform apply destroy.tfplan

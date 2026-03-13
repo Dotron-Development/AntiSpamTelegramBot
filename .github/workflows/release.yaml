@@ -1,0 +1,25 @@
+name: release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-main-infrastructure-to-prod:
+    uses: ./.github/workflows/main-infrastructure.yaml
+    with:
+      environment: prod
+    secrets: inherit
+
+  deploy-functionapp-to-prod:
+    needs: deploy-main-infrastructure-to-prod
+    uses: ./.github/workflows/functionapp.yaml
+    with:
+      environment: prod
+      resource_group_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.resource_group_name }}
+      function_app_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.functionapp_name }}
+      function_app_identity_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.function_app_identity_name }}
+    secrets: inherit

@@ -2,10 +2,8 @@
   "profiles": {
     "TelegramAntiSpamBot.Functions": {
       "commandName": "Project",
-      "commandLineArgs": "--port 7279",
-      "environmentVariables": {
-        "APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=00000000-0000-0000-0000-000000000000;IngestionEndpoint=https://swedencentral-0.in.applicationinsights.azure.com/;"
-      }
+      "commandLineArgs": "--port 7009",
+      "launchBrowser": false
     }
   }
 }

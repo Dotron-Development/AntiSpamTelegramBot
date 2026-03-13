@@ -1,28 +1,22 @@
-using Azure.Monitor.OpenTelemetry.AspNetCore;
-
-var builder = new HostBuilder();
+HostBuilder builder = new();
 
 builder.ConfigureFunctionsWorkerDefaults(b =>
-  {
-     b.UseMiddleware<AuthorizationMiddleware>();
-  }
-);
+{
+    b.UseMiddleware<AuthorizationMiddleware>();
+})
+.ConfigureServices(services =>
+{
+   // services.AddApplicationInsightsTelemetryWorkerService();
+});
+
 
 builder.ConfigureServices(collection =>
 {
     collection.AddOpenAiService();
     collection.AddTelegramBot();
     collection.AddPersistence();
-    collection.AddOpenTelemetry().UseAzureMonitor();
+    collection.AddCommands();
 });
 
-// configure logging
-builder.ConfigureAppConfiguration((_, config) =>
-{
-    config.AddJsonFile("loggerConfig.json");
-}).ConfigureLogging((hostingContext, logging) =>
-{
-    logging.AddConfiguration(hostingContext.Configuration.GetSection("Logging"));
-});
 
 builder.Build().Run();

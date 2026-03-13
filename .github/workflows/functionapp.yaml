@@ -11,6 +11,10 @@ on:
         description: "The name of the function app"
         required: true
         type: string
+      function_app_identity_name:
+        description: "Function app identity resource name"
+        required: true
+        type: string
       environment:
         required: true
         type: string
@@ -20,18 +24,18 @@ permissions:
   contents: read
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: "./bot/TelegramAntiSpamBot.Functions"
-  DOTNET_VERSION: "9.0.x"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: "src/bot/TelegramAntiSpamBot.Functions/published"
+  WORKING_DIRECTORY: src/bot/TelegramAntiSpamBot.Functions
+  DOTNET_VERSION: "10.0.x"
   DOTNET_INSTALL_DIR: "./.dotnet"
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src
 
     environment: ${{ inputs.environment }}
+
     steps:
       - name: "Checkout"
         uses: actions/checkout@v4
@@ -43,6 +47,19 @@ jobs:
             echo "Invalid environment: ${{ inputs.environment }}. Allowed values are: ${allowed_environments[@]}"
             exit 1
           fi
+
+      - name: Setup Environment
+        id: setup-env
+        run: |
+          # Validate the identity name value
+          if [ -z "${{ inputs.function_app_identity_name }}" ]; then
+            echo "❌ Error: Function app identity name is empty"
+            exit 1
+          fi
+
+          echo "✅ Function app identity name validated"
+          # Make it available to subsequent steps as environment variable
+          echo "FUNCTION_APP_IDENTITY_NAME=${{ inputs.function_app_identity_name }}" >> $GITHUB_ENV
 
       - name: "Azure login"
         uses: azure/login@v2
@@ -57,27 +74,24 @@ jobs:
       - name: "Publish Using Dotnet"
         shell: bash
         run: |
-          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-          dotnet publish --configuration Release --os win --arch x64 --output ./output
-          popd
+          dotnet publish "${{ env.WORKING_DIRECTORY }}" --configuration Release --os linux --arch x64 --output "${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}"
 
-      - name: Zip published output
-        run: |
-          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
-          zip -r app.zip .
-          popd
-
-      - name: Upload publishing artifact
-        uses: actions/upload-artifact@v3
+      - name: Publish Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: app
-          path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
+          name: functionapp
+          path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
 
       - name: Deploy to Azure Function App
-        run: |
-          echo "Resource Group Name: ${{ inputs.resource_group_name }}"
-          echo "Function App Name: ${{ inputs.function_app_name }}"
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ inputs.function_app_name }}
+          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
 
-          RESOURCE_GROUP_NAME=${{ inputs.resource_group_name }}
-          FUNCTION_APP_NAME=${{ inputs.function_app_name }}
-          az functionapp deployment source config-zip --resource-group $RESOURCE_GROUP_NAME --name $FUNCTION_APP_NAME --src ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output/app.zip
+      - name: Set Key Vault Reference Identity
+        run: |
+          echo "Setting Key Vault reference identity..."
+          az functionapp update \
+            --name ${{ inputs.function_app_name }} \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --set keyVaultReferenceIdentity="/subscriptions/${{ secrets.ARM_SUBSCRIPTION_ID }}/resourcegroups/${{ inputs.resource_group_name }}/providers/microsoft.managedidentity/userassignedidentities/${{ env.FUNCTION_APP_IDENTITY_NAME }}"

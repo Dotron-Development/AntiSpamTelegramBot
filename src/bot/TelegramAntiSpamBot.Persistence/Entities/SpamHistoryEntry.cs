@@ -1,11 +1,12 @@
 ﻿namespace TelegramAntiSpamBot.Persistence.Entities
 {
-    public class SpamHistoryEntry : AzureTableEntry
+    internal class SpamHistoryEntry : AzureTableEntry
     {
         public required long UserId { get; init; }
         public required string Message { get; init; }
         public required int Probability { get; init; }
 
+        // Reason: No parameterless constructor defined error when using Azure Table Storage
         public SpamHistoryEntry()
         {
 

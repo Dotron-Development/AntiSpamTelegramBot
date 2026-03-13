@@ -1,7 +1,8 @@
 ﻿namespace TelegramAntiSpamBot.Persistence.Entities
 {
-    public class MessageCountEntry : AzureTableEntry
+    internal class MessageCountEntry : AzureTableEntry
     {
+        // Reason: No parameterless constructor defined error when using Azure Table Storage
         public MessageCountEntry()
         {
 

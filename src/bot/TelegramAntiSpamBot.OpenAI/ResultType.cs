@@ -2,7 +2,7 @@
 {
     public enum ResultType
     {
-        Evaluated,
-        Error,
+        Evaluated = 0,
+        Error = 1,
     }
 }

@@ -1,3 +1,8 @@
+variable "vnet_address_prefix" {
+  description = "First two octets of the VNet address space (e.g. \"10.0\" for dev, \"10.1\" for prod)."
+  type        = string
+}
+
 variable "environment_name" {
   type = string
 }
@@ -10,27 +15,8 @@ variable "location" {
   type = string
 }
 
-variable "application_owner_object_id" {
-  type = string
-}
-
-variable "openai_state_resource_group_name" {
-  description = "The name of the terraform backend resource group name."
-  type        = string
-}
-
-variable "openai_state_storage_account_name" {
-  description = "The name of the terraform backend storage account."
-  type        = string
-}
-
-variable "openai_state_container_name" {
-  description = "The name of the terraform backend container."
-  type        = string
-}
-
-variable "openai_state_key" {
-  description = "The main state file key (path)."
+variable "keyvault_administrator_object_id" {
+  description = "The id of the KV administrator."
   type        = string
 }
 
@@ -40,12 +26,17 @@ variable "telegram_bot_token" {
   sensitive   = true
 }
 
+variable "forwardSpamToChatId" {
+  description = "Forward spam messages to group Id."
+  type        = string
+  sensitive   = true
+}
+
 variable "telegram_bot_secret_header" {
   description = "The secret header for the telegram bot."
   type        = string
   sensitive   = true
 }
-
 
 variable "github_runners_vnet_name" {
   description = "The name of the virtual network for the github runners."
@@ -63,4 +54,38 @@ variable "github_runners_vnet_subnet_name" {
   description = "The name of the subnet for the virtual network for the github runners."
   type        = string
   sensitive   = true
+}
+
+variable "disable_public_access" {
+  description = "Disable public access to all resources. If true then private endpoints will be created."
+  type        = bool
+}
+
+variable "bot_name" {
+  description = "The name of the bot. Example: @someBotName"
+  type        = string
+}
+
+variable "image_text_extractor" {
+  description = "The configuration of the image text extractor deployment."
+  type = object({
+    name     = string
+    version  = string
+    capacity = number
+  })
+}
+
+variable "spam_recognition" {
+  description = "The configuration of the spam recognition deployment."
+  type = object({
+    name     = string
+    version  = string
+    capacity = number
+  })
+}
+
+variable "debug_ai_response" {
+  description = "Enable debugging of AI responses."
+  type        = bool
+  nullable    = true
 }
