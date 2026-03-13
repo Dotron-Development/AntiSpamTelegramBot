@@ -1,4 +1,5 @@
 resource "time_sleep" "kv_dns_propagation" {
+  count           = var.disable_public_access ? 1 : 0
   create_duration = "300s"
 
   depends_on = [

@@ -95,3 +95,11 @@ jobs:
             --name ${{ inputs.function_app_name }} \
             --resource-group ${{ inputs.resource_group_name }} \
             --set keyVaultReferenceIdentity="/subscriptions/${{ secrets.ARM_SUBSCRIPTION_ID }}/resourcegroups/${{ inputs.resource_group_name }}/providers/microsoft.managedidentity/userassignedidentities/${{ env.FUNCTION_APP_IDENTITY_NAME }}"
+
+      - name: Initialize Telegram Webhook
+        run: |
+          dotnet run --project src/bot/TelegramAntiSpamBot.Initializer \
+            -- \
+            "${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            "https://${{ inputs.function_app_name }}.azurewebsites.net/api/AntiSpamBotWebHook" \
+            "${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}"
