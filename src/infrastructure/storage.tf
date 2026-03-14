@@ -15,22 +15,17 @@ resource "azurerm_storage_account" "data_storage" {
   }
 }
 
-resource "azurerm_storage_table" "spam_stats" {
-  name                 = "SpamStats"
-  storage_account_name = azurerm_storage_account.data_storage.name
-}
+# azurerm_storage_table uses SharedKey auth for GetTableACL even when storage_use_azuread = true,
+# which is blocked by shared_access_key_enabled = false. Using null_resource + Azure CLI instead.
+resource "null_resource" "data_storage_tables" {
+  for_each = toset(["SpamStats", "SpamHistory", "SpamHash", "MessageCount"])
 
-resource "azurerm_storage_table" "spam_history" {
-  name                 = "SpamHistory"
-  storage_account_name = azurerm_storage_account.data_storage.name
-}
+  triggers = {
+    storage_account = azurerm_storage_account.data_storage.name
+    table_name      = each.key
+  }
 
-resource "azurerm_storage_table" "spam_hash" {
-  name                 = "SpamHash"
-  storage_account_name = azurerm_storage_account.data_storage.name
-}
-
-resource "azurerm_storage_table" "message_count" {
-  name                 = "MessageCount"
-  storage_account_name = azurerm_storage_account.data_storage.name
+  provisioner "local-exec" {
+    command = "az storage table create --name ${each.key} --account-name ${azurerm_storage_account.data_storage.name} --auth-mode login"
+  }
 }

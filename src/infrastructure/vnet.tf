@@ -28,9 +28,9 @@ resource "azurerm_subnet" "subnet1_functions" {
   service_endpoints = !var.disable_public_access ? ["Microsoft.KeyVault", "Microsoft.Storage"] : []
 }
 
-resource "azurerm_subnet" "subnet2_kv" {
+resource "azurerm_subnet" "subnet2_private_endpoints" {
   count                = var.disable_public_access ? 1 : 0
-  name                 = "subnet2-kv-${var.environment_prefix}"
+  name                 = "subnet2-private-endpoints-${var.environment_prefix}"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["${var.vnet_address_prefix}.2.0/24"]

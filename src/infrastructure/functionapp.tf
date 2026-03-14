@@ -15,6 +15,7 @@ resource "azurerm_storage_container" "function_storage_container" {
   name                  = "${local.function_app_name}-flexcontainer"
   storage_account_id    = azurerm_storage_account.function_storage.id
   container_access_type = "private"
+  depends_on            = [azurerm_role_assignment.runner_function_storage_blob_access]
 }
 
 resource "azurerm_service_plan" "function_sp" {
