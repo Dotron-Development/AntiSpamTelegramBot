@@ -76,6 +76,10 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   } : {})
 
   tags = local.tags
+
+  lifecycle {
+    ignore_changes = [tags["hidden-link: /app-insights-resource-id"]]
+  }
 }
 
 
