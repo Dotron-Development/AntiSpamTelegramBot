@@ -41,6 +41,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   runtime_name                                   = "dotnet-isolated"
   runtime_version                                = "10.0"
   instance_memory_in_mb                          = 512
+  maximum_instance_count                         = 1
   virtual_network_subnet_id                      = azurerm_subnet.subnet1_functions.id
   webdeploy_publish_basic_authentication_enabled = false
 
