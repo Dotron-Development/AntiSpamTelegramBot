@@ -86,6 +86,24 @@ jobs:
       - name: Apply Terraform plan
         run: terraform apply tfplan
 
+      - name: Destroy runner Private Endpoints
+        # Runner PEs (kv_runner_pe, data_storage_runner_pe) are only needed during terraform apply
+        # to allow the GitHub runner to reach private resources (Key Vault secrets, Storage tables).
+        # Once the deployment is complete, they serve no purpose and are destroyed to save costs
+        # (~$15/month per environment).
+        # On the next deployment, Terraform will recreate them automatically before they are needed.
+        env:
+          AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
+        run: |
+          terraform destroy \
+            -target=azurerm_private_endpoint.kv_runner_pe \
+            -target=azurerm_private_endpoint.data_storage_runner_pe \
+            -var-file=environments/${{ inputs.environment }}.tfvars \
+            -var="keyvault_administrator_object_id=${AZ_OWNER_OBJECT_ID}" \
+            -var="telegram_bot_token=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            -var="telegram_bot_secret_header=${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}" \
+            -auto-approve
+
       - name: Generate outputs
         id: generate-outputs
         run: |

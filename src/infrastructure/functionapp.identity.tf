@@ -38,3 +38,4 @@ resource "azurerm_role_assignment" "functionapp_identity_storage_access_app_tabl
   principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
 }
 
+
