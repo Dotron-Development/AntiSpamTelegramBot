@@ -11,7 +11,7 @@ resource "azurerm_storage_account" "data_storage" {
 
   network_rules {
     default_action             = "Deny"
-    virtual_network_subnet_ids = !var.disable_public_access ? [azurerm_subnet.subnet1_functions.id] : []
+    virtual_network_subnet_ids = !var.disable_public_access ? [azurerm_subnet.subnet1_functions.id, data.azurerm_subnet.github_runner_vnet_subnet.id] : []
   }
 }
 
