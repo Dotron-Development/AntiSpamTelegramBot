@@ -37,4 +37,9 @@ resource "null_resource" "data_storage_tables" {
         --auth-mode login
     EOT
   }
+
+  depends_on = [
+    azurerm_private_endpoint.data_storage_runner_pe,
+    azurerm_private_endpoint.data_storage_pe,
+  ]
 }
