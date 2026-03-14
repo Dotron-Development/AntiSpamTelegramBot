@@ -1,6 +1,7 @@
 locals {
   function_app_name = "fn-${local.appName}-${var.environment_prefix}"
 }
+
 resource "azurerm_storage_account" "function_storage" {
   name                      = "satgbotfnapp${var.environment_prefix}"
   resource_group_name       = azurerm_resource_group.rg.name

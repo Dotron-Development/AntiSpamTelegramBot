@@ -41,7 +41,7 @@ resource "azurerm_private_endpoint" "kv_pe" {
 
 resource "azurerm_private_dns_a_record" "keyvault_a_record" {
   count               = var.disable_public_access ? 1 : 0
-  name                = "@"
+  name                = "${local.kv_name}-${var.environment_prefix}"
   zone_name           = azurerm_private_dns_zone.private_dns[0].name
   resource_group_name = azurerm_resource_group.rg.name
   ttl                 = 300

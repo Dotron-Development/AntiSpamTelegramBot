@@ -92,7 +92,6 @@ jobs:
         # Once the deployment is complete, they serve no purpose and are destroyed to save costs
         # (~$15/month per environment).
         # On the next deployment, Terraform will recreate them automatically before they are needed.
-        if: ${{ inputs.environment != 'dev' }}
         env:
           AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
         run: |
