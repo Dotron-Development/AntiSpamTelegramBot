@@ -30,7 +30,7 @@ jobs:
 
       - name: Verify Inputs
         run: |
-          allowed_environments=("dev" "prod")
+          allowed_environments=("dev" "prod" "ppr")
           if [[ ! " ${allowed_environments[@]} " =~ " ${{ inputs.environment }} " ]]; then
             echo "Invalid environment: ${{ inputs.environment }}. Allowed values are: ${allowed_environments[@]}"
             exit 1

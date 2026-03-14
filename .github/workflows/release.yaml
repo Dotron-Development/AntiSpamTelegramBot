@@ -2,24 +2,33 @@ name: release
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        default: "ppr"
+        type: choice
+        options:
+          - ppr
+          - prod
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  deploy-main-infrastructure-to-prod:
+  deploy-main-infrastructure:
     uses: ./.github/workflows/main-infrastructure.yaml
     with:
-      environment: prod
+      environment: ${{ github.event.inputs.environment }}
     secrets: inherit
 
-  deploy-functionapp-to-prod:
-    needs: deploy-main-infrastructure-to-prod
+  deploy-functionapp:
+    needs: deploy-main-infrastructure
     uses: ./.github/workflows/functionapp.yaml
     with:
-      environment: prod
-      resource_group_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.resource_group_name }}
-      function_app_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.functionapp_name }}
-      function_app_identity_name: ${{ needs.deploy-main-infrastructure-to-prod.outputs.function_app_identity_name }}
+      environment: ${{ github.event.inputs.environment }}
+      resource_group_name: ${{ needs.deploy-main-infrastructure.outputs.resource_group_name }}
+      function_app_name: ${{ needs.deploy-main-infrastructure.outputs.functionapp_name }}
+      function_app_identity_name: ${{ needs.deploy-main-infrastructure.outputs.function_app_identity_name }}
     secrets: inherit
