@@ -33,7 +33,7 @@ resource "azurerm_private_endpoint" "data_storage_pe" {
     name               = "ip-data-storage-${var.environment_prefix}"
     private_ip_address = "${var.vnet_address_prefix}.2.34"
     subresource_name   = "table"
-    member_name        = "default"
+    member_name        = "table"
   }
 
   tags = local.tags
