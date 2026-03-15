@@ -55,6 +55,22 @@ jobs:
             -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
             -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
 
+      - name: Recreate Runner Private Endpoints
+        # Runner PEs are deleted after every deploy (see cleanup-runner-endpoints.yaml).
+        # They must be restored before the destroy so the runner can reach private
+        # Key Vault and Storage resources during terraform plan/apply.
+        env:
+          AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
+        run: |
+          terraform apply \
+            -target=azurerm_private_endpoint.kv_runner_pe \
+            -target=azurerm_private_endpoint.data_storage_runner_pe \
+            -var-file=environments/${{ inputs.environment }}.tfvars \
+            -var="keyvault_administrator_object_id=${AZ_OWNER_OBJECT_ID}" \
+            -var="telegram_bot_token=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            -var="telegram_bot_secret_header=${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}" \
+            -auto-approve
+
       - name: Terraform Plan
         env:
           AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
