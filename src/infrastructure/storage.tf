@@ -51,7 +51,6 @@ resource "null_resource" "data_storage_tables" {
 
   depends_on = [
     time_sleep.data_storage_dns_propagation,
-    azurerm_private_endpoint.data_storage_runner_pe,
     azurerm_private_endpoint.data_storage_pe,
   ]
 }
