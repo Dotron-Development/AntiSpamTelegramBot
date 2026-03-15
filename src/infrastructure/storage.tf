@@ -15,6 +15,17 @@ resource "azurerm_storage_account" "data_storage" {
   }
 }
 
+resource "time_sleep" "data_storage_dns_propagation" {
+  count           = var.disable_public_access ? 1 : 0
+  create_duration = "300s"
+
+  depends_on = [
+    azurerm_private_endpoint.data_storage_runner_pe,
+    azurerm_private_dns_a_record.data_storage_a_record,
+    azurerm_private_dns_zone_virtual_network_link.data_storage_runner_vnet_link,
+  ]
+}
+
 # azurerm_storage_table uses SharedKey auth for GetTableACL even when storage_use_azuread = true,
 # which is blocked by shared_access_key_enabled = false. Using null_resource + Azure CLI instead.
 resource "null_resource" "data_storage_tables" {
@@ -39,6 +50,7 @@ resource "null_resource" "data_storage_tables" {
   }
 
   depends_on = [
+    time_sleep.data_storage_dns_propagation,
     azurerm_private_endpoint.data_storage_runner_pe,
     azurerm_private_endpoint.data_storage_pe,
   ]
