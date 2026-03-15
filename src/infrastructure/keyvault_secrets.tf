@@ -3,7 +3,6 @@ resource "time_sleep" "kv_dns_propagation" {
   create_duration = "300s"
 
   depends_on = [
-    azurerm_private_endpoint.kv_runner_pe,
     azurerm_private_dns_a_record.keyvault_a_record,
     azurerm_private_dns_zone_virtual_network_link.keyvault_runner_vnet_link,
   ]

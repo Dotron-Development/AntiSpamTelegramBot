@@ -15,6 +15,13 @@ resource "azurerm_private_endpoint" "kv_runner_pe" {
     subresource_names              = ["vault"]
   }
 
+  ip_configuration {
+    name               = "ip-runner-${local.kv_name}-${var.environment_prefix}"
+    private_ip_address = var.runner_kv_pe_private_ip
+    subresource_name   = "vault"
+    member_name        = "default"
+  }
+
   tags = local.tags
 }
 

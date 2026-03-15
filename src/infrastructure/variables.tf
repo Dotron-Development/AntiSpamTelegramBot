@@ -89,3 +89,17 @@ variable "debug_ai_response" {
   type        = bool
   nullable    = true
 }
+
+variable "runner_kv_pe_private_ip" {
+  description = "Static private IP for the Key Vault runner private endpoint in the GitHub runners subnet. Required when disable_public_access is true."
+  type        = string
+  nullable    = true
+  default     = null
+}
+
+variable "runner_data_storage_pe_private_ip" {
+  description = "Static private IP for the data storage runner private endpoint in the GitHub runners subnet. Required when disable_public_access is true."
+  type        = string
+  nullable    = true
+  default     = null
+}

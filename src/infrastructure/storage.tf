@@ -20,7 +20,6 @@ resource "time_sleep" "data_storage_dns_propagation" {
   create_duration = "300s"
 
   depends_on = [
-    azurerm_private_endpoint.data_storage_runner_pe,
     azurerm_private_dns_a_record.data_storage_a_record,
     azurerm_private_dns_zone_virtual_network_link.data_storage_runner_vnet_link,
   ]
