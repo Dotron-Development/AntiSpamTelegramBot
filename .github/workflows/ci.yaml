@@ -25,3 +25,10 @@ jobs:
       function_app_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.functionapp_name }}
       function_app_identity_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.function_app_identity_name }}
     secrets: inherit
+
+  cleanup-runner-endpoints:
+    needs: deploy-functionapp-to-dev
+    uses: ./.github/workflows/cleanup-runner-endpoints.yaml
+    with:
+      environment: dev
+    secrets: inherit
