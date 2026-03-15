@@ -47,7 +47,7 @@ resource "azurerm_private_dns_a_record" "data_storage_a_record" {
   ttl                 = 300
   records = [
     azurerm_private_endpoint.data_storage_pe[0].ip_configuration[0].private_ip_address,
-    azurerm_private_endpoint.data_storage_runner_pe[0].private_service_connection[0].private_ip_address
+    var.runner_data_storage_pe_private_ip
   ]
 
   tags = local.tags

@@ -19,3 +19,7 @@ spam_recognition = {
 }
 forwardSpamToChatId = "-1002395980780"
 debug_ai_response   = true
+
+runner_kv_pe_private_ip           = "17.0.0.7"
+runner_data_storage_pe_private_ip = "17.0.0.8"
+

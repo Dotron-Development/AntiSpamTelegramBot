@@ -15,6 +15,13 @@ resource "azurerm_private_endpoint" "data_storage_runner_pe" {
     subresource_names              = ["table"]
   }
 
+  ip_configuration {
+    name               = "ip-runner-data-storage-${var.environment_prefix}"
+    private_ip_address = var.runner_data_storage_pe_private_ip
+    subresource_name   = "table"
+    member_name        = "table"
+  }
+
   tags = local.tags
 }
 
