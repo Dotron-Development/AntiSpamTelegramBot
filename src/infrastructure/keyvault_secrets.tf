@@ -13,7 +13,10 @@ resource "azurerm_key_vault_secret" "telegram_bot_token" {
   value        = var.telegram_bot_token
   key_vault_id = azurerm_key_vault.kv.id
 
-  depends_on = [time_sleep.kv_dns_propagation]
+  depends_on = [
+    time_sleep.kv_dns_propagation,
+    time_sleep.kv_rbac_propagation,
+  ]
 }
 
 resource "azurerm_key_vault_secret" "telegram_bot_secret_header" {
@@ -21,7 +24,10 @@ resource "azurerm_key_vault_secret" "telegram_bot_secret_header" {
   value        = var.telegram_bot_secret_header
   key_vault_id = azurerm_key_vault.kv.id
 
-  depends_on = [time_sleep.kv_dns_propagation]
+  depends_on = [
+    time_sleep.kv_dns_propagation,
+    time_sleep.kv_rbac_propagation,
+  ]
 }
 
 resource "azurerm_key_vault_secret" "ai_services_api_key" {
@@ -29,5 +35,8 @@ resource "azurerm_key_vault_secret" "ai_services_api_key" {
   value        = azurerm_ai_services.ai_services.primary_access_key
   key_vault_id = azurerm_key_vault.kv.id
 
-  depends_on = [time_sleep.kv_dns_propagation]
+  depends_on = [
+    time_sleep.kv_dns_propagation,
+    time_sleep.kv_rbac_propagation,
+  ]
 }

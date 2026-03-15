@@ -55,14 +55,18 @@ jobs:
             -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
             -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
 
-      - name: Recreate Runner Private Endpoints
+      - name: Restore Runner Access to Private Resources
         # Runner PEs are deleted after every deploy (see cleanup-runner-endpoints.yaml).
-        # They must be restored before the destroy so the runner can reach private
-        # Key Vault and Storage resources during terraform plan/apply.
+        # RBAC role assignments may also be absent due to a previous partial destroy.
+        # Recreating PEs restores network connectivity; recreating role assignments
+        # restores data-plane authorization. Both use ARM management plane APIs, so
+        # neither requires Key Vault data-plane access to execute.
         env:
           AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
         run: |
           terraform apply \
+            -target=azurerm_role_assignment.runner_kv_administrator \
+            -target=azurerm_role_assignment.runner_kv_data_access_admin \
             -target=azurerm_private_endpoint.kv_runner_pe \
             -target=azurerm_private_endpoint.data_storage_runner_pe \
             -var-file=environments/${{ inputs.environment }}.tfvars \
