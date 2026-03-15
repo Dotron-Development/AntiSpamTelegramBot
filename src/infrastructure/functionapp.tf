@@ -1,6 +1,7 @@
 locals {
   function_app_name = "fn-${local.appName}-${var.environment_prefix}"
 }
+
 resource "azurerm_storage_account" "function_storage" {
   name                      = "satgbotfnapp${var.environment_prefix}"
   resource_group_name       = azurerm_resource_group.rg.name
@@ -41,6 +42,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   runtime_name                                   = "dotnet-isolated"
   runtime_version                                = "10.0"
   instance_memory_in_mb                          = 512
+  maximum_instance_count                         = 1
   virtual_network_subnet_id                      = azurerm_subnet.subnet1_functions.id
   webdeploy_publish_basic_authentication_enabled = false
 
@@ -76,6 +78,10 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   } : {})
 
   tags = local.tags
+
+  lifecycle {
+    ignore_changes = [tags["hidden-link: /app-insights-resource-id"]]
+  }
 }
 
 
