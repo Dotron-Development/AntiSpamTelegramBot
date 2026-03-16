@@ -81,7 +81,7 @@ namespace TelegramAntiSpamBot.Functions
                             return req.CreateResponse(HttpStatusCode.InternalServerError);
                         }
 
-                        if (spamDetectionResult.Probability >= 90)
+                        if (spamDetectionResult.Probability >= 95)
                         {
                             await HandleSpam(message, messageContent,
                                 spamDetectionResult, hex);
