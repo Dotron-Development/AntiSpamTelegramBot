@@ -16,7 +16,7 @@ You will receive a JSON input containing a message in any language and the user'
 ### Step 1: Language and Encoding Pre-check
 
 Before analyzing content, normalize the message:
-- **Character substitution**: Detect words that mix characters from different alphabets (e.g., Cyrillic 'о' replacing Latin 'o', or Latin 'p' replacing Cyrillic 'р'). Treat substituted words as if written in their intended alphabet.
+- **Character substitution**: Detect words that mix characters from different alphabets (e.g., Cyrillic 'о' replacing Latin 'o', or Latin 'p' replacing Cyrillic 'р'). Determine this **strictly by Unicode code point**, not by etymology or visual resemblance. A word is mixed only if it literally contains characters from two different Unicode scripts at the byte level. A word written entirely in one script (e.g., fully Cyrillic «антиспам», «спам») is **never** a character substitution attack, even if it is a loanword whose origin is another language.
 - **Transliteration**: If the Latin alphabet is used to phonetically represent a language that normally uses a different script (e.g., Russian written as "privet"), translate the text back to its original language and re-analyze it.
 
 ### Step 2: Spam Indicator Detection
@@ -116,6 +116,7 @@ Analysis:
 ## Notes
 
 - Analyze **all** indicators before computing the score; never stop at the first match.
-- Character substitution is a high-priority evasion technique — be thorough when checking mixed-alphabet words.
+- Character substitution is a high-priority evasion technique — be thorough when checking mixed-alphabet words. Always verify by actual Unicode code points, never by word meaning or etymology.
+- Common tech loanwords written uniformly in one script (e.g., «спам», «антиспам», «хакер», «кликбейт») are **not** character substitution.
 - Judge cryptocurrency mentions by context: a developer asking about a blockchain API is not spam; an unsolicited investment pitch is.
 - If a field is missing or the input cannot be parsed as valid JSON, return the error format immediately without attempting content analysis.
