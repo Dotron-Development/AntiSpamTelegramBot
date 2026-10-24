@@ -30,7 +30,7 @@ resource "azurerm_cognitive_deployment" "spam_recognition" {
 }
 
 resource "azurerm_cognitive_deployment" "image_text_extraction" {
-  name                 = var.image_text_extractor.name
+  name                 = "${var.image_text_extractor.name}-images"
   cognitive_account_id = azurerm_cognitive_account.ai_services.id
   rai_policy_name      = azurerm_cognitive_account_rai_policy.rai_policy_high.name
 

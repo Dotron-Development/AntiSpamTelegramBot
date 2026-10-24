@@ -8,13 +8,13 @@ github_runners_vnet_subnet_name    = "subnet-github-runners"
 disable_public_access              = true
 bot_name                           = "@TgAIAntiSpamBot"
 image_text_extractor = {
-  name     = "gpt-4.1-mini"
-  version  = "2025-04-14"
+  name     = "gpt-6-luna"
+  version  = "2026-09-22"
   capacity = 50
 }
 spam_recognition = {
-  name     = "gpt-5-mini"
-  version  = "2025-08-07"
+  name     = "gpt-6-luna"
+  version  = "2026-09-22"
   capacity = 50
 }
 forwardSpamToChatId = "-1002395980780"
