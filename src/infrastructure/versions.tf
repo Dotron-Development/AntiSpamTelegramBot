@@ -1,13 +1,17 @@
 terraform {
-  required_version = ">= 1.9.0"
+  required_version = ">= 1.17.0, < 2.0"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 4.63.0, < 5.0"
+      version = ">= 5.11.0, < 6.0"
     }
     time = {
       source  = "hashicorp/time"
-      version = ">= 0.9.0"
+      version = ">= 0.14.2, < 0.15.0"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = ">= 3.3.2, < 4.0"
     }
   }
 
@@ -16,8 +20,13 @@ terraform {
 }
 
 provider "azurerm" {
-  storage_use_azuread = true
+  storage_use_azuread             = true
+  resource_provider_registrations = "legacy"
   features {
+    enhanced_validation {
+      locations          = true
+      resource_providers = true
+    }
     resource_group {
       prevent_deletion_if_contains_resources = false
     }

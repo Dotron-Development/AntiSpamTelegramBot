@@ -25,7 +25,13 @@ resource "azurerm_subnet" "subnet1_functions" {
 
   # only if public access is enabled
   # not needed for private links
-  service_endpoints = !var.disable_public_access ? ["Microsoft.KeyVault", "Microsoft.Storage"] : []
+  dynamic "service_endpoint" {
+    for_each = !var.disable_public_access ? toset(["Microsoft.KeyVault", "Microsoft.Storage"]) : toset([])
+
+    content {
+      service = service_endpoint.value
+    }
+  }
 }
 
 resource "azurerm_subnet" "subnet2_private_endpoints" {

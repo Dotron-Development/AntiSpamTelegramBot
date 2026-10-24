@@ -1,14 +1,20 @@
-resource "azurerm_ai_services" "ai_services" {
-  name                = "${local.appName}-ai-services-${var.environment_prefix}"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.rg.name
-  sku_name            = "S0"
-  tags                = local.tags
+resource "azurerm_cognitive_account" "ai_services" {
+  name                       = "${local.appName}-ai-services-${var.environment_prefix}"
+  location                   = var.location
+  resource_group_name        = azurerm_resource_group.rg.name
+  kind                       = "AIServices"
+  project_management_enabled = true
+  sku_name                   = "S0"
+  tags                       = local.tags
+
+  identity {
+    type = "SystemAssigned"
+  }
 }
 
 resource "azurerm_cognitive_deployment" "spam_recognition" {
   name                 = var.spam_recognition.name
-  cognitive_account_id = azurerm_ai_services.ai_services.id
+  cognitive_account_id = azurerm_cognitive_account.ai_services.id
   rai_policy_name      = azurerm_cognitive_account_rai_policy.rai_policy_high.name
 
   model {
@@ -25,7 +31,7 @@ resource "azurerm_cognitive_deployment" "spam_recognition" {
 
 resource "azurerm_cognitive_deployment" "image_text_extraction" {
   name                 = var.image_text_extractor.name
-  cognitive_account_id = azurerm_ai_services.ai_services.id
+  cognitive_account_id = azurerm_cognitive_account.ai_services.id
   rai_policy_name      = azurerm_cognitive_account_rai_policy.rai_policy_high.name
 
   model {
@@ -42,7 +48,7 @@ resource "azurerm_cognitive_deployment" "image_text_extraction" {
 
 resource "azurerm_cognitive_account_rai_policy" "rai_policy_high" {
   name                 = "rai-policy-high"
-  cognitive_account_id = azurerm_ai_services.ai_services.id
+  cognitive_account_id = azurerm_cognitive_account.ai_services.id
   base_policy_name     = "Microsoft.Default"
 
   content_filter {

@@ -6,12 +6,11 @@ resource "azurerm_private_dns_zone" "private_dns" {
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_vnet_link" {
-  count                 = var.disable_public_access ? 1 : 0
-  name                  = "vnl-${local.kv_name}-${var.environment_prefix}"
-  virtual_network_id    = azurerm_virtual_network.vnet.id
-  private_dns_zone_name = azurerm_private_dns_zone.private_dns[0].name
-  resource_group_name   = azurerm_resource_group.rg.name
-  tags                  = local.tags
+  count               = var.disable_public_access ? 1 : 0
+  name                = "vnl-${local.kv_name}-${var.environment_prefix}"
+  virtual_network_id  = azurerm_virtual_network.vnet.id
+  private_dns_zone_id = azurerm_private_dns_zone.private_dns[0].id
+  tags                = local.tags
 }
 
 resource "azurerm_private_endpoint" "kv_pe" {
@@ -42,8 +41,7 @@ resource "azurerm_private_endpoint" "kv_pe" {
 resource "azurerm_private_dns_a_record" "keyvault_a_record" {
   count               = var.disable_public_access ? 1 : 0
   name                = "${local.kv_name}-${var.environment_prefix}"
-  zone_name           = azurerm_private_dns_zone.private_dns[0].name
-  resource_group_name = azurerm_resource_group.rg.name
+  private_dns_zone_id = azurerm_private_dns_zone.private_dns[0].id
   ttl                 = 300
   records = [
     azurerm_private_endpoint.kv_pe[0].ip_configuration[0].private_ip_address,
