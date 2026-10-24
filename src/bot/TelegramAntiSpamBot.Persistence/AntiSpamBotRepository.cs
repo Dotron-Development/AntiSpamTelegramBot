@@ -1,20 +1,97 @@
 ﻿namespace TelegramAntiSpamBot.Persistence
 {
     internal class AntiSpamBotRepository(
-        [FromKeyedServices("SpamHistory")] TableClient spamHistoryTable,
+        [FromKeyedServices("Chats")] TableClient chatsTable,
+        [FromKeyedServices("ProbablySpam")] TableClient probablySpamTable,
         [FromKeyedServices("SpamHash")] TableClient spamHashTable,
         [FromKeyedServices("MessageCount")] TableClient messageCountTable,
         [FromKeyedServices("SpamStats")] TableClient spamStatsTable) : IAntiSpamBotRepository
     {
-        public async Task SaveMessageAsync(long chatId,
-            long userId,
-            string messageContent,
-            int probability,
-            string? explanation = null)
+        public async Task SaveChatAsync(ReviewChat chat)
         {
-            var entry = new SpamHistoryEntry(chatId, userId, messageContent, probability);
-            await spamHistoryTable.UpsertEntityAsync(entry, TableUpdateMode.Replace);
+            var entry = new ChatEntry
+            {
+                PartitionKey = ChatEntry.CatalogPartitionKey,
+                RowKey = chat.ChatId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Name = chat.Name,
+                LastSeenUtc = chat.LastSeenUtc
+            };
+            try
+            {
+                await chatsTable.UpsertEntityAsync(entry, TableUpdateMode.Replace);
+            }
+            catch (Azure.RequestFailedException exception) when (exception.Status == 404)
+            {
+                await chatsTable.CreateIfNotExistsAsync();
+                await chatsTable.UpsertEntityAsync(entry, TableUpdateMode.Replace);
+            }
         }
+
+        public async Task<ReviewChatPage> GetReviewChatsAsync(int pageSize, string? continuationToken)
+        {
+            try
+            {
+                var query = chatsTable.QueryAsync<ChatEntry>(entry => entry.PartitionKey == ChatEntry.CatalogPartitionKey);
+                await foreach (var page in query.AsPages(continuationToken, pageSize))
+                {
+                    return new ReviewChatPage(page.Values.Select(entry => new ReviewChat(
+                        long.Parse(entry.RowKey, System.Globalization.CultureInfo.InvariantCulture),
+                        entry.Name, entry.LastSeenUtc)).ToArray(), page.ContinuationToken);
+                }
+            }
+            catch (Azure.RequestFailedException exception) when (exception.Status == 404)
+            {
+                return new ReviewChatPage([], null);
+            }
+            return new ReviewChatPage([], null);
+        }
+
+        public async Task SaveReviewMessageAsync(ReviewMessage message)
+        {
+            var entry = new ProbablySpamEntry
+            {
+                PartitionKey = message.ChatId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                RowKey = message.MessageId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                UserId = message.UserId,
+                UserName = message.UserName,
+                Message = message.Message,
+                ImageText = message.ImageText,
+                ContentHash = message.ContentHash,
+                MessageDateTicks = message.MessageDateTicks
+            };
+            await probablySpamTable.UpsertEntityAsync(entry, TableUpdateMode.Replace);
+        }
+
+        public async Task<ReviewMessagePage> GetReviewMessagesAsync(long chatId, int pageSize, string? continuationToken)
+        {
+            var partitionKey = chatId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var query = probablySpamTable.QueryAsync<ProbablySpamEntry>(entry => entry.PartitionKey == partitionKey);
+            await foreach (var page in query.AsPages(continuationToken, pageSize))
+            {
+                return new ReviewMessagePage(page.Values.Select(ToReviewMessage).ToArray(), page.ContinuationToken);
+            }
+            return new ReviewMessagePage([], null);
+        }
+
+        public async Task<ReviewMessage?> GetReviewMessageAsync(long chatId, int messageId)
+        {
+            var response = await probablySpamTable.GetEntityIfExistsAsync<ProbablySpamEntry>(
+                chatId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                messageId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return response.HasValue ? ToReviewMessage(response.Value!) : null;
+        }
+
+        public async Task DeleteReviewMessageAsync(long chatId, int messageId)
+        {
+            await probablySpamTable.DeleteEntityAsync(
+                chatId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                messageId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        private static ReviewMessage ToReviewMessage(ProbablySpamEntry entry) => new(
+            long.Parse(entry.PartitionKey, System.Globalization.CultureInfo.InvariantCulture),
+            int.Parse(entry.RowKey, System.Globalization.CultureInfo.InvariantCulture), entry.UserId,
+            entry.UserName, entry.Message, entry.ImageText, entry.ContentHash, entry.MessageDateTicks);
 
         public async Task IncreaseMessageCount(long chatId, long userId)
         {
@@ -41,22 +118,10 @@
 
         public async Task<ShortcutCheckResult> IsSpam(string hex)
         {
-            var t1 = spamHashTable.GetEntityIfExistsAsync<SpamHashEntry>("1", hex);
-            var t2 = spamHashTable.GetEntityIfExistsAsync<SpamHashEntry>("2", hex);
-            var t3 = spamHashTable.GetEntityIfExistsAsync<SpamHashEntry>("3", hex);
-
-            await foreach (var task in Task.WhenEach(t1, t2, t3))
-            {
-                var result = await task;
-                if (result.HasValue)
-                {
-                    return result.Value!.IsSpam
-                        ? ShortcutCheckResult.Spam
-                        : ShortcutCheckResult.NotSpam;
-                }
-            }
-
-            return ShortcutCheckResult.NotFound;
+            var result = await spamHashTable.GetEntityIfExistsAsync<SpamHashEntry>("1", hex);
+            return result.HasValue
+                ? result.Value!.IsSpam ? ShortcutCheckResult.Spam : ShortcutCheckResult.NotSpam
+                : ShortcutCheckResult.NotFound;
         }
 
         public async Task SaveMessageHash(string hash, bool isSpam)

@@ -2,11 +2,11 @@ HostBuilder builder = new();
 
 builder.ConfigureFunctionsWorkerDefaults(b =>
 {
-    b.UseMiddleware<AuthorizationMiddleware>();
+    b.UseWhen<AuthorizationMiddleware>(context => context.FunctionDefinition.Name == "AntiSpamBotWebHook");
 })
 .ConfigureServices(services =>
 {
-   // services.AddApplicationInsightsTelemetryWorkerService();
+    // services.AddApplicationInsightsTelemetryWorkerService();
 });
 
 

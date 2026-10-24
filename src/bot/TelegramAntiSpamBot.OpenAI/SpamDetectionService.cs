@@ -10,9 +10,6 @@ namespace TelegramAntiSpamBot.OpenAI
     {
         private static readonly ChatCompletionOptions ChatCompletionOptions = new() { };
 
-        [GeneratedRegex(@"""TextOnImage""\s*:\s*""(.*?)""")]
-        private static partial Regex ImageResultRegex();
-
         public async Task<SpamRequestResult> IsSpamAsync(
             string userMessage,
             int userMessagesCount,
@@ -82,9 +79,11 @@ namespace TelegramAntiSpamBot.OpenAI
 
             LogDebugImageRecognitionAiResponse(logger, imageResponse);
 
-            var match = ImageResultRegex().Match(imageResponse);
-
-            return match.Success ? match.Groups[1].Value : string.Empty;
+            using var document = JsonDocument.Parse(imageResponse);
+            return document.RootElement.TryGetProperty("TextOnImage", out var text)
+                && text.ValueKind == JsonValueKind.String
+                ? text.GetString() ?? string.Empty
+                : string.Empty;
         }
 
         [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Request: {request}")]

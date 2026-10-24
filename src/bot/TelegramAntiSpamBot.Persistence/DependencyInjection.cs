@@ -2,7 +2,7 @@
 {
     public static class DependencyInjection
     {
-        private static readonly string[] TableNames = ["SpamHistory", "MessageCount", "SpamHash", "SpamStats"];
+        private static readonly string[] TableNames = ["Chats", "ProbablySpam", "MessageCount", "SpamHash", "SpamStats"];
 
         public static IServiceCollection AddPersistence(this IServiceCollection serviceCollection)
         {

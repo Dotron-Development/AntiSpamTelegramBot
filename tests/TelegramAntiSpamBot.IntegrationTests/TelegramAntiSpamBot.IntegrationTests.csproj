@@ -26,6 +26,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\..\src\bot\TelegramAntiSpamBot.Functions\TelegramAntiSpamBot.Functions.csproj" />
 		<ProjectReference Include="..\..\src\bot\TelegramAntiSpamBot.OpenAI\TelegramAntiSpamBot.OpenAI.csproj" />
 		<ProjectReference Include="..\..\src\bot\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj" />
 	</ItemGroup>

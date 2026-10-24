@@ -17,6 +17,8 @@ namespace TelegramAntiSpamBot.Functions
             {
                 var update = JsonSerializer.Deserialize<Update>(req.Body, JsonBotAPI.Options);
 
+                await RegisterChatAsync(update);
+
                 if (update != null && commandProcessor.IsCommand(update.Message?.Text))
                 {
                     await commandProcessor.ProcessCommand(update);
@@ -38,19 +40,21 @@ namespace TelegramAntiSpamBot.Functions
 
 
                     // Step 1. Extract message text
-                    var messageContent = message.Text ?? string.Empty;
+                    var originalText = message.Text ?? message.Caption ?? string.Empty;
+                    var messageContent = originalText;
+                    var imageText = string.Empty;
 
                     // Step 2. Extract image text
                     if (imageUrl != null)
                     {
-                        var imageText = await detectionService.ExtractImageText(imageUrl);
+                        imageText = await detectionService.ExtractImageText(imageUrl);
                         messageContent = MergeMessageContent(messageContent, imageText);
                     }
 
                     logger.LogInformation("Message content: {messageContent}", messageContent);
 
                     // Step 3. Check message content for spam
-                    if ((messageContent.Length > 30 || imageUrl is not null) && userMessageCount <100)
+                    if ((messageContent.Length > 20 || imageUrl is not null) && userMessageCount < 100)
                     {
                         // Step 3.1 Shortcut. if there is hashed spam message in db
                         // Quick access
@@ -88,8 +92,8 @@ namespace TelegramAntiSpamBot.Functions
 
                         if (spamDetectionResult.Probability >= 95)
                         {
-                            await HandleSpam(message, sanitizedContent,
-                                spamDetectionResult, hex);
+                            await HandleSpam(message, originalText, imageText,
+                                spamDetectionResult, sanitizedContent.Length > 0 ? hex : string.Empty);
                         }
                         else if (sanitizedContent.Length > 0)
                         {
@@ -106,6 +110,26 @@ namespace TelegramAntiSpamBot.Functions
             }
 
             return req.CreateResponse(HttpStatusCode.NoContent);
+        }
+
+        private async Task RegisterChatAsync(Update? update)
+        {
+            var chat = (update?.Message ?? update?.EditedMessage)?.Chat;
+            if (chat is null || chat.Id == botConfig.Value.ForwardSpamToChatId)
+                return;
+
+            try
+            {
+                var name = chat.Title ?? string.Join(" ", new[] { chat.FirstName, chat.LastName }
+                    .Where(part => !string.IsNullOrWhiteSpace(part)));
+                if (string.IsNullOrWhiteSpace(name))
+                    name = chat.Username ?? chat.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                await repository.SaveChatAsync(new ReviewChat(chat.Id, name, DateTimeOffset.UtcNow));
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Unable to update chat catalog for chat {chatId}", chat.Id);
+            }
         }
 
         private async Task HandleSpamShort(Message message)
@@ -151,25 +175,19 @@ namespace TelegramAntiSpamBot.Functions
             await Task.WhenAll(t1, t2);
         }
 
-        private async Task HandleSpam(Message message, string messageContent, SpamRequestResult spamDetectionResult, string hex)
+        private async Task HandleSpam(Message message, string originalText, string imageText, SpamRequestResult spamDetectionResult, string hex)
         {
             var chatId = message.Chat.Id;
-            var userId = message.From!.Id;
+            var user = message.From!;
+            var name = string.Join(" ", new[] { user.FirstName, user.LastName }
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
 
-            var saveTask1 = repository.SaveMessageAsync(chatId,
-                userId,
-                messageContent,
-                spamDetectionResult.Probability!.Value);
+            await repository.SaveReviewMessageAsync(new ReviewMessage(chatId, message.MessageId,
+                user.Id, name, originalText, imageText, hex, message.Date.ToUniversalTime().Ticks));
 
-            var saveTask2 = messageContent.Length > 0
-                ? repository.SaveMessageHash(hex, true)
-                : Task.CompletedTask;
+            await HandleSpamShort(message);
 
-            var t3 = HandleSpamShort(message);
-
-            await Task.WhenAll(saveTask1, saveTask2, t3);
-
-            if (botConfig.Value.ForwardSpamToChatId != null && !string.IsNullOrEmpty(spamDetectionResult.Explanation)) 
+            if (botConfig.Value.ForwardSpamToChatId != null && !string.IsNullOrEmpty(spamDetectionResult.Explanation))
             {
                 await bot.SendMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), spamDetectionResult.Explanation);
             }

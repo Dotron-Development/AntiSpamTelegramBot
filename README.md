@@ -14,6 +14,7 @@ Azure infrastructure and deployment are managed with Terraform and GitHub Action
 - Uses separate Azure AI model deployments for spam classification and text extraction from photos.
 - Reuses cached spam and non-spam decisions using normalized message hashes.
 - Deletes detected spam and restricts the sender for three hours.
+- Queues new AI-detected spam for human review through function-key-protected APIs.
 - Optionally forwards removed messages and AI explanations to a moderation archive chat.
 - Tracks per-user message counts, daily and monthly deletion totals, and deletion latency.
 - Provides the `/stat` command for chat-level moderation statistics.
@@ -40,16 +41,16 @@ The Function App uses a user-assigned managed identity to read Key Vault secrets
 2. Extract the new or edited message, excluding Telegram's channel-forwarding sender and the configured moderation archive chat.
 3. Read the sender's recorded message count for that chat and increment it.
 4. For a photo, resolve its Telegram file URL and extract image text using the image-analysis deployment.
-5. Combine message text and extracted image text. Classification runs when the text exceeds 30 characters or a photo is present, and the sender has fewer than 100 previously recorded messages in that chat.
+5. Combine message text (or a photo caption) and extracted image text. Classification runs when the text exceeds 30 characters or a photo is present, and the sender has fewer than 100 previously recorded messages in that chat.
 6. Normalize the combined content and check its SHA-256 hash in the classification cache.
 7. On a cache miss, ask the spam-classification deployment for a probability. A score of at least 95 triggers moderation; lower scores are cached as non-spam.
-8. For spam, optionally forward the original message, delete it, restrict the sender for three hours, and update statistics. Newly classified spam is also recorded in history.
+8. For new AI-detected spam, save the original text/caption, image transcription, sender ID and display name, message ID, content hash, and original UTC message date as .NET ticks in `ProbablySpam` before moderation. Do not cache an AI-positive decision. Optionally forward the original message, delete it, restrict the sender for three hours, and update statistics. Cached human-confirmed spam triggers moderation without another review.
 
 These thresholds are currently implemented in [AntiSpamBotWebHook.cs](src/bot/TelegramAntiSpamBot.Functions/AntiSpamBotWebHook.cs), rather than exposed as configuration settings. Classification errors are not treated as positive spam decisions.
 
 ### Message normalization and caching
 
-AI receives the original combined text. The cache hash and new spam-history entries use text processed by [MessageContentSanitizer.cs](src/bot/TelegramAntiSpamBot.Persistence/MessageContentSanitizer.cs):
+AI receives the original combined text. The cache hash uses text processed by [MessageContentSanitizer.cs](src/bot/TelegramAntiSpamBot.Persistence/MessageContentSanitizer.cs); the review queue preserves the original text:
 
 - Apply Unicode NFKC normalization and invariant lowercase conversion.
 - Remove whitespace, supported emoji ranges, invisible formatting/control characters, and variation selectors.
@@ -58,18 +59,36 @@ AI receives the original combined text. The cache hash and new spam-history entr
 
 For example, `Hello 1000 world` and `hello 🔥 10001 world` produce the same normalized content and hash. SHA-256 is calculated over the UTF-16 encoded normalized text.
 
-If normalization produces an empty string, classification bypasses the hash cache so unrelated emoji-only messages do not share one decision. Existing hashes and history records are not automatically migrated after normalization changes.
+If normalization produces an empty string, classification and review bypass the hash cache so unrelated emoji-only messages do not share one decision. AI can cache only `false`; human review writes `true` or `false`. Cache entries use a stable partition (`1`) and the content hash as row key, so subsequent decisions replace the same entry. Existing records are not migrated.
 
 ### Stored data
 
 | Azure table | Purpose |
 |---|---|
-| `SpamHash` | Cached spam and non-spam decisions keyed by normalized content hash. |
-| `SpamHistory` | Newly AI-classified spam, including chat, sender, normalized text, and probability. |
+| `SpamHash` | AI-safe and human-reviewed decisions keyed by normalized content hash. |
+| `ProbablySpam` | Pending human review only; partition key is chat ID, row key is Telegram message ID. No probability or completed-review history is stored. |
 | `MessageCount` | Recorded message counts per chat and sender. |
 | `SpamStats` | Daily/monthly deletion totals and minimum, maximum, and average deletion latency. |
+| `Chats` | Chat catalog: partition `chats`, row key is chat ID, with `Name` and UTC `LastSeenUtc`. Updated on incoming and edited messages, including commands; the configured archive chat is excluded. |
 
-Tables are provisioned by Terraform through Azure CLI using Azure identity authentication; shared-key access is disabled for the application data storage account.
+The four moderation tables are provisioned by Terraform through Azure CLI using Azure identity authentication; shared-key access is disabled for the application data storage account. `Chats` is created by the application on its first write if missing; Terraform is unchanged. The application identity needs table-creation permissions as well as entity read/write permissions. An absent catalog table reads as an empty list.
+
+Chat registration is an awaited best-effort upsert before command processing and moderation, not a detached background task. Registration failures are logged separately and do not stop moderation. Names are refreshed on subsequent messages; existing chats are not backfilled without incoming traffic.
+
+### Review API
+
+All review endpoints require an Azure Functions key supplied in `x-functions-key` (or the `code` query parameter). They do not require Telegram's webhook secret. Function keys are normally not enforced by the local Functions host unless it is started with authentication enabled.
+
+| Method and route | Input and behavior |
+|---|---|
+| `GET /api/review/chats` | Optional `pageSize` (1-1000, default 100) and opaque `continuationToken`. Returns `chats` (`chatId`, `name`, `lastSeenUtc`) and `continuationToken`. Follow tokens until null, including after an empty page. |
+| `GET /api/review/messages?chatId=-100123` | Required non-zero `chatId`; optional `pageSize` (1-1000, default 100) and opaque `continuationToken`. Returns `messages` and `continuationToken`; request subsequent pages until the token is null. Only this chat's partition is queried. Results follow Table Storage row-key order, not date order. |
+| `POST /api/review/messages/{chatId}/{messageId}` | JSON body `{"isSpam":true}` or `{"isSpam":false}`. Updates `SpamHash` and removes the queued entry. For non-spam, first republishes the original text/caption and image transcription as plain text prefixed with `from: <display name>`. Long text is split across messages. No image is resent; no restrictions are lifted. Returns 204, or 404 if the entry is missing. |
+| `POST /api/review/restrictions/{chatId}/{userId}` | No body. Independently restores the chat's default member permissions for this user. Returns 204, or 409 when default permissions are unavailable. |
+
+Queue messages contain `chatId`, `messageId`, `userId`, `userName`, `message` (original text/caption), `imageText`, `contentHash`, and `messageDateTicks` (the original UTC date in .NET ticks). The date does not change during review. No `MessageHistory` table is used; completed reviews are not archived. Reviewers with a key have access to all chats and actions, without individual user roles.
+
+Invalid inputs return 400. Review is not transactional across Table Storage and Telegram: failures can leave a queued entry after a cache update or partial publication. No deduplication, retry orchestration, or decision-locking mechanism is added; repeating a failed review can publish text again. Existing webhook error handling and Telegram redelivery behavior are unchanged.
 
 ### Bot commands
 
@@ -85,8 +104,10 @@ Tables are provisioned by Terraform through Azure CLI using Azure identity authe
 | [TelegramAntiSpamBot.Commands](src/bot/TelegramAntiSpamBot.Commands/) | Command routing and `/stat`. |
 | [TelegramAntispamBot.Configuration](src/bot/TelegramAntispamBot.Configuration/) | Telegram bot configuration model. |
 | [TelegramAntiSpamBot.Initializer](src/bot/TelegramAntiSpamBot.Initializer/) | Console application that registers the Telegram webhook. |
+| [Review web app](src/web/) | Local React interface for the review queue and restriction removal. |
 | [Infrastructure](src/infrastructure/) | Azure resources, identities, networking, secrets, and environment variables. |
 | [.NET tests](tests/TelegramAntiSpamBot.IntegrationTests/) | Message-normalization tests and a live AI service smoke test. |
+| [Web tests](tests/TelegramAntiSpamBot.WebTests/) | Independent npm project with Playwright browser and CORS tests. |
 | [GitHub workflows](.github/workflows/) | Development release, production/pre-production release, connectivity setup, cleanup, and infrastructure destruction. |
 
 The shared target framework is defined in [Directory.Build.props](Directory.Build.props), and NuGet package versions are centralized in [Directory.Packages.props](Directory.Packages.props).
@@ -165,6 +186,19 @@ func start
 
 The webhook route is `/api/AntiSpamBotWebHook`. Telegram must reach it through HTTPS; a localhost URL cannot receive Telegram updates directly.
 
+### Run the review web app
+
+With Node.js 24 LTS installed, run from the repository root:
+
+```powershell
+npm --prefix src/web ci
+npm --prefix src/web run dev
+```
+
+Open the URL printed by Vite (normally `http://127.0.0.1:5173`). Connect to a running local or deployed Function, enter its Function key if required, and select a chat from the backend catalog. The English interface supports paginated review, original text and OCR, spam/not-spam decisions, and independent restriction removal.
+
+Set `API_URL` in the web app's `.env` (see [.env.example](src/web/.env.example)). Requests go directly to the Function, so allow the exact frontend origin in its CORS settings. The key stays in memory only. No web hosting or infrastructure is provisioned. See [the web app README](src/web/README.md) for connection details and action side effects, and [the independent Playwright project](tests/TelegramAntiSpamBot.WebTests/README.md) for browser tests.
+
 ### Register the webhook
 
 Run the initializer from the repository root using your bot token, public HTTPS webhook URL, and shared secret:
@@ -194,15 +228,17 @@ The Terraform configuration requires version `>= 1.17.0, < 2.0`; workflows insta
 
 ### Backend and runner prerequisites
 
-The Azure Storage backend and GitHub runner VNet/subnet must already exist. Infrastructure jobs run on a self-hosted runner with Bash and Azure CLI available and access to the backend storage account. Model deployments must be supported in the selected region and have sufficient quota.
+The Azure Storage backend and GitHub runner VNet/subnet must already exist. Infrastructure jobs run on a self-hosted runner with Bash and Azure CLI available and access to the backend storage account. The Actions Runner must be version `2.327.1` or later for the Node.js 24 actions used by these workflows. Model deployments must be supported in the selected region and have sufficient quota.
 
 All setup, deployment, cleanup, and destroy stages use the same state blob, `terraform.tfstate`, in the selected environment's backend container. `AZ_MAIN_STATE_FILE_KEY` is the name of that blob, not a separate state store. Terraform may store secret values in state even when variables are marked sensitive; restrict access to the backend and saved plans.
 
 ### Runner connectivity lifecycle
 
-1. **Setup:** `setup-vm-runner-connectivity` sets `enable_runner_endpoints=true` and applies the targeted network dependencies, including DNS propagation waits. This restores connectivity before the main plan attempts to refresh existing Key Vault secrets.
-2. **Deployment:** the main infrastructure job performs a full plan/apply, followed by Function App publication and Telegram webhook registration.
+1. **Setup:** `setup-vm-runner-connectivity` sets `enable_runner_endpoints=true` and applies the targeted network dependencies, including DNS propagation waits. This bootstrap plan uses `-refresh=false`: the targets also include their Key Vault dependency, whose refresh reads certificate contacts through the data plane and can time out while runner connectivity is still disabled. Setup uses the saved state to restore connectivity before the main plan refreshes the Vault and its secrets.
+2. **Deployment:** the main infrastructure job performs a full plan/apply. A separate job configures and refreshes Key Vault references using the Function App's user-assigned identity, followed by Function App publication and Telegram webhook registration.
 3. **Cleanup:** a full, ordinary plan/apply with `enable_runner_endpoints=false` removes temporary runner endpoints and DNS waits. DNS records retain the permanent endpoint addresses.
+
+The resource-targeting warning during setup is expected. Only this bootstrap plan disables refresh; the main deployment and cleanup retain normal refresh and full planning. Bootstrap relies on an accurate existing state and is not a substitute for reconciling external resource drift or making unrelated Key Vault changes.
 
 Secrets, the Function App, and table provisioning do not depend on temporary runner endpoints. Cleanup does not use `terraform destroy -target` or manually remove Azure resources. Infrastructure-destroy workflows restore runner connectivity before planning a full destroy.
 
@@ -214,7 +250,7 @@ The default value of `enable_runner_endpoints` is `true`. CI, release, and destr
 |---|---|
 | [release dev](.github/workflows/release-dev.yaml) | Pushes to `main` or manual runs; deploys the `dev` environment. |
 | [release prod](.github/workflows/release-prod.yaml) | Manual deployment to `ppr` or `prod`; `ppr` is the default selection. |
-| [main-infrastructure](.github/workflows/main-infrastructure.yaml) | Reusable infrastructure workflow, including the separate runner-connectivity setup job. |
+| [main-infrastructure](.github/workflows/main-infrastructure.yaml) | Reusable infrastructure workflow, including separate runner-connectivity setup and post-apply Key Vault reference configuration jobs. |
 | [vm-runner-connectivity](.github/workflows/runner-connectivity.yaml) | Reusable setup/cleanup plan and apply controlled by `enable_runner_endpoints`. |
 | [deploy](.github/workflows/functionapp.yaml) | Publishes the Linux Function App package, deploys it, and registers the webhook. |
 | [cleanup-runner-endpoints](.github/workflows/cleanup-runner-endpoints.yaml) | Invokes connectivity cleanup after application deployment. |

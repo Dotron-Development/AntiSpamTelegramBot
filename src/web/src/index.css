@@ -1,0 +1,125 @@
+@import '@fontsource/manrope/400.css';
+@import '@fontsource/manrope/500.css';
+@import '@fontsource/manrope/600.css';
+@import '@fontsource/manrope/700.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+
+:root {
+    font-family: 'Manrope', sans-serif;
+    color: #22332e;
+    background: #f5f7f6;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    --ink: #22332e;
+    --muted: #75807b;
+    --line: #e2e8e4;
+    --green: #147d68;
+    --green-dark: #0b6251;
+    --green-pale: #edf6f1;
+    --red: #ae443f;
+    --red-pale: #fff3f1;
+    --mono: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    letter-spacing: 0;
+    color-scheme: light;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-width: 320px;
+}
+
+button,
+input,
+select {
+    font: inherit;
+    letter-spacing: 0;
+}
+
+button {
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+}
+
+button,
+a,
+input,
+select {
+    -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible {
+    outline: 3px solid #92c9b7;
+    outline-offset: 3px;
+}
+
+input,
+select {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid #cfd9d3;
+    background: white;
+    border-radius: 5px;
+    color: var(--ink);
+    height: 42px;
+    padding: 0 12px;
+}
+
+input:focus,
+select:focus {
+    outline: 2px solid #a4d1bf;
+    outline-offset: 1px;
+    border-color: var(--green);
+}
+
+input::placeholder {
+    color: #929c97;
+}
+
+code {
+    font: 12px var(--mono);
+    overflow-wrap: anywhere;
+}
+
+svg {
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+
+h1,
+h2,
+h3,
+p {
+    margin: 0;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+::selection {
+    background: #cde8dc;
+    color: #123e30;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}

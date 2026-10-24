@@ -2,11 +2,12 @@
 
 public interface IAntiSpamBotRepository
 {
-    Task SaveMessageAsync(long chatId,
-        long userId,
-        string messageContent,
-        int probability, 
-        string? explanation = null);
+    Task SaveChatAsync(ReviewChat chat);
+    Task<ReviewChatPage> GetReviewChatsAsync(int pageSize, string? continuationToken);
+    Task SaveReviewMessageAsync(ReviewMessage message);
+    Task<ReviewMessagePage> GetReviewMessagesAsync(long chatId, int pageSize, string? continuationToken);
+    Task<ReviewMessage?> GetReviewMessageAsync(long chatId, int messageId);
+    Task DeleteReviewMessageAsync(long chatId, int messageId);
 
     Task IncreaseMessageCount(long chatId, long userId);
     Task<int> GetUserMessageCount(long chatId, long userId);
