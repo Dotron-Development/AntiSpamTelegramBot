@@ -11,7 +11,6 @@ on:
         type: boolean
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
@@ -32,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Verify Inputs
         env:
@@ -44,7 +43,7 @@ jobs:
           esac
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4.0.1
         with:
           terraform_version: "1.17.0"
           terraform_wrapper: false
@@ -65,7 +64,7 @@ jobs:
         if: inputs.enable_runner_endpoints
         # Refreshing existing secrets requires connectivity to be restored first.
         run: |
-          terraform plan -out=connectivity.tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
+          terraform plan -refresh=false -out=connectivity.tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
             -target=time_sleep.kv_dns_propagation \
             -target=time_sleep.data_storage_dns_propagation
 

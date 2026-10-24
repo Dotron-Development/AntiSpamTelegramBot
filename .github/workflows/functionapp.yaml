@@ -24,7 +24,6 @@ permissions:
   contents: read
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   AZURE_FUNCTIONAPP_PACKAGE_PATH: "src/bot/TelegramAntiSpamBot.Functions/published"
   WORKING_DIRECTORY: src/bot/TelegramAntiSpamBot.Functions
   DOTNET_VERSION: "10.0.x"
@@ -38,7 +37,7 @@ jobs:
 
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Verify Inputs
         run: |
@@ -62,12 +61,12 @@ jobs:
           echo "FUNCTION_APP_IDENTITY_NAME=${{ inputs.function_app_identity_name }}" >> $GITHUB_ENV
 
       - name: "Azure login"
-        uses: azure/login@v2
+        uses: azure/login@v3.1.0
         with:
           creds: '{"clientId":"${{ secrets.ARM_CLIENT_ID }}","clientSecret":"${{ secrets.ARM_CLIENT_SECRET }}","subscriptionId":"${{ secrets.ARM_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.ARM_TENANT_ID }}"}'
 
       - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -77,13 +76,13 @@ jobs:
           dotnet publish "${{ env.WORKING_DIRECTORY }}" --configuration Release --os linux --arch x64 --output "${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}"
 
       - name: Publish Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: functionapp
           path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
 
       - name: Deploy to Azure Function App
-        uses: Azure/functions-action@v1
+        uses: Azure/functions-action@v1.5.7
         with:
           app-name: ${{ inputs.function_app_name }}
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}

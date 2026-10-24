@@ -7,7 +7,6 @@ on:
         type: string
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   
   # service principal credentials
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
@@ -34,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Verify Inputs
         run: |
@@ -45,7 +44,7 @@ jobs:
           fi
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4.0.1
         with:
           terraform_version: "1.17.0"
           terraform_wrapper: false
