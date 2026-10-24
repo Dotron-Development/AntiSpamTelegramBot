@@ -108,3 +108,57 @@ jobs:
           echo "resource_group_name=$RESOURCE_GROUP_NAME" >> $GITHUB_OUTPUT
           echo "functionapp_name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
           echo "function_app_identity_name=$FUNCTION_APP_IDENTITY_NAME" >> $GITHUB_OUTPUT
+
+  configure-key-vault-references:
+    needs: main-infrastructure
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: '{"clientId":"${{ secrets.ARM_CLIENT_ID }}","clientSecret":"${{ secrets.ARM_CLIENT_SECRET }}","subscriptionId":"${{ secrets.ARM_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.ARM_TENANT_ID }}"}'
+
+      - name: Configure Key Vault reference identity
+        shell: bash
+        env:
+          RESOURCE_GROUP_NAME: ${{ needs.main-infrastructure.outputs.resource_group_name }}
+          FUNCTION_APP_NAME: ${{ needs.main-infrastructure.outputs.functionapp_name }}
+          FUNCTION_APP_IDENTITY_NAME: ${{ needs.main-infrastructure.outputs.function_app_identity_name }}
+        run: |
+          set -euo pipefail
+
+          function_app_id=$(az functionapp show \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --name "$FUNCTION_APP_NAME" \
+            --query id --output tsv)
+          
+          identity_id=$(az identity show \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --name "$FUNCTION_APP_IDENTITY_NAME" \
+            --query id --output tsv)
+
+          if [[ -z "$function_app_id" || -z "$identity_id" ]]; then
+            echo "Error: Function App or managed identity resource ID is empty."
+            exit 1
+          fi
+
+          az resource update \
+            --ids "$function_app_id" \
+            --api-version 2023-12-01 \
+            --set properties.keyVaultReferenceIdentity="$identity_id" \
+            --output none
+
+          actual_identity_id=$(az resource show \
+            --ids "$function_app_id" \
+            --api-version 2023-12-01 \
+            --query properties.keyVaultReferenceIdentity --output tsv)
+          if [[ "${actual_identity_id,,}" != "${identity_id,,}" ]]; then
+            echo "Error: Key Vault reference identity was not applied."
+            exit 1
+          fi
+
+          az rest --method post \
+            --url "https://management.azure.com${function_app_id}/config/configreferences/appsettings/refresh?api-version=2022-03-01" \
+            --output none
