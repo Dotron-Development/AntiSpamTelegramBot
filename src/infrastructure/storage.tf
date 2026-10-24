@@ -16,7 +16,7 @@ resource "azurerm_storage_account" "data_storage" {
 }
 
 resource "time_sleep" "data_storage_dns_propagation" {
-  count           = var.disable_public_access ? 1 : 0
+  count           = var.disable_public_access && var.enable_runner_endpoints ? 1 : 0
   create_duration = "300s"
 
   depends_on = [
@@ -49,8 +49,5 @@ resource "null_resource" "data_storage_tables" {
     EOT
   }
 
-  depends_on = [
-    time_sleep.data_storage_dns_propagation,
-    azurerm_private_endpoint.data_storage_pe,
-  ]
+  depends_on = [azurerm_private_endpoint.data_storage_pe]
 }

@@ -27,7 +27,15 @@ env:
   ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
 
 jobs:
+  setup-vm-runner-connectivity:
+    uses: ./.github/workflows/runner-connectivity.yaml
+    with:
+      environment: ${{ inputs.environment }}
+      enable_runner_endpoints: true
+    secrets: inherit
+
   main-infrastructure:
+    needs: setup-vm-runner-connectivity
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
 

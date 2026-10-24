@@ -43,10 +43,10 @@ resource "azurerm_private_dns_a_record" "data_storage_a_record" {
   name                = azurerm_storage_account.data_storage.name
   private_dns_zone_id = azurerm_private_dns_zone.data_storage_private_dns[0].id
   ttl                 = 300
-  records = [
-    azurerm_private_endpoint.data_storage_pe[0].ip_configuration[0].private_ip_address,
-    azurerm_private_endpoint.data_storage_runner_pe[0].private_service_connection[0].private_ip_address
-  ]
+  records = concat(
+    [azurerm_private_endpoint.data_storage_pe[0].ip_configuration[0].private_ip_address],
+    [for endpoint in azurerm_private_endpoint.data_storage_runner_pe : endpoint.private_service_connection[0].private_ip_address]
+  )
 
   tags = local.tags
 }

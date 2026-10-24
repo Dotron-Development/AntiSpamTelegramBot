@@ -12,6 +12,10 @@ on:
           - prod
           - ppr
 
+concurrency:
+  group: infrastructure-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
 jobs:
   destroy-infrastructure:
     uses: ./.github/workflows/destroy-infrastructure.yaml

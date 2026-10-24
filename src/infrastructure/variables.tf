@@ -61,6 +61,12 @@ variable "disable_public_access" {
   type        = bool
 }
 
+variable "enable_runner_endpoints" {
+  description = "Create temporary runner private endpoints during deployment; disable them during cleanup."
+  type        = bool
+  default     = true
+}
+
 variable "bot_name" {
   description = "The name of the bot. Example: @someBotName"
   type        = string

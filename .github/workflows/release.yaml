@@ -12,6 +12,10 @@ on:
           - ppr
           - prod
 
+concurrency:
+  group: infrastructure-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
 permissions:
   id-token: write
   contents: read

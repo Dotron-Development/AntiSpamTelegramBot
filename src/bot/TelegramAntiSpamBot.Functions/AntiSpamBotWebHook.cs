@@ -1,3 +1,5 @@
+using TelegramAntiSpamBot.Persistence.DTO;
+
 namespace TelegramAntiSpamBot.Functions
 {
     public class AntiSpamBotWebHook(ILogger<AntiSpamBotWebHook> logger,
@@ -52,9 +54,12 @@ namespace TelegramAntiSpamBot.Functions
                     {
                         // Step 3.1 Shortcut. if there is hashed spam message in db
                         // Quick access
-                        var contentHash = SHA256.HashData(Encoding.Unicode.GetBytes(messageContent));
+                        var sanitizedContent = MessageContentSanitizer.Sanitize(messageContent);
+                        var contentHash = SHA256.HashData(Encoding.Unicode.GetBytes(sanitizedContent));
                         var hex = Convert.ToHexString(contentHash);
-                        var shortcutResult = await repository.IsSpam(hex);
+                        var shortcutResult = sanitizedContent.Length > 0
+                            ? await repository.IsSpam(hex)
+                            : ShortcutCheckResult.NotFound;
 
                         if (shortcutResult.IsShortCut)
                         {
@@ -83,10 +88,10 @@ namespace TelegramAntiSpamBot.Functions
 
                         if (spamDetectionResult.Probability >= 95)
                         {
-                            await HandleSpam(message, messageContent,
+                            await HandleSpam(message, sanitizedContent,
                                 spamDetectionResult, hex);
                         }
-                        else
+                        else if (sanitizedContent.Length > 0)
                         {
                             await repository.SaveMessageHash(hex, false);
                         }
@@ -156,7 +161,9 @@ namespace TelegramAntiSpamBot.Functions
                 messageContent,
                 spamDetectionResult.Probability!.Value);
 
-            var saveTask2 = repository.SaveMessageHash(hex, true);
+            var saveTask2 = messageContent.Length > 0
+                ? repository.SaveMessageHash(hex, true)
+                : Task.CompletedTask;
 
             var t3 = HandleSpamShort(message);
 

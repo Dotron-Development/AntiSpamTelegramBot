@@ -43,10 +43,10 @@ resource "azurerm_private_dns_a_record" "keyvault_a_record" {
   name                = "${local.kv_name}-${var.environment_prefix}"
   private_dns_zone_id = azurerm_private_dns_zone.private_dns[0].id
   ttl                 = 300
-  records = [
-    azurerm_private_endpoint.kv_pe[0].ip_configuration[0].private_ip_address,
-    azurerm_private_endpoint.kv_runner_pe[0].private_service_connection[0].private_ip_address
-  ]
+  records = concat(
+    [azurerm_private_endpoint.kv_pe[0].ip_configuration[0].private_ip_address],
+    [for endpoint in azurerm_private_endpoint.kv_runner_pe : endpoint.private_service_connection[0].private_ip_address]
+  )
 
   tags = local.tags
 }

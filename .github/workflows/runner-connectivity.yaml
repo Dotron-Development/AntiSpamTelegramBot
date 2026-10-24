@@ -1,0 +1,78 @@
+name: vm-runner-connectivity
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      enable_runner_endpoints:
+        required: true
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  TF_VAR_keyvault_administrator_object_id: ${{ secrets.AZ_OWNER_OBJECT_ID }}
+  TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TF_VAR_telegram_bot_secret_header: ${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}
+  TF_VAR_enable_runner_endpoints: ${{ inputs.enable_runner_endpoints }}
+
+jobs:
+  vm-runner-connectivity:
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: src/infrastructure
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify Inputs
+        env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          case "$DEPLOY_ENVIRONMENT" in
+            dev|prod|ppr) ;;
+            *) echo "Invalid environment: $DEPLOY_ENVIRONMENT"; exit 1 ;;
+          esac
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.17.0"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        env:
+          AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
+          AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
+          AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}" \
+            -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}"
+
+      - name: Plan runner connectivity setup
+        if: inputs.enable_runner_endpoints
+        # Refreshing existing secrets requires connectivity to be restored first.
+        run: |
+          terraform plan -out=connectivity.tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
+            -target=time_sleep.kv_dns_propagation \
+            -target=time_sleep.data_storage_dns_propagation
+
+      - name: Plan runner connectivity cleanup
+        if: ${{ !inputs.enable_runner_endpoints }}
+        # Ordinary apply updates DNS in place and removes only optional runner resources.
+        run: terraform plan -out=connectivity.tfplan -var-file=environments/${{ inputs.environment }}.tfvars
+
+      - name: Apply runner connectivity plan
+        run: terraform apply connectivity.tfplan
