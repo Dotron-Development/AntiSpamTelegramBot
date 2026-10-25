@@ -12,9 +12,9 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'npm run dev -- --port 5179 --strictPort',
+    command: 'npm run dev -- --host 127.0.0.1 --port 5179 --strictPort',
     cwd: fileURLToPath(new URL('../../src/web', import.meta.url)),
-    env: { API_URL: 'https://review.example.test' },
+    env: { API_URL: 'https://review.example.test/api/', FUNCTION_KEY: 'test-only-not-a-real-key' },
     url: 'http://127.0.0.1:5179',
     reuseExistingServer: false,
   },

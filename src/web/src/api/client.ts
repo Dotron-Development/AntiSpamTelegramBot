@@ -1,34 +1,11 @@
-import { parse } from 'lossless-json'
+import { parseApiError, parseReviewChatPage, parseReviewMessagePage } from './contracts'
+import type { ReviewChatPage, ReviewMessage, ReviewMessageRequest, ReviewPage } from './contracts'
+
+export type { ReviewChat, ReviewChatPage, ReviewMessage, ReviewPage } from './contracts'
 
 export interface Connection {
   endpoint: string
   key: string
-}
-
-export interface ReviewMessage {
-  chatId: string
-  messageId: string
-  userId: string
-  userName: string
-  message: string
-  imageText: string
-  messageDateTicks: string
-}
-
-export interface ReviewPage {
-  messages: ReviewMessage[]
-  continuationToken: string | null
-}
-
-export interface ReviewChat {
-  chatId: string
-  name: string
-  lastSeenUtc: string
-}
-
-export interface ReviewChatPage {
-  chats: ReviewChat[]
-  continuationToken: string | null
 }
 
 export class ApiError extends Error {
@@ -92,8 +69,7 @@ async function request(connection: Connection, path: string, method: 'GET' | 'PO
   if (!response.ok) {
     let detail = ''
     try {
-      const data = JSON.parse(text) as { error?: string }
-      if (typeof data.error === 'string') detail = data.error
+      detail = parseApiError(text).error
     } catch {}
     const defaults: Record<number, string> = {
       401: 'Access denied. Check your Function key.',
@@ -109,50 +85,21 @@ async function request(connection: Connection, path: string, method: 'GET' | 'PO
 export async function getChats(connection: Connection, token: string | null, signal?: AbortSignal): Promise<ReviewChatPage> {
   const query = new URLSearchParams({ pageSize: '1000' })
   if (token) query.set('continuationToken', token)
-  const data = parse(await request(connection, `/chats?${query}`, 'GET', undefined, signal)) as {
-    chats?: Record<string, unknown>[]; continuationToken?: unknown
-  }
-  if (!data || !Array.isArray(data.chats) ||
-      (data.continuationToken != null && typeof data.continuationToken !== 'string')) {
-    throw new Error('The Function returned an unexpected chat response.')
-  }
-  const chats = data.chats.map((item): ReviewChat => {
-    const chatId = String(item.chatId)
-    if (!validId(chatId) || typeof item.name !== 'string' || typeof item.lastSeenUtc !== 'string')
-      throw new Error('The Function returned an invalid chat.')
-    return { chatId, name: item.name, lastSeenUtc: item.lastSeenUtc }
-  })
-  return { chats, continuationToken: data.continuationToken as string | null ?? null }
+  return parseReviewChatPage(await request(connection, `/chats?${query}`, 'GET', undefined, signal))
 }
 
 export async function getMessages(connection: Connection, chatId: string, pageSize: number,
   token: string | null, signal?: AbortSignal): Promise<ReviewPage> {
-  const query = new URLSearchParams({ chatId, pageSize: String(pageSize) })
+  const query = new URLSearchParams()
+  if (chatId) query.set('chatId', chatId)
+  query.set('pageSize', String(pageSize))
   if (token) query.set('continuationToken', token)
-  const text = await request(connection, `/messages?${query}`, 'GET', undefined, signal)
-  const data = parse(text) as { messages?: Record<string, unknown>[]; continuationToken?: unknown }
-  if (!data || !Array.isArray(data.messages) ||
-      (data.continuationToken != null && typeof data.continuationToken !== 'string')) {
-    throw new Error('The Function returned an unexpected review response.')
-  }
-  const messages = data.messages.map((item): ReviewMessage => {
-    const chat = String(item.chatId)
-    const message = String(item.messageId)
-    const user = String(item.userId)
-    const ticks = String(item.messageDateTicks)
-    if (!validId(chat) || !validId(message, true) || !validId(user, true) ||
-        !/^\d+$/.test(ticks) || typeof item.userName !== 'string' ||
-        typeof item.message !== 'string' || typeof item.imageText !== 'string') {
-      throw new Error('The Function returned an invalid message.')
-    }
-    return { chatId: chat, messageId: message, userId: user, userName: item.userName,
-      message: item.message, imageText: item.imageText, messageDateTicks: ticks }
-  })
-  return { messages, continuationToken: data.continuationToken as string | null ?? null }
+  return parseReviewMessagePage(await request(connection, `/messages?${query}`, 'GET', undefined, signal))
 }
 
 export async function reviewMessage(connection: Connection, message: ReviewMessage, isSpam: boolean) {
-  await request(connection, `/messages/${message.chatId}/${message.messageId}`, 'POST', { isSpam })
+  const body: ReviewMessageRequest = { isSpam }
+  await request(connection, `/messages/${message.chatId}/${message.messageId}`, 'POST', body)
 }
 
 export async function removeRestrictions(connection: Connection, chatId: string, userId: string) {

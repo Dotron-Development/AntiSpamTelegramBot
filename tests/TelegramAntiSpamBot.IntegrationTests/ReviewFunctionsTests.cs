@@ -16,6 +16,7 @@ using TelegramAntiSpamBot.Functions;
 using TelegramAntiSpamBot.OpenAI;
 using TelegramAntiSpamBot.Persistence;
 using TelegramAntiSpamBot.Persistence.DTO;
+using TelegramAntiSpamBot.Persistence.Repositories;
 
 namespace TelegramAntiSpamBot.IntegrationTests;
 
@@ -118,11 +119,33 @@ public class ReviewFunctionsTests
     }
 
     [Theory]
-    [InlineData("")]
+    [InlineData("", 100, null)]
+    [InlineData("?pageSize=12&continuationToken=opaque", 12, "opaque")]
+    public async Task ListWithoutChatPassesNullAndPaginationToRepository(string query, int pageSize, string? token)
+    {
+        using var fixture = new Fixture();
+
+        var response = await fixture.Functions.GetMessages(fixture.Request(query: query));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(((long?)null, pageSize, token), fixture.Query);
+        response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(response.Body);
+        Assert.Equal(7, document.RootElement.GetProperty("messages")[0].GetProperty("messageId").GetInt32());
+        Assert.Equal("next", document.RootElement.GetProperty("continuationToken").GetString());
+    }
+
+    [Theory]
     [InlineData("?chatId=0")]
+    [InlineData("?chatId=")]
+    [InlineData("?chatId=invalid")]
+    [InlineData("?chatId=9223372036854775808")]
     [InlineData("?chatId=-100&pageSize=0")]
     [InlineData("?chatId=-100&pageSize=1001")]
-    public async Task ListRejectsMissingChatOrInvalidPageSize(string query)
+    [InlineData("?pageSize=invalid")]
+    [InlineData("?pageSize=0")]
+    [InlineData("?pageSize=1001")]
+    public async Task ListRejectsInvalidSuppliedChatOrPageSize(string query)
     {
         using var fixture = new Fixture();
 
@@ -295,7 +318,7 @@ public class ReviewFunctionsTests
         public ReviewMessage? Message { get; set; } = new(-100, 7, 42, "Alice", "Original caption", "Recognized text", "HASH", 638000000000000000);
         public List<(string Hash, bool IsSpam)> HashDecisions { get; } = [];
         public bool Deleted { get; private set; }
-        public (long ChatId, int PageSize, string? Token)? Query { get; private set; }
+        public (long? ChatId, int PageSize, string? Token)? Query { get; private set; }
         public ReviewFunctions Functions { get; }
         public AntiSpamBotWebHook Webhook { get; }
         public DetectorStub Detector { get; } = new();
@@ -307,51 +330,62 @@ public class ReviewFunctionsTests
 
         public Fixture()
         {
-            var repository = DispatchProxy.Create<IAntiSpamBotRepository, RepositoryProxy>();
-            ((RepositoryProxy)repository).Handler = (method, arguments) =>
+            object? HandleRepositoryCall(MethodInfo method, object?[] arguments)
             {
                 switch (method.Name)
                 {
-                    case nameof(IAntiSpamBotRepository.SaveChatAsync):
+                    case nameof(IChatsRepository.SaveChatAsync):
                         if (ChatSaveFails) return Task.FromException(new InvalidOperationException("Storage unavailable"));
                         SavedChats.Add((ReviewChat)arguments[0]!);
                         return Task.CompletedTask;
-                    case nameof(IAntiSpamBotRepository.GetReviewChatsAsync):
+                    case nameof(IChatsRepository.GetReviewChatsAsync):
                         ChatQuery = ((int)arguments[0]!, (string?)arguments[1]);
                         return Task.FromResult(new ReviewChatPage([new ReviewChat(-100, "Test", DateTimeOffset.UtcNow)], "next-chat"));
-                    case nameof(IAntiSpamBotRepository.GetUserMessageCount):
+                    case nameof(IMessageCountRepository.GetUserMessageCount):
                         return Task.FromResult(0);
-                    case nameof(IAntiSpamBotRepository.IncreaseMessageCount):
-                    case nameof(IAntiSpamBotRepository.UpdateChannelSpamStats):
+                    case nameof(IMessageCountRepository.IncreaseMessageCount):
+                    case nameof(ISpamStatsRepository.UpdateChannelSpamStats):
                         return Task.CompletedTask;
-                    case nameof(IAntiSpamBotRepository.IsSpam):
+                    case nameof(ISpamHashRepository.IsSpam):
                         return Task.FromResult(Shortcut);
-                    case nameof(IAntiSpamBotRepository.SaveReviewMessageAsync):
+                    case nameof(IProbablySpamRepository.SaveReviewMessageAsync):
                         SavedMessage = (ReviewMessage)arguments[0]!;
                         return Task.CompletedTask;
-                    case nameof(IAntiSpamBotRepository.GetReviewMessageAsync):
+                    case nameof(IProbablySpamRepository.GetReviewMessageAsync):
                         Assert.Equal(-100L, arguments[0]);
                         Assert.Equal(7, arguments[1]);
                         return Task.FromResult(Message);
-                    case nameof(IAntiSpamBotRepository.GetReviewMessagesAsync):
-                        Query = ((long)arguments[0]!, (int)arguments[1]!, (string?)arguments[2]);
+                    case nameof(IProbablySpamRepository.GetReviewMessagesAsync):
+                        Query = ((long?)arguments[0], (int)arguments[1]!, (string?)arguments[2]);
                         return Task.FromResult(new ReviewMessagePage([Message!], "next"));
-                    case nameof(IAntiSpamBotRepository.SaveMessageHash):
+                    case nameof(ISpamHashRepository.SaveMessageHash):
                         HashDecisions.Add(((string)arguments[0]!, (bool)arguments[1]!));
                         return Task.CompletedTask;
-                    case nameof(IAntiSpamBotRepository.DeleteReviewMessageAsync):
+                    case nameof(IProbablySpamRepository.DeleteReviewMessageAsync):
                         Deleted = true;
                         return Task.CompletedTask;
                     default:
                         throw new InvalidOperationException(method.Name);
                 }
-            };
+            }
+            T CreateRepository<T>() where T : class
+            {
+                var repository = DispatchProxy.Create<T, RepositoryProxy>();
+                ((RepositoryProxy)(object)repository).Handler = HandleRepositoryCall;
+                return repository;
+            }
+            var chatsRepository = CreateRepository<IChatsRepository>();
+            var probablySpamRepository = CreateRepository<IProbablySpamRepository>();
+            var messageCountRepository = CreateRepository<IMessageCountRepository>();
+            var spamHashRepository = CreateRepository<ISpamHashRepository>();
+            var spamStatsRepository = CreateRepository<ISpamStatsRepository>();
             httpClient = new HttpClient(Telegram);
             const string token = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk";
             var bot = new TelegramBotClient(token, httpClient);
-            Functions = new ReviewFunctions(repository, bot);
+            Functions = new ReviewFunctions(chatsRepository, probablySpamRepository, spamHashRepository, bot);
             Webhook = new AntiSpamBotWebHook(NullLogger<AntiSpamBotWebHook>.Instance,
-                Detector, repository, bot, new TelegramImageUrlResolver(token), new CommandStub(),
+                Detector, chatsRepository, probablySpamRepository, messageCountRepository, spamHashRepository,
+                spamStatsRepository, bot, new TelegramImageUrlResolver(token), new CommandStub(),
                 Options.Create(new TelegramBotConfiguration
                 {
                     Token = token,

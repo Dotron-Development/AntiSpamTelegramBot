@@ -1,10 +1,15 @@
 using TelegramAntiSpamBot.Persistence.DTO;
+using TelegramAntiSpamBot.Persistence.Repositories;
 
 namespace TelegramAntiSpamBot.Functions
 {
     public class AntiSpamBotWebHook(ILogger<AntiSpamBotWebHook> logger,
         ISpamDetectionService detectionService,
-        IAntiSpamBotRepository repository,
+        IChatsRepository chatsRepository,
+        IProbablySpamRepository probablySpamRepository,
+        IMessageCountRepository messageCountRepository,
+        ISpamHashRepository spamHashRepository,
+        ISpamStatsRepository spamStatsRepository,
         ITelegramBotClient bot,
         TelegramImageUrlResolver imageUrlResolver,
         ICommandProcessor commandProcessor,
@@ -34,8 +39,8 @@ namespace TelegramAntiSpamBot.Functions
                     // helpful for controlling of what was deleted
                     && message.Chat.Id != botConfig.Value.ForwardSpamToChatId)
                 {
-                    var userMessageCount = await repository.GetUserMessageCount(message.Chat.Id, fromUser.Id);
-                    var increaseCounterTask = repository.IncreaseMessageCount(message.Chat.Id, fromUser.Id);
+                    var userMessageCount = await messageCountRepository.GetUserMessageCount(message.Chat.Id, fromUser.Id);
+                    var increaseCounterTask = messageCountRepository.IncreaseMessageCount(message.Chat.Id, fromUser.Id);
                     var imageUrl = await ExtractUrlImageFromMessage(message);
 
 
@@ -62,7 +67,7 @@ namespace TelegramAntiSpamBot.Functions
                         var contentHash = SHA256.HashData(Encoding.Unicode.GetBytes(sanitizedContent));
                         var hex = Convert.ToHexString(contentHash);
                         var shortcutResult = sanitizedContent.Length > 0
-                            ? await repository.IsSpam(hex)
+                            ? await spamHashRepository.IsSpam(hex)
                             : ShortcutCheckResult.NotFound;
 
                         if (shortcutResult.IsShortCut)
@@ -97,7 +102,7 @@ namespace TelegramAntiSpamBot.Functions
                         }
                         else if (sanitizedContent.Length > 0)
                         {
-                            await repository.SaveMessageHash(hex, false);
+                            await spamHashRepository.SaveMessageHash(hex, false);
                         }
                     }
 
@@ -124,7 +129,7 @@ namespace TelegramAntiSpamBot.Functions
                     .Where(part => !string.IsNullOrWhiteSpace(part)));
                 if (string.IsNullOrWhiteSpace(name))
                     name = chat.Username ?? chat.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                await repository.SaveChatAsync(new ReviewChat(chat.Id, name, DateTimeOffset.UtcNow));
+                await chatsRepository.SaveChatAsync(new ReviewChat(chat.Id, name, DateTimeOffset.UtcNow));
             }
             catch (Exception exception)
             {
@@ -153,7 +158,7 @@ namespace TelegramAntiSpamBot.Functions
             await bot.DeleteMessage(chatId, messageId);
 
             var diff = DateTime.UtcNow - message.Date;
-            var t1 = repository.UpdateChannelSpamStats(chatId, (int)diff.TotalMilliseconds);
+            var t1 = spamStatsRepository.UpdateChannelSpamStats(chatId, (int)diff.TotalMilliseconds);
             var t2 = bot.RestrictChatMember(chatId, userId, new ChatPermissions()
             {
                 CanSendPhotos = false,
@@ -182,7 +187,7 @@ namespace TelegramAntiSpamBot.Functions
             var name = string.Join(" ", new[] { user.FirstName, user.LastName }
                 .Where(part => !string.IsNullOrWhiteSpace(part)));
 
-            await repository.SaveReviewMessageAsync(new ReviewMessage(chatId, message.MessageId,
+            await probablySpamRepository.SaveReviewMessageAsync(new ReviewMessage(chatId, message.MessageId,
                 user.Id, name, originalText, imageText, hex, message.Date.ToUniversalTime().Ticks));
 
             await HandleSpamShort(message);

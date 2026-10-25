@@ -73,6 +73,8 @@ If normalization produces an empty string, classification and review bypass the 
 
 The four moderation tables are provisioned by Terraform through Azure CLI using Azure identity authentication; shared-key access is disabled for the application data storage account. `Chats` is created by the application on its first write if missing; Terraform is unchanged. The application identity needs table-creation permissions as well as entity read/write permissions. An absent catalog table reads as an empty list.
 
+Persistence is split into table-specific repositories: `Chats`, `ProbablySpam`, `SpamHash`, `MessageCount`, and `SpamStats` each have their own interface and implementation. Consumers inject only the repositories they use; there is no shared all-table repository. Table schemas, partition/row keys, and existing records remain unchanged.
+
 Chat registration is an awaited best-effort upsert before command processing and moderation, not a detached background task. Registration failures are logged separately and do not stop moderation. Names are refreshed on subsequent messages; existing chats are not backfilled without incoming traffic.
 
 ### Review API
@@ -82,7 +84,7 @@ All review endpoints require an Azure Functions key supplied in `x-functions-key
 | Method and route | Input and behavior |
 |---|---|
 | `GET /api/review/chats` | Optional `pageSize` (1-1000, default 100) and opaque `continuationToken`. Returns `chats` (`chatId`, `name`, `lastSeenUtc`) and `continuationToken`. Follow tokens until null, including after an empty page. |
-| `GET /api/review/messages?chatId=-100123` | Required non-zero `chatId`; optional `pageSize` (1-1000, default 100) and opaque `continuationToken`. Returns `messages` and `continuationToken`; request subsequent pages until the token is null. Only this chat's partition is queried. Results follow Table Storage row-key order, not date order. |
+| `GET /api/review/messages?pageSize=100` | Optional non-zero `chatId` filters one chat's partition; omit it to query all chats. Optional `pageSize` (1-1000, default 100) and opaque `continuationToken`. Returns `messages` and `continuationToken`; request subsequent pages until the token is null. Results follow Azure Table Storage partition/row-key order, not date order. No chronological sorting or full-table aggregation is performed. |
 | `POST /api/review/messages/{chatId}/{messageId}` | JSON body `{"isSpam":true}` or `{"isSpam":false}`. Updates `SpamHash` and removes the queued entry. For non-spam, first republishes the original text/caption and image transcription as plain text prefixed with `from: <display name>`. Long text is split across messages. No image is resent; no restrictions are lifted. Returns 204, or 404 if the entry is missing. |
 | `POST /api/review/restrictions/{chatId}/{userId}` | No body. Independently restores the chat's default member permissions for this user. Returns 204, or 409 when default permissions are unavailable. |
 
@@ -195,9 +197,9 @@ npm --prefix src/web ci
 npm --prefix src/web run dev
 ```
 
-Open the URL printed by Vite (normally `http://127.0.0.1:5173`). Connect to a running local or deployed Function, enter its Function key if required, and select a chat from the backend catalog. The English interface supports paginated review, original text and OCR, spam/not-spam decisions, and independent restriction removal.
+Open the URL printed by Vite. The workspace automatically connects to the Function configured in `.env` and loads the chat catalog. Select a chat and load the queue. The English interface supports paginated review, original text and OCR, spam/not-spam decisions, and independent restriction removal.
 
-Set `API_URL` in the web app's `.env` (see [.env.example](src/web/.env.example)). Requests go directly to the Function, so allow the exact frontend origin in its CORS settings. The key stays in memory only. No web hosting or infrastructure is provisioned. See [the web app README](src/web/README.md) for connection details and action side effects, and [the independent Playwright project](tests/TelegramAntiSpamBot.WebTests/README.md) for browser tests.
+Set `API_URL` and optional `FUNCTION_KEY` in the web app's `.env`. Restart Vite and reload after changes. There are no manual connection or credential controls. Requests go directly to the Function, so allow the exact frontend origin in its CORS settings. The key is not stored in browser storage, but a configured key is embedded in the client bundle: do not publish or share a bundle containing a real key. No web hosting or infrastructure is provisioned. See [the web app README](src/web/README.md) for connection details and action side effects, and [the independent Playwright project](tests/TelegramAntiSpamBot.WebTests/README.md) for browser tests.
 
 ### Register the webhook
 

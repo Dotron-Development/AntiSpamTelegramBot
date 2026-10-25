@@ -30,7 +30,11 @@
                 });
             }
 
-            serviceCollection.AddTransient<IAntiSpamBotRepository, AntiSpamBotRepository>();
+            serviceCollection.AddTransient<Repositories.IChatsRepository, Repositories.ChatsRepository>();
+            serviceCollection.AddTransient<Repositories.IProbablySpamRepository, Repositories.ProbablySpamRepository>();
+            serviceCollection.AddTransient<Repositories.IMessageCountRepository, Repositories.MessageCountRepository>();
+            serviceCollection.AddTransient<Repositories.ISpamHashRepository, Repositories.SpamHashRepository>();
+            serviceCollection.AddTransient<Repositories.ISpamStatsRepository, Repositories.SpamStatsRepository>();
             return serviceCollection;
         }
     }

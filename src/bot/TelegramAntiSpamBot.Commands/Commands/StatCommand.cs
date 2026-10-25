@@ -1,8 +1,9 @@
 ﻿using System.Text;
+using TelegramAntiSpamBot.Persistence.Repositories;
 
 namespace TelegramAntiSpamBot.Commands.Commands
 {
-    internal class StatCommand(ITelegramBotClient bot, IAntiSpamBotRepository repository) : ICommand
+    internal class StatCommand(ITelegramBotClient bot, ISpamStatsRepository repository) : ICommand
     {
         private static readonly CompositeFormat MessageFormat = CompositeFormat.Parse(
             """

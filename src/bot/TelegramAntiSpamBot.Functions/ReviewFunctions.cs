@@ -1,6 +1,12 @@
+using TelegramAntiSpamBot.Persistence.Repositories;
+
 namespace TelegramAntiSpamBot.Functions;
 
-public sealed class ReviewFunctions(IAntiSpamBotRepository repository, ITelegramBotClient bot)
+public sealed class ReviewFunctions(
+    IChatsRepository chatsRepository,
+    IProbablySpamRepository probablySpamRepository,
+    ISpamHashRepository spamHashRepository,
+    ITelegramBotClient bot)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -13,7 +19,7 @@ public sealed class ReviewFunctions(IAntiSpamBotRepository repository, ITelegram
             (!int.TryParse(size, out pageSize) || pageSize is < 1 or > 1000))
             return await Error(request, HttpStatusCode.BadRequest, "pageSize must be between 1 and 1000.");
 
-        var page = await repository.GetReviewChatsAsync(pageSize, request.Query["continuationToken"]);
+        var page = await chatsRepository.GetReviewChatsAsync(pageSize, request.Query["continuationToken"]);
         var response = request.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(page);
         return response;
@@ -23,15 +29,20 @@ public sealed class ReviewFunctions(IAntiSpamBotRepository repository, ITelegram
     public async Task<HttpResponseData> GetMessages(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "review/messages")] HttpRequestData request)
     {
-        if (!long.TryParse(request.Query["chatId"], out var chatId) || chatId == 0)
-            return await Error(request, HttpStatusCode.BadRequest, "A non-zero chatId is required.");
+        long? chatId = null;
+        if (request.Query["chatId"] is { } value)
+        {
+            if (!long.TryParse(value, out var parsedChatId) || parsedChatId == 0)
+                return await Error(request, HttpStatusCode.BadRequest, "chatId must be a non-zero integer when provided.");
+            chatId = parsedChatId;
+        }
 
         var pageSize = 100;
         if (request.Query["pageSize"] is { } size &&
             (!int.TryParse(size, out pageSize) || pageSize is < 1 or > 1000))
             return await Error(request, HttpStatusCode.BadRequest, "pageSize must be between 1 and 1000.");
 
-        var page = await repository.GetReviewMessagesAsync(chatId, pageSize, request.Query["continuationToken"]);
+        var page = await probablySpamRepository.GetReviewMessagesAsync(chatId, pageSize, request.Query["continuationToken"]);
         var response = request.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(page);
         return response;
@@ -58,12 +69,12 @@ public sealed class ReviewFunctions(IAntiSpamBotRepository repository, ITelegram
         if (decision?.IsSpam is not { } isSpam)
             return await Error(request, HttpStatusCode.BadRequest, "A boolean isSpam field is required.");
 
-        var message = await repository.GetReviewMessageAsync(chatId, messageId);
+        var message = await probablySpamRepository.GetReviewMessageAsync(chatId, messageId);
         if (message is null)
             return await Error(request, HttpStatusCode.NotFound, "Message not found in the review queue.");
 
         if (!string.IsNullOrEmpty(message.ContentHash))
-            await repository.SaveMessageHash(message.ContentHash, isSpam);
+            await spamHashRepository.SaveMessageHash(message.ContentHash, isSpam);
 
         if (!isSpam)
         {
@@ -84,7 +95,7 @@ public sealed class ReviewFunctions(IAntiSpamBotRepository repository, ITelegram
             }
         }
 
-        await repository.DeleteReviewMessageAsync(chatId, messageId);
+        await probablySpamRepository.DeleteReviewMessageAsync(chatId, messageId);
         return request.CreateResponse(HttpStatusCode.NoContent);
     }
 
