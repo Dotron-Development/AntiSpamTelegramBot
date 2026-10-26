@@ -5,10 +5,6 @@ terraform {
       source  = "hashicorp/azurerm"
       version = ">= 5.11.0, < 6.0"
     }
-    azuread = {
-      source  = "hashicorp/azuread"
-      version = ">= 3.0.0, < 4.0.0"
-    }
     time = {
       source  = "hashicorp/time"
       version = ">= 0.14.2, < 0.15.0"
@@ -21,10 +17,6 @@ terraform {
 
   backend "azurerm" {
   }
-}
-
-provider "azuread" {
-  tenant_id = data.azurerm_client_config.current.tenant_id
 }
 
 provider "azurerm" {
