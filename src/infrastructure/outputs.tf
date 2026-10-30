@@ -9,3 +9,11 @@ output "functionapp_name" {
 output "function_app_identity_name" {
   value = azurerm_user_assigned_identity.functionapp_identity.name
 }
+
+output "review_web_app_name" {
+  value = azurerm_linux_web_app.review.name
+}
+
+output "review_web_app_url" {
+  value = local.review_web_app_origin
+}

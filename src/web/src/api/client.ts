@@ -5,7 +5,7 @@ export type { ReviewChat, ReviewChatPage, ReviewMessage, ReviewPage } from './co
 
 export interface Connection {
   endpoint: string
-  key: string
+  getAccessToken: () => Promise<string>
 }
 
 export class ApiError extends Error {
@@ -47,12 +47,13 @@ async function request(connection: Connection, path: string, method: 'GET' | 'PO
   signal?: AbortSignal): Promise<string> {
   const endpoint = normalizeEndpoint(connection.endpoint)
   const api = endpoint.endsWith('/api') ? endpoint : `${endpoint}/api`
+  const accessToken = await connection.getAccessToken()
   let response: Response
   try {
     response = await fetch(`${api}/review${path}`, {
       method,
       headers: {
-        ...(connection.key ? { 'x-functions-key': connection.key } : {}),
+        Authorization: `Bearer ${accessToken}`,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -72,8 +73,8 @@ async function request(connection: Connection, path: string, method: 'GET' | 'PO
       detail = parseApiError(text).error
     } catch {}
     const defaults: Record<number, string> = {
-      401: 'Access denied. Check your Function key.',
-      403: 'Access denied. Check your Function key and network permissions.',
+      401: 'Your session is invalid or expired. Sign out and sign in again.',
+      403: 'Access denied. Check your Moderator role and API permission.',
       404: 'The message or API route was not found.',
       409: 'The Function could not complete this action.',
     }

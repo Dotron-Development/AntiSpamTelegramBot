@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 const chatId = '-1001234567890'
 const userId = '9007199254740993'
 const ticks = '638712864000000001'
-const fakeKey = 'test-only-not-a-real-key'
+const fakeToken = 'test-only-not-a-real-token'
 const apiRoute = 'https://review.example.test/api/review/**'
 const messageJSON = `{"ChatId":${chatId},"MessageId":7,"UserId":${userId},"UserName":"Alice Smith","Message":"Hello team!\\n<em>Not HTML</em>","ImageText":"Image text: special offer","ContentHash":"HASH","MessageDateTicks":${ticks}}`
 const firstPage = `{"Messages":[${messageJSON}],"ContinuationToken":"next+/= page"}`
@@ -14,11 +14,58 @@ const lastPage = `{"Messages":[{"ChatId":${chatId},"MessageId":8,"UserId":43,"Us
 const emptyPage = '{"Messages":[],"ContinuationToken":null}'
 const chatPage = `{"Chats":[{"ChatId":${chatId},"Name":"Test group","LastSeenUtc":"2026-10-25T00:00:00+00:00"}],"ContinuationToken":null}`
 
+async function mockAuthentication(page: Page, roles: string[] | null = ['Moderator'], error = false) {
+  const account = roles === null ? null : { name: 'Test moderator', idTokenClaims: { roles } }
+  await page.route('**/src/lib/auth.ts*', route => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      export const configurationError = null;
+      export async function initializeAuth() { ${error ? 'throw new Error("Sign-in failed");' : ''} }
+      export function currentAccount() { return ${JSON.stringify(account)}; }
+      export async function signIn() { window.location.assign('https://login.example.test/authorize'); }
+      export async function signOut() {}
+      export async function getAccessToken() { return ${JSON.stringify(fakeToken)}; }
+    `,
+  }))
+}
+
+test.beforeEach(async ({ page }) => { await mockAuthentication(page) })
+
+test('redirects automatically to sign-in without mounting the workspace', async ({ page }) => {
+  await mockAuthentication(page, null)
+  let apiCalls = 0
+  let redirects = 0
+  await page.route(apiRoute, route => { apiCalls++; return route.abort() })
+  await page.route('https://login.example.test/authorize', route => {
+    redirects++
+    return route.fulfill({ contentType: 'text/html', body: '<h1>Microsoft sign-in</h1>' })
+  })
+  await page.goto('/')
+  await expect(page).toHaveURL('https://login.example.test/authorize')
+  expect(redirects).toBe(1)
+  expect(apiCalls).toBe(0)
+})
+
+test('keeps the workspace closed without Moderator or after a sign-in error', async ({ page }) => {
+  let apiCalls = 0
+  await page.route(apiRoute, route => { apiCalls++; return route.abort() })
+  await mockAuthentication(page, [])
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Load queue' })).toHaveCount(0)
+  await mockAuthentication(page, null, true)
+  await page.reload()
+  await expect(page.getByRole('alert')).toContainText('Sign-in failed')
+  await expect(page.getByRole('button', { name: 'Sign in with Microsoft' })).toHaveCount(0)
+  expect(apiCalls).toBe(0)
+})
+
 async function openWorkspace(page: Page, { mockChats = true, loadQueue = true }: {
   mockChats?: boolean; loadQueue?: boolean
 } = {}) {
   if (mockChats) await page.route('**/api/review/chats?*', route => {
-    expect(route.request().headers()['x-functions-key']).toBe(fakeKey)
+    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+    expect(route.request().headers()['x-functions-key']).toBeUndefined()
     return route.fulfill({ contentType: 'application/json', body: chatPage })
   })
   await page.goto('/')
@@ -32,10 +79,11 @@ async function openWorkspace(page: Page, { mockChats = true, loadQueue = true }:
   }
 }
 
-test('automatically connects using environment settings, paginates, and does not store the key', async ({ page }) => {
+test('connects after authentication, paginates, and does not persist access tokens in workspace storage', async ({ page }) => {
   const queries: string[] = []
   await page.route(apiRoute, async route => {
-    expect(route.request().headers()['x-functions-key']).toBe(fakeKey)
+    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+    expect(route.request().headers()['x-functions-key']).toBeUndefined()
     expect(route.request().headers()['x-review-endpoint']).toBeUndefined()
     queries.push(route.request().url())
     await route.fulfill({ contentType: 'application/json', body: queries.length === 1 ? firstPage : lastPage })
@@ -54,7 +102,7 @@ test('automatically connects using environment settings, paginates, and does not
   expect(new URL(queries[0]).origin).toBe('https://review.example.test')
   expect(new URL(queries[0]).pathname).toBe('/api/review/messages')
   const storage = await page.evaluate(() => ({ local: { ...localStorage }, session: { ...sessionStorage } }))
-  expect(JSON.stringify(storage)).not.toContain(fakeKey)
+  expect(JSON.stringify(storage)).not.toContain(fakeToken)
   expect(JSON.stringify(storage)).toContain(chatId)
   await page.reload()
   await expect(page.getByLabel('Chat', { exact: true })).toHaveValue(chatId)
@@ -141,11 +189,11 @@ test('handles auth errors for both filtered and all-chat queues', async ({ page 
     return route.fulfill({ status: 401, body: '' })
   })
   await openWorkspace(page)
-  await expect(page.getByRole('alert')).toContainText('Access denied. Check your Function key.')
+  await expect(page.getByRole('alert')).toContainText('Your session is invalid or expired.')
   await page.getByLabel('Chat', { exact: true }).selectOption('')
   await page.getByRole('button', { name: 'Load queue' }).click()
   await expect.poll(() => queries.length).toBe(2)
-  await expect(page.getByRole('alert')).toContainText('Access denied. Check your Function key.')
+  await expect(page.getByRole('alert')).toContainText('Your session is invalid or expired.')
   expect(queries[0].searchParams.get('chatId')).toBe(chatId)
   expect(queries[1].searchParams.has('chatId')).toBe(false)
 })
@@ -197,7 +245,7 @@ test('browser calls a separate Function origin directly with CORS preflight', as
   const server = createServer(async (incoming, response) => {
     response.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1:5179')
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    response.setHeader('Access-Control-Allow-Headers', 'x-functions-key, content-type')
+    response.setHeader('Access-Control-Allow-Headers', 'authorization, content-type')
     if (incoming.method === 'OPTIONS') {
       preflights.push(incoming.headers['access-control-request-headers'] ?? '')
       response.writeHead(204)
@@ -206,7 +254,7 @@ test('browser calls a separate Function origin directly with CORS preflight', as
     }
     let body = ''
     for await (const chunk of incoming) body += chunk
-    received.push({ url: incoming.url!, key: incoming.headers['x-functions-key'] as string | undefined,
+    received.push({ url: incoming.url!, key: incoming.headers.authorization,
       method: incoming.method!, body, origin: incoming.headers.origin })
     response.writeHead(incoming.method === 'GET' ? 200 : 204, { 'Content-Type': 'application/json' })
     response.end(incoming.method === 'GET' ? incoming.url?.startsWith('/api/review/chats?') ? chatPage : firstPage : undefined)
@@ -217,23 +265,24 @@ test('browser calls a separate Function origin directly with CORS preflight', as
     await openWorkspace(page, { loadQueue: false })
     await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
     await page.unroute('**/api/review/chats?*')
-    await page.evaluate(async ({ endpoint, key, chatId, userId }) => {
+    await page.unroute('**/src/lib/auth.ts*')
+    await page.evaluate(async ({ endpoint, token, chatId, userId }) => {
       const modulePath = '/src/api/client.ts'
       const api = await import(modulePath)
-      const connection = { endpoint, key }
+      const connection = { endpoint, getAccessToken: async () => token }
       await api.getChats(connection, null)
       const result = await api.getMessages(connection, chatId, 50, null)
       await api.reviewMessage(connection, result.messages[0], false)
       await api.removeRestrictions(connection, chatId, userId)
-    }, { endpoint, key: fakeKey, chatId, userId })
+    }, { endpoint, token: fakeToken, chatId, userId })
     const origin = 'http://127.0.0.1:5179'
     expect(received).toEqual([
-      { url: '/api/review/chats?pageSize=1000', key: fakeKey, method: 'GET', body: '', origin },
-      { url: `/api/review/messages?chatId=${chatId}&pageSize=50`, key: fakeKey, method: 'GET', body: '', origin },
-      { url: `/api/review/messages/${chatId}/7`, key: fakeKey, method: 'POST', body: '{"isSpam":false}', origin },
-      { url: `/api/review/restrictions/${chatId}/${userId}`, key: fakeKey, method: 'POST', body: '', origin },
+      { url: '/api/review/chats?pageSize=1000', key: `Bearer ${fakeToken}`, method: 'GET', body: '', origin },
+      { url: `/api/review/messages?chatId=${chatId}&pageSize=50`, key: `Bearer ${fakeToken}`, method: 'GET', body: '', origin },
+      { url: `/api/review/messages/${chatId}/7`, key: `Bearer ${fakeToken}`, method: 'POST', body: '{"isSpam":false}', origin },
+      { url: `/api/review/restrictions/${chatId}/${userId}`, key: `Bearer ${fakeToken}`, method: 'POST', body: '', origin },
     ])
-    expect(preflights.some(headers => headers.includes('x-functions-key'))).toBe(true)
+    expect(preflights.some(headers => headers.includes('authorization'))).toBe(true)
     expect(preflights.some(headers => headers.includes('content-type'))).toBe(true)
   } finally {
     server.closeAllConnections()
@@ -286,7 +335,7 @@ test('empty catalog and catalog errors do not automatically load message queues'
   await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
   await expect(page.getByLabel('Chat', { exact: true })).toHaveValue('')
   await page.getByRole('button', { name: 'Refresh chats', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('Access denied. Check your Function key.')
+  await expect(page.getByRole('alert')).toContainText('Your session is invalid or expired.')
   expect(calls).toBe(2)
 })
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, CircleAlert, ShieldCheck, UnlockKeyhole, X } from 'lucide-react'
+import { Check, CircleAlert, LogOut, ShieldCheck, UnlockKeyhole, X } from 'lucide-react'
 import { validId } from './api/client'
 import type { ReviewMessage } from './api/client'
 import { DecisionDialog } from './components/DecisionDialog'
@@ -13,6 +13,7 @@ import { useModeration } from './hooks/useModeration'
 import { useReviewQueue } from './hooks/useReviewQueue'
 import { connection } from './lib/workspace'
 import type { Notice, QueueQuery } from './lib/workspace'
+import { currentAccount, signOut } from './lib/auth'
 import './styles/App.css'
 
 function App() {
@@ -51,8 +52,9 @@ function App() {
             </a>
             <div className="topbar-actions">
                 <span className="connection-status configured">
-                    <span className="status-dot" />Configured from environment
+                    <span className="status-dot" />{currentAccount()?.name || 'Moderator'}
                 </span>
+                <button className="icon-button" title="Sign out" aria-label="Sign out" onClick={() => { void signOut() }}><LogOut size={16} /></button>
             </div>
         </header>
 

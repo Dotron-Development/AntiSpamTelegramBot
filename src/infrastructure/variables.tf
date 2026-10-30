@@ -95,3 +95,56 @@ variable "debug_ai_response" {
   type        = bool
   nullable    = true
 }
+
+variable "review_client_id" {
+  description = "Client ID of the existing Entra registration used by the review SPA and API."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.review_client_id))
+    error_message = "review_client_id must be an application client GUID."
+  }
+}
+
+variable "review_user_object_ids" {
+  description = "Explicit allowlist of Entra user object IDs permitted to call the review API."
+  type        = list(string)
+  nullable    = false
+
+  validation {
+    condition = (
+      length(var.review_user_object_ids) > 0 &&
+      length(join("", var.review_user_object_ids)) <= 500 &&
+      alltrue([for identity in var.review_user_object_ids : can(regex(
+        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        identity
+      ))])
+    )
+    error_message = "Supply at least one user object GUID; the combined IDs must not exceed 500 characters."
+  }
+}
+
+variable "review_frontend_origins" {
+  description = "Additional exact SPA origins allowed by Function App CORS; the deployed Web App is always included."
+  type        = list(string)
+  default     = ["http://localhost:5173"]
+  nullable    = false
+
+  validation {
+    condition = alltrue([
+      for origin in var.review_frontend_origins : can(regex(
+        "^(https://[a-zA-Z0-9.-]+(:[0-9]+)?|http://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?)$",
+        origin
+      ))
+    ])
+    error_message = "Supply exact HTTPS origins, or HTTP loopback origins, without paths, trailing slashes or wildcards."
+  }
+}
+
+variable "review_web_app_sku" {
+  description = "Paid App Service plan SKU for the review SPA; separate from the Flex Consumption plan."
+  type        = string
+  default     = "B1"
+  nullable    = false
+}

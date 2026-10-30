@@ -49,6 +49,31 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   site_config {
     application_insights_connection_string = azurerm_application_insights.appinsights.connection_string
     application_insights_key               = azurerm_application_insights.appinsights.instrumentation_key
+
+    cors {
+      allowed_origins     = distinct(concat([local.review_web_app_origin], var.review_frontend_origins))
+      support_credentials = false
+    }
+  }
+
+  auth_settings_v2 {
+    auth_enabled           = true
+    require_authentication = true
+    unauthenticated_action = "Return401"
+    require_https          = true
+    excluded_paths         = ["/api/AntiSpamBotWebHook"]
+
+    active_directory_v2 {
+      client_id            = var.review_client_id
+      tenant_auth_endpoint = "https://login.microsoftonline.com/${data.azurerm_client_config.current.tenant_id}/v2.0"
+      allowed_audiences    = [var.review_client_id]
+      allowed_applications = [var.review_client_id]
+      allowed_identities   = var.review_user_object_ids
+    }
+
+    login {
+      token_store_enabled = false
+    }
   }
 
   identity {

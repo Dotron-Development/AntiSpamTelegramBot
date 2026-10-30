@@ -24,6 +24,9 @@ jobs:
   vm-runner-connectivity:
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
+    env:
+      TF_VAR_review_user_object_ids: ${{ vars.REVIEW_USER_OBJECT_IDS || '[]' }}
+      TF_VAR_review_frontend_origins: ${{ vars.REVIEW_FRONTEND_ORIGINS || '["http://localhost:5173"]' }}
     defaults:
       run:
         shell: bash

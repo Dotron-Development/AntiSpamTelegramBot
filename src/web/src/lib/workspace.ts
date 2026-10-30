@@ -1,5 +1,6 @@
 import { messageDate } from '../api/client'
 import type { Connection, ReviewMessage } from '../api/client'
+import { getAccessToken } from './auth'
 
 export interface QueueQuery { chatId: string; pageSize: number }
 export interface Notice { error: boolean; text: string }
@@ -9,7 +10,7 @@ export type Notify = (notice: Notice | null) => void
 
 export const connection: Connection = {
     endpoint: import.meta.env.API_URL,
-    key: (import.meta.env.FUNCTION_KEY || '').trim(),
+    getAccessToken,
 }
 
 const settingsKey = 'antispam-review.settings'

@@ -1,0 +1,111 @@
+name: deploy review SPA
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      resource_group_name:
+        required: true
+        type: string
+      web_app_name:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      RESOURCE_GROUP_NAME: ${{ inputs.resource_group_name }}
+      WEB_APP_NAME: ${{ inputs.web_app_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/web/package-lock.json
+
+      - name: Azure login
+        uses: azure/login@v3.1.0
+        with:
+          creds: '{"clientId":"${{ secrets.ARM_CLIENT_ID }}","clientSecret":"${{ secrets.ARM_CLIENT_SECRET }}","subscriptionId":"${{ secrets.ARM_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.ARM_TENANT_ID }}"}'
+
+      - name: Read public SPA build settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          az webapp config appsettings list \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --name "$WEB_APP_NAME" \
+            --output json > "$RUNNER_TEMP/review-spa-settings.json"
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+
+          const settings = Object.fromEntries(JSON.parse(readFileSync(
+            join(process.env.RUNNER_TEMP, 'review-spa-settings.json'), 'utf8'
+          )).map(({ name, value }) => [name, value]));
+          const names = ['API_URL', 'TENANT_ID', 'CLIENT_ID', 'API_SCOPE', 'REDIRECT_URI'];
+          for (const name of names) {
+            if (typeof settings[name] !== 'string' || !settings[name].trim() || /[\r\n]/.test(settings[name])) {
+              throw new Error(`Missing or invalid Web App setting: ${name}`);
+            }
+          }
+          const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!guid.test(settings.TENANT_ID) || !guid.test(settings.CLIENT_ID)) {
+            throw new Error('TENANT_ID and CLIENT_ID must be GUIDs');
+          }
+          if (settings.API_SCOPE !== `api://${settings.CLIENT_ID}/Review.Access`) {
+            throw new Error('API_SCOPE must match CLIENT_ID and the Review.Access scope');
+          }
+          for (const name of ['API_URL', 'REDIRECT_URI']) {
+            if (new URL(settings[name]).protocol !== 'https:') {
+              throw new Error(`${name} must use HTTPS`);
+            }
+          }
+          appendFileSync(process.env.GITHUB_ENV, names.map(name => `${name}=${settings[name]}\n`).join(''));
+          NODE
+
+      - name: Install dependencies
+        working-directory: src/web
+        run: npm ci
+
+      - name: Lint
+        working-directory: src/web
+        run: npm run lint
+
+      - name: Build React SPA
+        working-directory: src/web
+        run: npm run build
+
+      - name: Publish SPA artifact
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: review-spa-${{ inputs.environment }}
+          path: src/web/dist
+          if-no-files-found: error
+
+      - name: Deploy SPA to Azure Web App
+        working-directory: src/web/dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip -qr "$RUNNER_TEMP/review-spa.zip" .
+          az webapp deploy \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --name "$WEB_APP_NAME" \
+            --src-path "$RUNNER_TEMP/review-spa.zip" \
+            --type zip \
+            --clean true \
+            --restart true \
+            --track-status true

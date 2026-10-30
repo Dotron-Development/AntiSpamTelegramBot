@@ -11,18 +11,23 @@ npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite, normally `http://localhost:5173`. If the port is occupied, Vite selects another one. Keep the server bound to loopback; do not expose it to your network or through a tunnel.
+Open `http://localhost:5173`. Vite fails if this port is occupied so the address stays consistent with the registered Entra redirect URI. Keep the server bound to loopback.
 
-Create or edit `.env` with the Function URL and optional Function key:
+Create or edit `.env` with the Function URL and public Entra configuration:
 
 ```dotenv
 API_URL=http://localhost:7071
-FUNCTION_KEY=
+TENANT_ID=<Directory tenant ID>
+CLIENT_ID=<Application client ID>
+API_SCOPE=api://<Application client ID>/Review.Access
+REDIRECT_URI=http://localhost:5173
 ```
 
-An Azure URL such as `https://your-function.azurewebsites.net` is also accepted, with or without trailing `/api`. Restart Vite after changing `.env` and reload the page. `API_URL` and `FUNCTION_KEY` are embedded into the client at dev-server startup/build time, not read at runtime by the static bundle. **A configured key is visible to anyone who can access the frontend or its bundle.** Use this only for a trusted local workspace; do not publish or share a bundle containing a real key. `.env` is ignored by Git. Without environment settings, the defaults are `http://localhost:7071` and an empty key.
+An Azure URL such as `https://your-function.azurewebsites.net` is also accepted, with or without trailing `/api`. Restart Vite after changing `.env`. These settings are embedded at dev-server startup/build time, not read at runtime by the static bundle. They are public identifiers, not secrets. `.env` is ignored by Git. Never configure a client secret in the frontend. `FUNCTION_KEY` is no longer read or embedded.
 
-The workspace automatically uses `API_URL` and `FUNCTION_KEY` from `.env` and loads the chat catalog on opening/reloading. There are no Connect, Disconnect, or credential-editing controls. Use a Function base URL, not a full review route or a URL containing `?code=...`. A standard local Functions host normally does not require a key.
+Opening the site automatically redirects to Microsoft sign-in when there is no account. There is no login button. The workspace mounts only after sign-in, a `Moderator` role check, and successful API access-token acquisition. Errors and missing roles keep the workspace closed without a redirect loop. Sign out is available in the header. MSAL keeps its session in session storage and silently renews tokens when possible; interaction-required renewal redirects to sign-in. Use a Function base URL, not a full review route or a URL containing `?code=...`.
+
+Follow the [Entra registration guide](../../docs/entra-id-setup.md) and [Functions Easy Auth guide](../../docs/functions-easy-auth.md). Configure the tenant, client ID and explicit user allowlist in Easy Auth; Functions does not read the frontend `.env` or perform Entra JWT validation. The UI requires `Moderator`, but API access is enforced by the platform's user and client allowlists, not by the UI role check. Review triggers currently require Function keys; switch them to Anonymous only after Easy Auth is configured, as documented. Until then, Bearer-only frontend requests do not satisfy the Function-key requirement.
 
 Leave **Chat** set to **All chats** and click **Load queue** to load a page across all chat partitions. Select a chat only to filter the queue. There is no automatic message loading on startup. The last successfully loaded filter is remembered; a fresh workspace defaults to **All chats**. **Refresh chats** reloads the list and updated names, and can retry a failed initial catalog request. An empty or failed catalog does not prevent loading the all-chat queue. To change connection settings, edit `.env`, restart Vite, and reload the page.
 
@@ -43,13 +48,21 @@ The catalog is loaded automatically on startup, following all continuation pages
 
 ## CORS and Credentials
 
-There is no proxy. Allow the exact frontend origin (normally `http://127.0.0.1:5173`) in the Function's CORS settings. `http://localhost:5173` is a different origin, as is another port. The Function must handle preflight OPTIONS requests and allow GET/POST with `x-functions-key` and `Content-Type` headers. Configure CORS separately; this project does not change Azure infrastructure.
+There is no proxy. Allow the exact frontend origin (normally `http://localhost:5173`) in the Function's CORS settings. `http://127.0.0.1:5173` is a different origin, as is another port. The Function host must handle preflight OPTIONS requests and allow GET/POST with `Authorization` and `Content-Type` headers. Terraform manages deployed Function CORS, automatically including the deployed SPA origin and the configured additional origins.
 
-For a local Functions host, you can start it with `func start --cors http://127.0.0.1:5173`. Remote Function URLs require HTTPS; HTTP is allowed only for loopback. Requests time out after 30 seconds, do not follow redirects, and do not send cookies. Browsers do not distinguish CORS failures from many network failures, so the error message mentions both.
+For a local Functions host, you can start it with `func start --cors http://localhost:5173`. Remote Function URLs require HTTPS; HTTP is allowed only for loopback. Requests time out after 30 seconds, do not follow redirects, and do not send cookies. Browsers do not distinguish CORS failures from many network failures, so the error message mentions both.
 
-The Function key from `FUNCTION_KEY` is sent in `x-functions-key` automatically. The active connection is held in React memory and recreated from the environment settings on reload. It is never placed in a query string or local/session storage. When configured in `.env`, it is also embedded in the frontend bundle. Only the chat ID is remembered in local storage; the URL defaults to `.env` on each reload. Review messages are not persisted by the client. Do not use this tool in an untrusted browser profile or share a Function key.
+Each API request obtains an access token through MSAL and sends it in `Authorization: Bearer ...`. No Function key or ID token is sent to review endpoints. The application does not copy tokens into its own storage or query strings. Only the chat filter is remembered in local storage; review messages are not persisted. Use a trusted browser profile. Client-side role checks are only a UI gate: configure Easy Auth to enforce API access. Easy Auth does not run in the local Functions host. Static HTML/JS remains public; no sensitive data is included before login.
 
-`npm run build` generates a static bundle; `npm run preview` serves it locally. Its origin must also be allowed by Function CORS. Production hosting and authentication are deliberately out of scope.
+`npm run build` generates a static bundle; `npm run preview` serves it locally. Its origin must be registered as a SPA redirect URI, configured as `REDIRECT_URI`, and allowed by Function CORS.
+
+## Azure Hosting
+
+Terraform creates a Linux Web App with a separate paid App Service plan (default `B1`) and Node.js 24. The startup command serves the deployed static bundle with SPA fallback. Both release workflows invoke [webapp.yaml](../../.github/workflows/webapp.yaml) after deploying infrastructure and Functions.
+
+All five public frontend settings (`API_URL`, `TENANT_ID`, `CLIENT_ID`, `API_SCOPE`, `REDIRECT_URI`) are configured on the Web App by Terraform. The build job reads and validates them before lint/build, then uploads and deploys `dist`. The tenant comes from the existing Azure provider, not an additional setting. Changing these settings requires rebuilding the SPA; static JavaScript does not read server environment variables at runtime.
+
+Before the first sign-in, add the Terraform output `review_web_app_url` to the existing registration's SPA redirect URIs. See the [hosting and Easy Auth configuration](../../docs/functions-easy-auth.md) for environment variables and the staged removal of Function-key authorization. No Function key or client secret belongs in the SPA.
 
 ## Source structure
 

@@ -37,8 +37,17 @@ jobs:
       function_app_identity_name: ${{ needs.deploy-main-infrastructure.outputs.function_app_identity_name }}
     secrets: inherit
 
+  deploy-review-spa:
+    needs: [deploy-main-infrastructure, deploy-functionapp]
+    uses: ./.github/workflows/webapp.yaml
+    with:
+      environment: ${{ github.event.inputs.environment }}
+      resource_group_name: ${{ needs.deploy-main-infrastructure.outputs.resource_group_name }}
+      web_app_name: ${{ needs.deploy-main-infrastructure.outputs.review_web_app_name }}
+    secrets: inherit
+
   cleanup-runner-endpoints:
-    needs: deploy-functionapp
+    needs: [deploy-functionapp, deploy-review-spa]
     uses: ./.github/workflows/cleanup-runner-endpoints.yaml
     with:
       environment: ${{ github.event.inputs.environment }}
