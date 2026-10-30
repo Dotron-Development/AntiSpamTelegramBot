@@ -175,11 +175,11 @@ public class ReviewFunctionsTests
     [InlineData(nameof(ReviewFunctions.GetMessages))]
     [InlineData(nameof(ReviewFunctions.Review))]
     [InlineData(nameof(ReviewFunctions.RemoveRestrictions))]
-    public void AllReviewEndpointsRequireFunctionKeys(string methodName)
+    public void AllReviewEndpointsDelegateAuthenticationToEasyAuth(string methodName)
     {
         var trigger = typeof(ReviewFunctions).GetMethod(methodName)!.GetParameters()[0]
             .GetCustomAttribute<HttpTriggerAttribute>();
-        Assert.Equal(AuthorizationLevel.Function, trigger!.AuthLevel);
+        Assert.Equal(AuthorizationLevel.Anonymous, trigger!.AuthLevel);
     }
 
     [Fact]

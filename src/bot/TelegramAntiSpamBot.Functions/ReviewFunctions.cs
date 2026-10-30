@@ -12,7 +12,7 @@ public sealed class ReviewFunctions(
 
     [Function("GetReviewChats")]
     public async Task<HttpResponseData> GetChats(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "review/chats")] HttpRequestData request)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "review/chats")] HttpRequestData request)
     {
         var pageSize = 100;
         if (request.Query["pageSize"] is { } size &&
@@ -27,7 +27,7 @@ public sealed class ReviewFunctions(
 
     [Function("GetReviewMessages")]
     public async Task<HttpResponseData> GetMessages(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "review/messages")] HttpRequestData request)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "review/messages")] HttpRequestData request)
     {
         long? chatId = null;
         if (request.Query["chatId"] is { } value)
@@ -50,7 +50,7 @@ public sealed class ReviewFunctions(
 
     [Function("ReviewMessage")]
     public async Task<HttpResponseData> Review(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "review/messages/{chatId:long}/{messageId:int}")]
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "review/messages/{chatId:long}/{messageId:int}")]
         HttpRequestData request, long chatId, int messageId)
     {
         if (chatId == 0 || messageId <= 0)
@@ -101,7 +101,7 @@ public sealed class ReviewFunctions(
 
     [Function("RemoveRestrictions")]
     public async Task<HttpResponseData> RemoveRestrictions(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "review/restrictions/{chatId:long}/{userId:long}")]
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "review/restrictions/{chatId:long}/{userId:long}")]
         HttpRequestData request, long chatId, long userId)
     {
         if (chatId == 0 || userId <= 0)
