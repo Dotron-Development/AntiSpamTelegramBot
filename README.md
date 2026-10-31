@@ -72,7 +72,7 @@ If normalization produces an empty string, classification and review bypass the 
 | `SpamStats` | Daily/monthly deletion totals and minimum, maximum, and average deletion latency. |
 | `Chats` | Chat catalog: partition `chats`, row key is chat ID, with `Name` and UTC `LastSeenUtc`. Updated on incoming and edited messages, including commands; the configured archive chat is excluded. |
 | `MessageHistory` | Incoming messages and channel posts, including edits and commands. Partition is chat ID; row key is original UTC ticks (`D19`) followed by message ID (`D10`). `DateTimeTicks` and JSON `Content` preserve the timestamp, author, reply-to context and text/caption. |
-| `CommandsCall` | Latest admitted command attempt: partition is chat ID, row key is the canonical command (e.g. `/chronicle`), and `lastCall` is a UTC timestamp. |
+| `CommandsCall` | Latest admitted command attempt: partition is chat ID, row key is the URI-escaped canonical command (e.g. `%2Fchronicle`), and `lastCall` is a UTC timestamp. The review API decodes the command for display. |
 
 The moderation tables and `MessageHistory` are provisioned by Terraform through Azure CLI using Azure identity authentication; shared-key access is disabled for the application data storage account. `Chats` and `MessageHistory` can also be created by the application on first write if missing. The application identity needs table-creation permissions as well as entity read/write permissions. An absent catalog table reads as an empty list.
 
@@ -151,8 +151,8 @@ The application binds the following configuration sections. Use double underscor
 | `TelegramBotConfiguration__DebugAiResponse` | Enables AI explanations; defaults to `false`. |
 | `TelegramBotConfiguration__CommandCooldown` | Per-chat, per-command cooldown in .NET TimeSpan format; default `00:05:00`. Also applies to UI Chronicle previews. |
 | `OpenAiServicesConfiguration__ServiceUrl` | Azure AI service endpoint. Required. |
-| `OpenAiServicesConfiguration__SpamRecognitionDeployment` | Spam-classification deployment name. Required. |
-| `OpenAiServicesConfiguration__ImageRecognitionDeployment` | Image-text extraction deployment name. Required. |
+| `OpenAiServicesConfiguration__SpamRecognitionDeployment` | Spam-classification deployment name. Required; Terraform sets `antispam`. |
+| `OpenAiServicesConfiguration__ImageRecognitionDeployment` | Image-text extraction deployment name. Required; Terraform sets `images`. |
 | `OpenAiServicesConfiguration__ChronicleDeployment` | Separate chat-summary deployment name. Defaults to `chronicle`; set automatically by Terraform. |
 | `OpenAiServicesConfiguration__ApiKey` | Optional AI API key; Azure identity authentication is used when omitted. |
 | `OpenAiServicesConfiguration__OpenAiIdentityClientId` | Optional user-assigned identity client ID for AI access. |
@@ -197,8 +197,8 @@ Configure [local.settings.json](src/bot/TelegramAntiSpamBot.Functions/local.sett
     "TelegramBotConfiguration__BotName": "@YourBotName",
     "TelegramBotConfiguration__DebugAiResponse": "false",
     "OpenAiServicesConfiguration__ServiceUrl": "https://<ai-service-endpoint>/",
-    "OpenAiServicesConfiguration__SpamRecognitionDeployment": "<spam-deployment>",
-    "OpenAiServicesConfiguration__ImageRecognitionDeployment": "<image-deployment>",
+    "OpenAiServicesConfiguration__SpamRecognitionDeployment": "antispam",
+    "OpenAiServicesConfiguration__ImageRecognitionDeployment": "images",
     "OpenAiServicesConfiguration__ApiKey": "<ai-api-key>",
     "AzureTablesConfiguration__StorageAccountUrl": "https://<storage-account>.table.core.windows.net/"
   }
@@ -243,7 +243,7 @@ Terraform provisions:
 
 - A resource group, virtual network, Functions subnet, and optional private-endpoint subnet.
 - A Flex Consumption Function App, service plan, application storage, and Application Insights resource.
-- Azure AI Services, separate classification/image deployments, and a content-filter policy.
+- Azure AI Services, separate `antispam`, `images`, and `chronicle` deployments, and a content-filter policy. Deployment names are stable; the `name` and `version` fields in the environment `.tfvars` configuration select the underlying models. Renaming existing deployments replaces them on apply; Function App settings reference the new names automatically.
 - An application data storage account and four tables.
 - An RBAC-enabled Key Vault containing `telegram-bot-token`, `telegram-bot-secret-header`, and `ai-services-api-key`.
 - A user-assigned Function App identity and required role assignments.

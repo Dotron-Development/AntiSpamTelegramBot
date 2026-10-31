@@ -21,7 +21,7 @@ public class CommandCallsRepositoryTests
             .TryAcquireAsync(-100, "/stat", Now.ToOffset(TimeSpan.FromHours(2)), TimeSpan.FromMinutes(5)));
 
         Assert.Equal("-100", table.Saved!.PartitionKey);
-        Assert.Equal("/stat", table.Saved.RowKey);
+        Assert.Equal("%2Fstat", table.Saved.RowKey);
         Assert.Equal(Now, table.Saved.GetDateTimeOffset("lastCall"));
         Assert.Equal(TimeSpan.Zero, table.Saved.GetDateTimeOffset("lastCall")!.Value.Offset);
     }
@@ -86,7 +86,26 @@ public class CommandCallsRepositoryTests
 
         Assert.True(await services.GetRequiredService<ICommandCallsRepository>().TryAcquireAsync(chatId, command, Now, TimeSpan.FromMinutes(5)));
         Assert.Equal(chatId.ToString(), table.Saved!.PartitionKey);
-        Assert.Equal(command, table.Saved.RowKey);
+        Assert.Equal(Uri.EscapeDataString(command), table.Saved.RowKey);
+    }
+
+    [Theory]
+    [InlineData("/chronicle", "%2Fchronicle")]
+    [InlineData("/stat", "%2Fstat")]
+    [InlineData("/test\\?#\u0001", "%2Ftest%5C%3F%23%01")]
+    [InlineData("/literal%2F", "%2Fliteral%252F")]
+    public async Task EncodedKeysRoundTripWithoutChangingCommands(string command, string rowKey)
+    {
+        var table = new CallsTable();
+        using var services = CreateServices(table);
+        var repository = services.GetRequiredService<ICommandCallsRepository>();
+
+        Assert.True(await repository.TryAcquireAsync(-100, command, Now, TimeSpan.FromMinutes(5)));
+        Assert.Equal(rowKey, table.Saved!.RowKey);
+
+        table.Rows.Add(table.Saved);
+        var page = await repository.GetPageAsync(-100, 25, null);
+        Assert.Equal(command, Assert.Single(page.Calls).Command);
     }
 
     [Theory]
@@ -130,7 +149,7 @@ public class CommandCallsRepositoryTests
         Assert.Null(page.ContinuationToken);
     }
 
-    private static TableEntity Entry(DateTimeOffset lastCall) => new("-100", "/stat")
+    private static TableEntity Entry(DateTimeOffset lastCall) => new("-100", "%2Fstat")
     {
         ["lastCall"] = lastCall,
         ETag = new ETag("version-1")
@@ -167,6 +186,7 @@ public class CommandCallsRepositoryTests
         public override Task<Response<T>> GetEntityAsync<T>(string partitionKey, string rowKey,
             IEnumerable<string>? select = null, CancellationToken cancellationToken = default)
         {
+            AssertValidKey(rowKey);
             if (Existing is null || Existing.PartitionKey != partitionKey || Existing.RowKey != rowKey)
                 throw new RequestFailedException(404, "Not found");
             return Task.FromResult(Response.FromValue((T)(object)Existing, null!));
@@ -174,6 +194,7 @@ public class CommandCallsRepositoryTests
 
         public override Task<Response> AddEntityAsync<T>(T entity, CancellationToken cancellationToken = default)
         {
+            AssertValidKey(entity.RowKey);
             if (MissingTable)
                 throw new RequestFailedException(404, "Table not found");
             if (WriteFailure is { } status)
@@ -185,6 +206,7 @@ public class CommandCallsRepositoryTests
         public override Task<Response> UpdateEntityAsync<T>(T entity, ETag ifMatch,
             TableUpdateMode mode = TableUpdateMode.Merge, CancellationToken cancellationToken = default)
         {
+            AssertValidKey(entity.RowKey);
             UpdateETag = ifMatch;
             Assert.Equal(TableUpdateMode.Replace, mode);
             if (WriteFailure is { } status)
@@ -199,6 +221,10 @@ public class CommandCallsRepositoryTests
             MissingTable = false;
             return Task.FromResult<Response<TableItem>>(null!);
         }
+
+        private static void AssertValidKey(string key) =>
+            Assert.DoesNotContain(key, character => character is '/' or '\\' or '#' or '?' ||
+                character <= '\u001f' || character is >= '\u007f' and <= '\u009f');
     }
 }
 

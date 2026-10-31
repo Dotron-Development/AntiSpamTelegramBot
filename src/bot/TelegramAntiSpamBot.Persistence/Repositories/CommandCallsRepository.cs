@@ -18,7 +18,7 @@ internal sealed class CommandCallsRepository(
                 .AsPages(continuationToken, pageSize))
             {
                 return new CommandCallPage(page.Values.Select(entry => new CommandCall(
-                    long.Parse(entry.PartitionKey, CultureInfo.InvariantCulture), entry.RowKey,
+                    long.Parse(entry.PartitionKey, CultureInfo.InvariantCulture), Uri.UnescapeDataString(entry.RowKey),
                     entry.GetDateTimeOffset("lastCall")!.Value)).ToArray(), page.ContinuationToken);
             }
         }
@@ -33,10 +33,11 @@ internal sealed class CommandCallsRepository(
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(cooldown, TimeSpan.Zero);
         var partition = chatId.ToString(CultureInfo.InvariantCulture);
+        var rowKey = Uri.EscapeDataString(command);
         TableEntity? previous = null;
         try
         {
-            previous = (await table.GetEntityAsync<TableEntity>(partition, command,
+            previous = (await table.GetEntityAsync<TableEntity>(partition, rowKey,
                 cancellationToken: cancellationToken)).Value;
         }
         catch (RequestFailedException exception) when (exception.Status == 404)
@@ -46,7 +47,7 @@ internal sealed class CommandCallsRepository(
         if (previous?.GetDateTimeOffset("lastCall") is { } lastCall && now - lastCall < cooldown)
             return false;
 
-        var entry = new TableEntity(partition, command) { ["lastCall"] = now.ToUniversalTime() };
+        var entry = new TableEntity(partition, rowKey) { ["lastCall"] = now.ToUniversalTime() };
         try
         {
             if (previous is not null)
