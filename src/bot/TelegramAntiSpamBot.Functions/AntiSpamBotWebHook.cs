@@ -25,31 +25,30 @@ namespace TelegramAntiSpamBot.Functions
                 if (message is null)
                     return req.CreateResponse(HttpStatusCode.NoContent);
 
-                var historyTask = SaveHistoryAsync(message);
                 var registerChatTask = RegisterChatAsync(update);
-                var persistenceTask = Task.WhenAll(historyTask, registerChatTask);
-                HttpResponseData response;
+
                 try
                 {
-                    response = await ProcessMessageAsync(req, update, message);
+                    if (update is not null && commandProcessor.IsCommand(update.Message?.Text))
+                        await commandProcessor.ProcessCommand(update);
+                    else
+                        await ProcessMessageAsync(message);
                 }
                 finally
                 {
-                    await persistenceTask;
+                    await registerChatTask;
                 }
 
-                if (!await historyTask)
-                    response.StatusCode = HttpStatusCode.InternalServerError;
-                return response;
+                return req.CreateResponse(HttpStatusCode.NoContent);
             }
             catch (Exception exception)
             {
                 logger.LogError(exception, "Unable to process Telegram update");
-                return req.CreateResponse(HttpStatusCode.NoContent);
+                throw;
             }
         }
 
-        private async Task<bool> SaveHistoryAsync(Message message)
+        private async Task SaveHistoryAsync(Message message)
         {
             try
             {
@@ -61,25 +60,19 @@ namespace TelegramAntiSpamBot.Functions
                                 reply.Text ?? reply.Caption ?? string.Empty)
                             : null,
                         message.Text ?? message.Caption ?? string.Empty)));
-                return true;
             }
             catch (Exception exception)
             {
                 logger.LogError(exception, "Unable to save message history for chat {chatId}", message.Chat.Id);
-                return false;
+                throw;
             }
         }
 
-        private async Task<HttpResponseData> ProcessMessageAsync(HttpRequestData req, Update? update, Message message)
+        private async Task<bool> ProcessMessageAsync(Message message)
         {
             try
             {
-                if (update != null && commandProcessor.IsCommand(update.Message?.Text))
-                {
-                    await commandProcessor.ProcessCommand(update);
-                    return req.CreateResponse(HttpStatusCode.NoContent);
-                }
-
+                var isSpam = false;
                 if (message is { From: { } fromUser }
                     && fromUser.Id != 777000 // forwarded messages from main group (TG user)
 
@@ -125,9 +118,11 @@ namespace TelegramAntiSpamBot.Functions
                             if (shortcutResult.IsSpam!.Value)
                             {
                                 await HandleSpamShort(message);
+                                return true;
                             }
 
-                            return req.CreateResponse(HttpStatusCode.NoContent);
+                            await SaveHistoryAsync(message);
+                            return false;
                         }
 
                         // Step 3.2. 
@@ -140,11 +135,12 @@ namespace TelegramAntiSpamBot.Functions
                         if (spamDetectionResult.ResultType == ResultType.Error)
                         {
                             logger.LogError("Spam detection service returned error for message: {messageContent}", messageContent);
-                            return req.CreateResponse(HttpStatusCode.InternalServerError);
+                            throw new InvalidOperationException("Spam detection service returned an error.");
                         }
 
                         if (spamDetectionResult.Probability >= 95)
                         {
+                            isSpam = true;
                             await HandleSpam(message, originalText, imageText,
                                 spamDetectionResult, sanitizedContent.Length > 0 ? hex : string.Empty);
                         }
@@ -156,13 +152,17 @@ namespace TelegramAntiSpamBot.Functions
 
                     await increaseCounterTask;
                 }
+
+                if (!isSpam)
+                    await SaveHistoryAsync(message);
+
+                return isSpam;
             }
             catch (Exception e)
             {
                 logger.LogError("Error: {e}", e);
+                throw;
             }
-
-            return req.CreateResponse(HttpStatusCode.NoContent);
         }
 
         private async Task RegisterChatAsync(Update? update)

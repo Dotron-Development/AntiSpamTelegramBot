@@ -16,7 +16,7 @@ internal sealed class ChronicleCommand(
         string summary;
         try
         {
-            summary = await chronicleService.GenerateAsync(message.Chat.Id, message.MessageId);
+            summary = await chronicleService.GenerateAsync(message.Chat.Id);
         }
         catch (Exception exception)
         {

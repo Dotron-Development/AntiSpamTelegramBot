@@ -66,27 +66,75 @@ public class ChronicleCommandTests
     [InlineData(10, 10, 1)]
     [InlineData(100, 100, 1)]
     [InlineData(150, 100, 51)]
-    public async Task ReadsCurrentChatHourAndSummarizesOnlyLatestHundred(int count, int expected, int firstId)
+    public async Task ReadsHourEndingAtLatestDiscussionAndSummarizesOnlyLatestHundred(int count, int expected, int firstId)
     {
         using var fixture = new Fixture();
+        var latest = DateTimeOffset.UtcNow.AddDays(-3);
         for (var id = 1; id <= count; id++)
-            fixture.History.Messages.Add(new(-100, id, DateTime.UtcNow.AddMinutes(-1).Ticks, new(null, null, "Discussion")));
+            fixture.History.Messages.Add(new(-100, id, latest.UtcTicks, new(null, null, "Discussion")));
         fixture.History.Messages.Add(new(-100, 1000, DateTime.UtcNow.Ticks, new(null, null, "/chronicle")));
-        var earliest = DateTimeOffset.UtcNow;
 
         await fixture.ProcessAsync();
 
         Assert.Equal("/chronicle", fixture.Command.GetType().GetProperty("Command")!.GetValue(fixture.Command));
         Assert.Equal(-100, fixture.History.ChatId);
-        Assert.Equal(TimeSpan.FromHours(1), fixture.History.To - fixture.History.From);
-        Assert.InRange(fixture.History.To, earliest, DateTimeOffset.UtcNow);
+        Assert.Equal(1, fixture.History.PageReads);
+        Assert.Equal(default, fixture.History.To);
         Assert.Equal(expected, fixture.Ai.Messages!.Count);
+        Assert.All(fixture.Ai.Messages, message => Assert.Equal(latest.UtcTicks, message.DateTimeTicks));
         Assert.Equal(firstId, fixture.Ai.Messages[0].MessageId);
         Assert.Equal(count, fixture.Ai.Messages[^1].MessageId);
         Assert.Equal(1, fixture.Ai.Requests);
         Assert.Contains("same language", fixture.Ai.Prompt);
         Assert.Contains("about 200 words", fixture.Ai.Prompt);
         Assert.Equal("Summary", Assert.Single(fixture.Telegram.Texts));
+    }
+
+    [Theory]
+    [InlineData("/chronicle")]
+    [InlineData("/CHRONICLE@TestBot")]
+    [InlineData("Please run /chronicle for this chat")]
+    public async Task ChronicleTextIsExcludedFromWindowAndSummary(string command)
+    {
+        using var fixture = new Fixture();
+        var latest = DateTimeOffset.UtcNow.AddDays(-3);
+        fixture.History.Messages.Add(new(-100, 1, latest.AddMinutes(-10).UtcTicks, new(null, null, command)));
+        fixture.History.Messages.Add(new(-100, 1000, latest.UtcTicks, new(null, null, "Discussion")));
+        fixture.History.Messages.Add(new(-100, 2, DateTimeOffset.UtcNow.UtcTicks, new(null, null, command)));
+
+        await fixture.ProcessAsync();
+
+        Assert.Equal(default, fixture.History.To);
+        Assert.Equal(1000, Assert.Single(fixture.Ai.Messages!).MessageId);
+    }
+
+    [Fact]
+    public async Task HistoryContainingOnlyChronicleCommandsSkipsAi()
+    {
+        using var fixture = new Fixture();
+        fixture.History.Messages.Add(new(-100, 1, DateTimeOffset.UtcNow.UtcTicks,
+            new(null, null, "/CHRONICLE@TestBot")));
+
+        await fixture.ProcessAsync();
+
+        Assert.Null(fixture.Ai.Messages);
+        Assert.Equal("No messages in the last hour.", Assert.Single(fixture.Telegram.Texts));
+    }
+
+    [Fact]
+    public async Task DirectSummaryAcceptsFilteredMessagesAndSkipsEmptyInput()
+    {
+        using var fixture = new Fixture();
+        var messages = new HistoryMessage[]
+        {
+            new(-100, 2, DateTimeOffset.UtcNow.UtcTicks, new(null, null, "Discussion"))
+        };
+
+        await fixture.Chronicle.SummarizeAsync(messages);
+
+        Assert.Equal(2, Assert.Single(fixture.Ai.Messages!).MessageId);
+        Assert.Equal("No messages in the last hour.", await fixture.Chronicle.SummarizeAsync([]));
+        Assert.Equal(1, fixture.Ai.Requests);
     }
 
     [Fact]
@@ -137,7 +185,92 @@ public class ChronicleCommandTests
     {
         using var fixture = new Fixture(TimeSpan.FromSeconds(seconds));
         await fixture.Processor.ProcessCommand(fixture.Update);
+        Assert.Equal(1, fixture.Calls.Count);
         Assert.Equal(TimeSpan.FromSeconds(seconds), fixture.Calls.Cooldown);
+    }
+
+    [Fact]
+    public async Task WindowIncludesBothBoundariesAndFindsLatestAcrossHistoryPages()
+    {
+        using var fixture = new Fixture();
+        var latest = DateTimeOffset.UtcNow.AddDays(-7);
+        for (var id = 1; id <= 1000; id++)
+            fixture.History.Messages.Add(new(-100, id, latest.AddHours(-2).UtcTicks, new(null, null, "Older")));
+        fixture.History.Messages.Add(new(-100, 1001, latest.AddHours(-1).UtcTicks, new(null, null, "Start")));
+        fixture.History.Messages.Add(new(-100, 1002, latest.UtcTicks, new(null, null, "End")));
+
+        await fixture.ProcessAsync();
+
+        Assert.Equal(new[] { 1001, 1002 }, fixture.Ai.Messages!.Select(message => message.MessageId));
+        Assert.Equal(latest.AddHours(-1).UtcTicks, fixture.Ai.Messages![0].DateTimeTicks);
+        Assert.Equal(latest.UtcTicks, fixture.Ai.Messages[1].DateTimeTicks);
+        Assert.Equal(2, fixture.History.PageReads);
+        Assert.Equal(default, fixture.History.To);
+    }
+
+    [Fact]
+    public async Task CommandOnlyPagesDoNotShiftWindowOrStopPagination()
+    {
+        using var fixture = new Fixture();
+        var latest = DateTimeOffset.UtcNow.AddDays(-7);
+        for (var id = 1; id <= 1000; id++)
+            fixture.History.Messages.Add(new(-100, id, latest.AddHours(-3).UtcTicks, new(null, null, "/chronicle")));
+        fixture.History.Messages.Add(new(-100, 1001, latest.AddHours(-1).AddTicks(-1).UtcTicks, new(null, null, "Outside")));
+        fixture.History.Messages.Add(new(-100, 1002, latest.AddHours(-1).UtcTicks, new(null, null, "Start")));
+        fixture.History.Messages.Add(new(-100, 1003, latest.UtcTicks, new(null, null, "End")));
+        for (var id = 1004; id <= 3000; id++)
+            fixture.History.Messages.Add(new(-100, id, latest.AddDays(1).UtcTicks, new(null, null, "/CHRONICLE@TestBot")));
+
+        await fixture.ProcessAsync();
+
+        Assert.Equal(3, fixture.History.PageReads);
+        Assert.Equal(default, fixture.History.To);
+        Assert.Equal(new[] { 1002, 1003 }, fixture.Ai.Messages!.Select(message => message.MessageId));
+        Assert.Equal(1, fixture.Ai.Requests);
+    }
+
+    [Fact]
+    public async Task ReadsRemainingPagesAfterCollectingMoreThanFiveHundredMessages()
+    {
+        using var fixture = new Fixture();
+        var latest = DateTimeOffset.UtcNow.AddDays(-7);
+        for (var id = 1; id <= 1500; id++)
+            fixture.History.Messages.Add(new(-100, id, latest.UtcTicks, new(null, null, "Discussion")));
+
+        await fixture.ProcessAsync();
+
+        Assert.Equal(2, fixture.History.PageReads);
+        Assert.Equal(Enumerable.Range(1401, 100), fixture.Ai.Messages!.Select(message => message.MessageId));
+        Assert.Equal(1, fixture.Ai.Requests);
+    }
+
+    [Fact]
+    public async Task DirectSummarySortsAndLimitsMessagesToLatestHundred()
+    {
+        using var fixture = new Fixture();
+        var latest = DateTimeOffset.UtcNow.AddDays(-7);
+        var messages = Enumerable.Range(1, 150).Reverse()
+            .Select(id => new HistoryMessage(-100, id, latest.UtcTicks, new(null, null, "Discussion")))
+            .ToArray();
+
+        await fixture.Chronicle.SummarizeAsync(messages);
+
+        Assert.Equal(Enumerable.Range(51, 100), fixture.Ai.Messages!.Select(message => message.MessageId));
+        Assert.Equal(1, fixture.Ai.Requests);
+    }
+
+    [Fact]
+    public async Task CancelledGenerationDoesNotReadHistoryOrCallAi()
+    {
+        using var fixture = new Fixture();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            fixture.Chronicle.GenerateAsync(-100, cancellation.Token));
+
+        Assert.Equal(0, fixture.History.PageReads);
+        Assert.Equal(0, fixture.Ai.Requests);
     }
 
     private sealed class Fixture : IDisposable
@@ -150,6 +283,7 @@ public class ChronicleCommandTests
         public CallsStub Calls { get; } = new();
         public TelegramHandler Telegram { get; } = new();
         public object Command { get; }
+        public IChronicleService Chronicle => services.GetRequiredService<IChronicleService>();
         public ICommandProcessor Processor { get; }
         public Update Update { get; } = new()
         {
@@ -221,7 +355,22 @@ public class ChronicleCommandTests
     private sealed class HistoryStub : IMessageHistoryRepository
     {
         public Task<HistoryMessagePage> GetPageAsync(long? chatId, int pageSize, string? continuationToken,
-            CancellationToken cancellationToken = default) => Task.FromResult(new HistoryMessagePage([], null));
+            CancellationToken cancellationToken = default)
+        {
+            PageReads++;
+            ChatId = chatId ?? 0;
+            if (MissingTable)
+                throw new Azure.RequestFailedException(404, "Table not found");
+            var offset = continuationToken is null ? 0 : int.Parse(continuationToken);
+            var page = Messages.Where(message => chatId is null || message.ChatId == chatId)
+                .OrderBy(message => message.DateTimeTicks).ThenBy(message => message.MessageId)
+                .Skip(offset).Take(pageSize).ToArray();
+            var nextOffset = offset + page.Length;
+            return Task.FromResult(new HistoryMessagePage(page,
+                nextOffset < Messages.Count(message => chatId is null || message.ChatId == chatId)
+                    ? nextOffset.ToString() : null));
+        }
+        public int PageReads { get; private set; }
         public List<HistoryMessage> Messages { get; } = [];
         public bool MissingTable { get; set; }
         public long ChatId { get; private set; }
@@ -244,7 +393,9 @@ public class ChronicleCommandTests
         private async IAsyncEnumerable<HistoryMessage> EnumerateAsync()
         {
             await Task.CompletedTask;
-            foreach (var message in Messages)
+            foreach (var message in Messages.Where(message => message.ChatId == ChatId &&
+                message.DateTimeTicks >= From.UtcTicks && message.DateTimeTicks < To.UtcTicks)
+                .OrderBy(message => message.DateTimeTicks).ThenBy(message => message.MessageId))
                 yield return message;
         }
     }

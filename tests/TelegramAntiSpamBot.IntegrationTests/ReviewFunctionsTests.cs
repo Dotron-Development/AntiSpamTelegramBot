@@ -4,12 +4,12 @@ namespace TelegramAntiSpamBot.IntegrationTests;
 public class ReviewFunctionsTests
 {
     [Fact]
-    public async Task ChroniclePreviewUsesConfiguredCooldownAndDoesNotPostToTelegram()
+    public async Task ChroniclePreviewDoesNotRecordCallsOrPostToTelegram()
     {
         using var fixture = new Fixture(commandCooldown: TimeSpan.FromMinutes(2));
         var response = await fixture.HistoryFunctions.PreviewChronicle(fixture.Request(), -100);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal((-100L, "/chronicle", TimeSpan.FromMinutes(2)), fixture.PreviewCall);
+        Assert.Null(fixture.PreviewCall);
         Assert.Equal(1, fixture.PreviewGenerations);
         Assert.Empty(fixture.Telegram.Calls);
         response.Body.Position = 0;
@@ -19,17 +19,19 @@ public class ReviewFunctionsTests
     }
 
     [Fact]
-    public async Task ChroniclePreviewOnCooldownReturnsSkippedWithoutCallingAiOrTelegram()
+    public async Task ChroniclePreviewBypassesCooldownOnRepeatedCalls()
     {
         using var fixture = new Fixture { AllowCommandCall = false };
+        await fixture.HistoryFunctions.PreviewChronicle(fixture.Request(), -100);
         var response = await fixture.HistoryFunctions.PreviewChronicle(fixture.Request(), -100);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(0, fixture.PreviewGenerations);
+        Assert.Equal(2, fixture.PreviewGenerations);
+        Assert.Null(fixture.PreviewCall);
         Assert.Empty(fixture.Telegram.Calls);
         response.Body.Position = 0;
         using var document = await JsonDocument.ParseAsync(response.Body);
-        Assert.True(document.RootElement.GetProperty("skipped").GetBoolean());
-        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("summary").ValueKind);
+        Assert.False(document.RootElement.GetProperty("skipped").GetBoolean());
+        Assert.Equal("Preview summary", document.RootElement.GetProperty("summary").GetString());
     }
 
     [Fact]
@@ -143,7 +145,7 @@ public class ReviewFunctionsTests
     {
         using var fixture = new Fixture
         {
-            Message =             new ReviewMessage(-100, 7, 42, new ReviewMessageFrom("Alice", null), null,
+            Message = new ReviewMessage(-100, 7, 42, new ReviewMessageFrom("Alice", null), null,
                 "Original caption", "Recognized text", "HASH", DateTime.UtcNow.Ticks)
         };
 
@@ -380,6 +382,7 @@ public class ReviewFunctionsTests
         Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.Unicode.GetBytes(
             MessageContentSanitizer.Sanitize(fixture.Detector.ClassifiedText!)))), message.ContentHash);
         Assert.Empty(fixture.HashDecisions);
+        Assert.Empty(fixture.History);
         Assert.Contains(fixture.Telegram.Calls, call => call.Method == "deletemessage");
         Assert.Contains(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
     }
@@ -395,6 +398,7 @@ public class ReviewFunctionsTests
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.False(Assert.Single(fixture.HashDecisions).IsSpam);
         Assert.Null(fixture.SavedMessage);
+        Assert.Single(fixture.History);
         Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "deletemessage");
     }
 
@@ -408,21 +412,23 @@ public class ReviewFunctionsTests
 
         Assert.Null(fixture.Detector.ClassifiedText);
         Assert.Null(fixture.SavedMessage);
+        Assert.Empty(fixture.History);
         Assert.Empty(fixture.HashDecisions);
         Assert.Contains(fixture.Telegram.Calls, call => call.Method == "deletemessage");
         Assert.Contains(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
     }
 
     [Fact]
-    public async Task AiErrorKeepsExistingFailureResponseWithoutDecisions()
+    public async Task AiErrorThrowsWithoutDecisions()
     {
         using var fixture = new Fixture();
         fixture.Detector.Result = new SpamRequestResult(ResultType.Error);
 
-        var response = await fixture.Webhook.Run(fixture.Request(PhotoUpdate));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Webhook.Run(fixture.Request(PhotoUpdate)));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("Spam detection service returned an error.", exception.Message);
         Assert.Null(fixture.SavedMessage);
+        Assert.Empty(fixture.History);
         Assert.Empty(fixture.HashDecisions);
         Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "deletemessage");
     }
@@ -502,10 +508,40 @@ public class ReviewFunctionsTests
             Assert.IsType<ReviewMessage>(fixture.SavedMessage).ReplyTo);
     }
 
+    [Theory]
+    [InlineData("/chronicle")]
+    [InlineData("/stat")]
+    public async Task WebhookRoutesCommandsWithoutSavingHistoryOrClassifying(string command)
+    {
+        using var fixture = new Fixture();
+        var update = JsonSerializer.Serialize(new
+        {
+            update_id = 1,
+            message = new
+            {
+                message_id = 7,
+                date = 1700000000,
+                chat = new { id = -100, type = "supergroup", title = "Test" },
+                from = new { id = 42, is_bot = false, first_name = "Alice" },
+                text = command
+            }
+        });
+
+        var response = await fixture.Webhook.Run(fixture.Request(update));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(1, fixture.Commands.Calls);
+        Assert.Empty(fixture.History);
+        Assert.False(fixture.SpamChecked.Task.IsCompleted);
+        Assert.Null(fixture.Detector.ClassifiedText);
+        Assert.Single(fixture.SavedChats);
+    }
+
     [Fact]
     public async Task WebhookSavesOriginalMessageToHistory()
     {
         using var fixture = new Fixture();
+        fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
 
         await fixture.Webhook.Run(fixture.Request(PhotoUpdate));
 
@@ -557,31 +593,35 @@ public class ReviewFunctionsTests
         Assert.True(timer.UseMonitor);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task WebhookProcessesMessageWhileWritesRunAndAwaitsBothBeforeReturning(bool shortcut)
+    [Fact]
+    public async Task WebhookSavesHistoryAfterClassificationAndAwaitsWritesBeforeReturning()
     {
         using var fixture = new Fixture();
+        var classificationGate = new TaskCompletionSource<SpamRequestResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         var historyGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var chatGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Detector.ClassificationGate = classificationGate;
         fixture.HistorySaveTask = historyGate.Task;
         fixture.ChatSaveTask = chatGate.Task;
-        if (shortcut)
-            fixture.Shortcut = ShortcutCheckResult.NotSpam;
 
         var run = fixture.Webhook.Run(fixture.Request(PhotoUpdate));
         try
         {
-            await fixture.SpamChecked.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Single(fixture.History);
+            await fixture.Detector.ClassificationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Empty(fixture.History);
             Assert.Single(fixture.SavedChats);
+            Assert.False(run.IsCompleted);
+
+            classificationGate.SetResult(new SpamRequestResult(ResultType.Evaluated, 10));
+            await fixture.HistorySaveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Single(fixture.History);
             Assert.False(run.IsCompleted);
             historyGate.SetResult();
             Assert.False(run.IsCompleted);
         }
         finally
         {
+            classificationGate.TrySetResult(new SpamRequestResult(ResultType.Evaluated, 10));
             historyGate.TrySetResult();
             chatGate.TrySetResult();
         }
@@ -590,16 +630,17 @@ public class ReviewFunctionsTests
     }
 
     [Fact]
-    public async Task HistoryFailureReturnsServerErrorAfterProcessingMessage()
+    public async Task HistoryFailureRethrowsAfterProcessingMessage()
     {
         using var fixture = new Fixture();
+        fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
         fixture.HistorySaveTask = Task.FromException(new InvalidOperationException("Storage unavailable"));
 
-        var response = await fixture.Webhook.Run(fixture.Request(PhotoUpdate));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Webhook.Run(fixture.Request(PhotoUpdate)));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("Storage unavailable", exception.Message);
         Assert.NotNull(fixture.Detector.ClassifiedText);
-        Assert.Contains(fixture.Telegram.Calls, call => call.Method == "deletemessage");
+        Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "deletemessage");
         Assert.Single(fixture.SavedChats);
     }
 
@@ -626,11 +667,13 @@ public class ReviewFunctionsTests
         public bool HistoryTrimmed { get; private set; }
         public Task HistorySaveTask { get; set; } = Task.CompletedTask;
         public Task ChatSaveTask { get; set; } = Task.CompletedTask;
+        public TaskCompletionSource HistorySaveStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource SpamChecked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public (long? ChatId, int PageSize, string? Token)? Query { get; private set; }
         public ReviewFunctions Functions { get; }
         public AntiSpamBotWebHook Webhook { get; }
         public DetectorStub Detector { get; } = new();
+        public CommandStub Commands { get; } = new();
         public ShortcutCheckResult Shortcut { get; set; } = ShortcutCheckResult.NotFound;
         public ReviewMessage? SavedMessage { get; private set; }
         public List<ReviewChat> SavedChats { get; } = [];
@@ -648,7 +691,7 @@ public class ReviewFunctionsTests
                         return Task.FromResult(AllowCommandCall);
                     case nameof(IChronicleService.GenerateAsync):
                         Assert.Equal(-100L, arguments[0]);
-                        Assert.Null(arguments[1]);
+                        Assert.IsType<CancellationToken>(arguments[1]);
                         PreviewGenerations++;
                         return PreviewFails ? Task.FromException<string>(new InvalidOperationException("AI unavailable"))
                             : Task.FromResult("Preview summary");
@@ -659,6 +702,7 @@ public class ReviewFunctionsTests
                         return Task.FromResult(new HistoryMessagePage(History.ToArray(), "next-record"));
                     case nameof(IMessageHistoryRepository.SaveAsync):
                         History.Add((HistoryMessage)arguments[0]!);
+                        HistorySaveStarted.TrySetResult();
                         return HistorySaveTask;
                     case nameof(IMessageHistoryRepository.TrimAsync):
                         HistoryTrimmed = true;
@@ -724,10 +768,10 @@ public class ReviewFunctionsTests
             });
             Functions = new ReviewFunctions(chatsRepository, probablySpamRepository, spamHashRepository, bot, botConfig);
             HistoryFunctions = new HistoryReviewFunctions(HistoryRepository, CreateRepository<ICommandCallsRepository>(),
-                CreateRepository<IChronicleService>(), botConfig, NullLogger<HistoryReviewFunctions>.Instance);
+                CreateRepository<IChronicleService>(), NullLogger<HistoryReviewFunctions>.Instance);
             Webhook = new AntiSpamBotWebHook(NullLogger<AntiSpamBotWebHook>.Instance,
                 Detector, chatsRepository, HistoryRepository, probablySpamRepository, messageCountRepository, spamHashRepository,
-                spamStatsRepository, bot, new TelegramImageUrlResolver(token), new CommandStub(),
+                spamStatsRepository, bot, new TelegramImageUrlResolver(token), Commands,
                 botConfig);
         }
 
@@ -775,18 +819,26 @@ public class ReviewFunctionsTests
     {
         public SpamRequestResult Result { get; set; } = new(ResultType.Evaluated, 99);
         public string? ClassifiedText { get; private set; }
+        public TaskCompletionSource<SpamRequestResult>? ClassificationGate { get; set; }
+        public TaskCompletionSource ClassificationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task<string> ExtractImageText(string imageUrl) => Task.FromResult("OCR \"quoted\"\nsecond line");
         public Task<SpamRequestResult> IsSpamAsync(string userMessage, int userMessagesCount, bool explainDecision = false)
         {
             ClassifiedText = userMessage;
-            return Task.FromResult(Result);
+            ClassificationStarted.TrySetResult();
+            return ClassificationGate?.Task ?? Task.FromResult(Result);
         }
     }
 
     private sealed class CommandStub : ICommandProcessor
     {
-        public bool IsCommand(string? message) => false;
-        public Task ProcessCommand(Telegram.Bot.Types.Update update) => Task.CompletedTask;
+        public int Calls { get; private set; }
+        public bool IsCommand(string? message) => message is "/chronicle" or "/stat";
+        public Task ProcessCommand(Telegram.Bot.Types.Update update)
+        {
+            Calls++;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestContext : FunctionContext

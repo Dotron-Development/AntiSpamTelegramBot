@@ -1,32 +1,48 @@
 
 namespace TelegramAntiSpamBot.OpenAI;
 
+/// <summary>
+/// Generates a recap from retained chat history.
+/// Excludes messages whose text contains /chronicle (case-insensitive), including bot-name suffixes.
+/// Collects non-command messages from all history pages, then removes messages preceding
+/// [latest non-command message time - 1 hour, latest non-command message time], including both boundaries.
+/// Only the latest 100 messages in that window are summarized; older messages do not fill a quiet window.
+/// Empty or missing history skips AI. Otherwise, one request sends timestamps, authors, reply context
+/// and text to the Chronicle deployment. The result is capped at 4000 characters without splitting
+/// surrogate pairs. Command deletion, history persistence and cooldown are handled by callers.
+/// </summary>
 internal sealed class ChronicleService(
     [FromKeyedServices("Chronicle")] ChatClient client,
     SpamDetectionInstructions instructions,
     IMessageHistoryRepository historyRepository) : IChronicleService
 {
-    public async Task<string> GenerateAsync(long chatId, int? excludedMessageId = null,
-        CancellationToken cancellationToken = default)
+    public async Task<string> GenerateAsync(long chatId, CancellationToken cancellationToken = default)
     {
-        var to = DateTimeOffset.UtcNow;
-        var messages = new Queue<HistoryMessage>(100);
+        var messages = new List<HistoryMessage>(100);
         try
         {
-            await foreach (var message in historyRepository.GetAsync(chatId, to.AddHours(-1), to, cancellationToken))
+            string? continuationToken = null;
+            do
             {
-                if (message.MessageId == excludedMessageId)
-                    continue;
-                if (messages.Count == 100)
-                    messages.Dequeue();
-                messages.Enqueue(message);
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                var page = await historyRepository.GetPageAsync(chatId, 300, continuationToken, cancellationToken);
+                messages.AddRange(page.Messages.Where(message => !ContainsChronicleCommand(message)));
+                continuationToken = page.ContinuationToken;
+            } while (continuationToken is not null);
+
+            var latestTicks = messages.Max(message => (long?)message.DateTimeTicks);
+            if (latestTicks is null)
+                return "No messages in the last hour.";
+
+            var fromTicks = latestTicks.Value - TimeSpan.TicksPerHour;
+            messages.RemoveAll(message => message.DateTimeTicks < fromTicks);
         }
         catch (Azure.RequestFailedException exception) when (exception.Status == 404)
         {
             return "No messages in the last hour.";
         }
-        return await SummarizeAsync(messages.ToArray(), cancellationToken);
+
+        return await SummarizeAsync(messages, cancellationToken);
     }
 
     public async Task<string> SummarizeAsync(IReadOnlyList<HistoryMessage> messages,
@@ -49,7 +65,10 @@ internal sealed class ChronicleService(
                     message.Content
                 })
         });
+
         var summary = await CompleteAsync(prompt, content, cancellationToken);
+
+        // Telegram limits text messages to 4096 characters; 4000 keeps the recap safely within one message.
         if (summary.Length > 4000)
         {
             var length = 3997;
@@ -59,8 +78,12 @@ internal sealed class ChronicleService(
 
             summary = summary[..length] + "...";
         }
+
         return summary;
     }
+
+    private static bool ContainsChronicleCommand(HistoryMessage message) =>
+        message.Content.Text.Contains("/chronicle", StringComparison.OrdinalIgnoreCase);
 
     private async Task<string> CompleteAsync(string prompt, string content, CancellationToken cancellationToken)
     {

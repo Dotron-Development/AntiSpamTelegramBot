@@ -5,7 +5,6 @@ public sealed class HistoryReviewFunctions(
     IMessageHistoryRepository historyRepository,
     ICommandCallsRepository commandCallsRepository,
     IChronicleService chronicleService,
-    IOptions<TelegramBotConfiguration> configuration,
     ILogger<HistoryReviewFunctions> logger)
 {
     private static readonly JsonObjectSerializer Serializer = new(new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -48,13 +47,9 @@ public sealed class HistoryReviewFunctions(
             return await Error(request, HttpStatusCode.BadRequest, "A non-zero chatId is required.");
         try
         {
-            var allowed = await commandCallsRepository.TryAcquireAsync(chatId, "/chronicle", DateTimeOffset.UtcNow,
-                configuration.Value.CommandCooldown, cancellationToken);
-            if (!allowed)
-                logger.LogInformation("Skipping Chronicle preview for chat {chatId}: cooldown is active", chatId);
-            var summary = allowed ? await chronicleService.GenerateAsync(chatId, cancellationToken: cancellationToken) : null;
+            var summary = await chronicleService.GenerateAsync(chatId, cancellationToken: cancellationToken);
             var response = request.CreateResponse(HttpStatusCode.OK);
-            await response.WriteAsJsonAsync(new ChroniclePreviewResponse(chatId, summary, !allowed), Serializer, cancellationToken);
+            await response.WriteAsJsonAsync(new ChroniclePreviewResponse(chatId, summary, false), Serializer, cancellationToken);
             return response;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -93,5 +88,5 @@ public sealed class HistoryReviewFunctions(
     }
 }
 
-/// <summary>A UI-only Chronicle preview; skipped means the configured command cooldown is active.</summary>
+/// <summary>A UI-only Chronicle preview; skipped is always false, retained for API compatibility.</summary>
 public sealed record ChroniclePreviewResponse(long ChatId, string? Summary, bool Skipped);
