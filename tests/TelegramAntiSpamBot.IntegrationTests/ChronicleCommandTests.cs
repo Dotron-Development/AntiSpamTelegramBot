@@ -1,19 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
-using System.Net;
-using System.Text;
-using System.Text.Json;
-using Telegram.Bot;
-using Telegram.Bot.Types;
-using TelegramAntiSpamBot.Commands;
-using TelegramAntiSpamBot.OpenAI;
-using TelegramAntiSpamBot.Persistence.DTO;
-using TelegramAntiSpamBot.Persistence.Repositories;
-using TelegramAntispamBot.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using OpenAI.Chat;
-using OpenAI;
-using System.ClientModel;
-using System.ClientModel.Primitives;
 
 namespace TelegramAntiSpamBot.IntegrationTests;
 

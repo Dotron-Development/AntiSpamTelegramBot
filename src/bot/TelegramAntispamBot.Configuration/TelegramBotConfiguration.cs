@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-
+﻿
 namespace TelegramAntispamBot.Configuration
 {
     public class TelegramBotConfiguration

@@ -16,7 +16,8 @@ export interface ReviewMessageResponse {
   ChatId: LosslessNumber
   MessageId: LosslessNumber
   UserId: LosslessNumber
-  UserName: string
+  From: { Name: string; Nick: string | null }
+  ReplyTo: { MessageId: LosslessNumber; From: { Name: string; Nick: string | null } | null; Text: string } | null
   Message: string
   ImageText: string
   ContentHash: string
@@ -47,11 +48,23 @@ export interface ReviewChatPage {
   continuationToken: string | null
 }
 
+export interface ReviewMessageFrom {
+  name: string
+  nick: string | null
+}
+
+export interface ReviewMessageReplyTo {
+  messageId: string
+  from: ReviewMessageFrom | null
+  text: string
+}
+
 export interface ReviewMessage {
   chatId: string
   messageId: string
   userId: string
-  userName: string
+  from: ReviewMessageFrom
+  replyTo: ReviewMessageReplyTo | null
   message: string
   imageText: string
   messageDateTicks: string
@@ -172,7 +185,12 @@ export function parseReviewMessage(data: ReviewMessageResponse): ReviewMessage {
     chatId: data.ChatId.toString(),
     messageId: data.MessageId.toString(),
     userId: data.UserId.toString(),
-    userName: data.UserName,
+    from: { name: data.From.Name, nick: data.From.Nick },
+    replyTo: data.ReplyTo ? {
+      messageId: data.ReplyTo.MessageId.toString(),
+      from: data.ReplyTo.From ? { name: data.ReplyTo.From.Name, nick: data.ReplyTo.From.Nick } : null,
+      text: data.ReplyTo.Text,
+    } : null,
     message: data.Message,
     imageText: data.ImageText,
     messageDateTicks: data.MessageDateTicks.toString(),

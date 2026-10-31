@@ -1,6 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using TelegramAntiSpamBot.Persistence.Repositories;
-
+﻿
 namespace TelegramAntiSpamBot.Commands
 {
     internal class CommandProcessor(

@@ -1,5 +1,3 @@
-using TelegramAntiSpamBot.Persistence.DTO;
-using TelegramAntiSpamBot.Persistence.Repositories;
 
 namespace TelegramAntiSpamBot.Functions
 {
@@ -234,11 +232,14 @@ namespace TelegramAntiSpamBot.Functions
         {
             var chatId = message.Chat.Id;
             var user = message.From!;
-            var name = string.Join(" ", new[] { user.FirstName, user.LastName }
-                .Where(part => !string.IsNullOrWhiteSpace(part)));
+            var from = new ReviewMessageFrom(string.Join(" ", new[] { user.FirstName, user.LastName }
+                .Where(part => !string.IsNullOrWhiteSpace(part))), user.Username);
+            var replyTo = message.ReplyToMessage is { } reply
+                ? new ReviewMessageReplyTo(reply.MessageId, GetReviewFrom(reply), reply.Text ?? reply.Caption ?? string.Empty)
+                : null;
 
             await probablySpamRepository.SaveReviewMessageAsync(new ReviewMessage(chatId, message.MessageId,
-                user.Id, name, originalText, imageText, hex, message.Date.ToUniversalTime().Ticks));
+                user.Id, from, replyTo, originalText, imageText, hex, message.Date.ToUniversalTime().Ticks));
 
             await HandleSpamShort(message);
 
@@ -260,6 +261,16 @@ namespace TelegramAntiSpamBot.Functions
             return fileInfo is { FilePath.Length: > 0 }
                 ? imageUrlResolver.GetImageUrl(fileInfo.FilePath)
                 : null;
+        }
+
+        private static ReviewMessageFrom? GetReviewFrom(Message message)
+        {
+            if (message.From is { } user)
+                return new ReviewMessageFrom(string.Join(" ", new[] { user.FirstName, user.LastName }
+                    .Where(part => !string.IsNullOrWhiteSpace(part))), user.Username);
+            if (message.SenderChat is { } chat)
+                return new ReviewMessageFrom(chat.Title ?? string.Empty, chat.Username);
+            return null;
         }
 
         private static HistoryMessageAuthor? GetHistoryAuthor(Message message)

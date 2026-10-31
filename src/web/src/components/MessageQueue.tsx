@@ -1,6 +1,6 @@
 import { ArrowDown, ChevronRight, Inbox, LoaderCircle, RefreshCw, Shield } from 'lucide-react'
 import type { ReviewMessage } from '../api/client'
-import { initials, messageKey } from '../lib/workspace'
+import { initials, messageKey, reviewFromLabel } from '../lib/workspace'
 import type { QueueQuery } from '../lib/workspace'
 
 export function MessageQueue({ messages, selected, query, loading, working, busy, hasLoaded, hasMore, onSelect, onRefresh, onLoadMore }: {
@@ -19,8 +19,8 @@ export function MessageQueue({ messages, selected, query, loading, working, busy
             {messages.map((message, index) => <button type="button" className={`message-row ${selected && messageKey(message) === messageKey(selected) ? 'selected' : ''}`}
                 key={messageKey(message)} aria-pressed={!!selected && messageKey(message) === messageKey(selected)} disabled={working}
                 onClick={() => onSelect(messageKey(message))}>
-                <span className={`avatar avatar-${index % 4}`}>{initials(message.userName)}</span>
-                <span className="message-summary"><span className="message-author">{message.userName || 'Unknown sender'}</span>
+                <span className={`avatar avatar-${index % 4}`}>{initials(message.from.name)}</span>
+                <span className="message-summary"><span className="message-author">{reviewFromLabel(message.from)}</span>
                     <span className="message-preview">{(message.message || message.imageText || 'No text').replace(/\s+/g, ' ')}</span>
                     <span className="message-meta"><span>#{message.messageId}</span><span>{message.imageText ? 'Text + OCR' : 'Text'}</span></span>
                 </span><ChevronRight size={15} className="row-arrow" />

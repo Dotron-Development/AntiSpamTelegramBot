@@ -1,4 +1,3 @@
-using TelegramAntiSpamBot.Persistence.Repositories;
 
 namespace TelegramAntiSpamBot.Functions;
 

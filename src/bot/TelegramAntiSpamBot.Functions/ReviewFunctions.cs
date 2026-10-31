@@ -1,4 +1,3 @@
-using TelegramAntiSpamBot.Persistence.Repositories;
 
 namespace TelegramAntiSpamBot.Functions;
 
@@ -84,14 +83,24 @@ public sealed class ReviewFunctions(
                 .Where(text => !string.IsNullOrEmpty(text)));
             if (!string.IsNullOrEmpty(content))
             {
-                var text = $"from: {message.UserName}\n{content}";
+                var sender = string.IsNullOrEmpty(message.From.Nick)
+                    ? message.From.Name
+                    : $"{message.From.Name} @{message.From.Nick}";
+                var text = $"from: {sender}\n{content}";
                 var offset = 0;
+                Message? previousPart = null;
                 while (offset < text.Length)
                 {
                     var length = Math.Min(4096, text.Length - offset);
                     if (offset + length < text.Length && char.IsHighSurrogate(text[offset + length - 1]))
                         length--;
-                    await bot.SendMessage(chatId, text.Substring(offset, length));
+                    var replyParameters = previousPart is not null
+                        ? new ReplyParameters { MessageId = previousPart.MessageId }
+                        : message.ReplyTo is { } replyTo
+                            ? new ReplyParameters { MessageId = replyTo.MessageId, AllowSendingWithoutReply = true }
+                            : null;
+                    var sent = await bot.SendMessage(chatId, text.Substring(offset, length), replyParameters: replyParameters);
+                    previousPart = message.ReplyTo is null ? null : sent;
                     offset += length;
                 }
             }

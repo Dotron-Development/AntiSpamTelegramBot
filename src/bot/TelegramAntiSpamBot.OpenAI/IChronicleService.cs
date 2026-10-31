@@ -1,4 +1,3 @@
-using TelegramAntiSpamBot.Persistence.DTO;
 
 namespace TelegramAntiSpamBot.OpenAI;
 

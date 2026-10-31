@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging;
-using TelegramAntiSpamBot.OpenAI;
 
 namespace TelegramAntiSpamBot.Commands.Commands;
 

@@ -1,6 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
-using TelegramAntiSpamBot.Persistence;
 
 namespace TelegramAntiSpamBot.IntegrationTests;
 

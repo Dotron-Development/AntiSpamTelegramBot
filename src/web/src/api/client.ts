@@ -1,7 +1,7 @@
 import { parseApiError, parseReviewChatPage, parseReviewMessagePage, parseCommandCallPage, parseHistoryPage, parseChroniclePreview } from './contracts'
 import type { ReviewChatPage, ReviewMessage, ReviewMessageRequest, ReviewPage } from './contracts'
 
-export type { ReviewChat, ReviewChatPage, ReviewMessage, ReviewPage } from './contracts'
+export type { ReviewChat, ReviewChatPage, ReviewMessage, ReviewMessageFrom, ReviewMessageReplyTo, ReviewPage } from './contracts'
 export type { CommandCall, HistoryMessage, TablePage } from './contracts'
 export type { ChroniclePreview } from './contracts'
 

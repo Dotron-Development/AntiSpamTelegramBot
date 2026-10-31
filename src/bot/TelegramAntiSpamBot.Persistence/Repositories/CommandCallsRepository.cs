@@ -1,5 +1,3 @@
-using Azure;
-using System.Globalization;
 
 namespace TelegramAntiSpamBot.Persistence.Repositories;
 

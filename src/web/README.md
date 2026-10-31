@@ -47,7 +47,7 @@ The catalog is loaded automatically on startup, following all continuation pages
 
 ## Review
 
-- Select a message to see its original text/caption, image transcription, sender IDs, and original UTC date.
+- Select a message to see its original text/caption, image transcription, sender name and `@nick` when available, sender ID, and original UTC date.
 - **Spam** confirms spam and removes the queue entry after the API succeeds.
 - **Not spam** returns the saved text and image transcription to Telegram, not the original image, only while the original message is within the configured spam restriction timeout (three hours by default). Older messages are classified as safe and removed from the queue without being republished. It does not remove restrictions.
 - **Remove restrictions** is independent of the review decision. It remains available in the last-decision row, or through the page-level action with editable chat and user IDs.

@@ -1,6 +1,6 @@
 import { CheckCheck, Clipboard, FileText, Image, Inbox, ShieldCheck, ShieldX, UnlockKeyhole } from 'lucide-react'
 import type { ReviewMessage } from '../api/client'
-import { dateLabel, initials } from '../lib/workspace'
+import { dateLabel, initials, reviewFromLabel } from '../lib/workspace'
 
 export function MessageDetails({ message, busy, loading, hasLoaded, hasMore, chatsLoading, chatId, onCopy, onRestrictions, onDecision }: {
     message?: ReviewMessage; busy: boolean; loading: boolean; hasLoaded: boolean; hasMore: boolean; chatsLoading: boolean; chatId?: string;
@@ -9,8 +9,8 @@ export function MessageDetails({ message, busy, loading, hasLoaded, hasMore, cha
 }) {
     return <div className="review-pane">
         {message ? <>
-            <header className="message-heading"><div className="sender"><span className="avatar detail-avatar">{initials(message.userName)}</span>
-                <div><div className="eyebrow">MESSAGE #{message.messageId}</div><h2>{message.userName || 'Unknown sender'}</h2></div></div>
+            <header className="message-heading"><div className="sender"><span className="avatar detail-avatar">{initials(message.from.name)}</span>
+                <div><div className="eyebrow">MESSAGE #{message.messageId}</div><h2>{reviewFromLabel(message.from)}</h2></div></div>
                 <span className="pending-label"><span className="status-dot" />Awaiting review</span>
             </header>
             <dl className="metadata"><div><dt>User ID</dt><dd><code>{message.userId}</code><button className="icon-button" title="Copy user ID" aria-label="Copy user ID" onClick={() => void onCopy(message.userId)}><Clipboard size={13} /></button></dd></div>

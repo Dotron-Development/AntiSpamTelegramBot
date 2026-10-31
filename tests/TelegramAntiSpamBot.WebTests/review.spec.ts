@@ -8,9 +8,9 @@ const userId = '9007199254740993'
 const ticks = '638712864000000001'
 const fakeToken = 'test-only-not-a-real-token'
 const apiRoute = 'https://review.example.test/api/review/**'
-const messageJSON = `{"ChatId":${chatId},"MessageId":7,"UserId":${userId},"UserName":"Alice Smith","Message":"Hello team!\\n<em>Not HTML</em>","ImageText":"Image text: special offer","ContentHash":"HASH","MessageDateTicks":${ticks}}`
+const messageJSON = `{"ChatId":${chatId},"MessageId":7,"UserId":${userId},"From":{"Name":"Alice Smith","Nick":null},"ReplyTo":null,"Message":"Hello team!\\n<em>Not HTML</em>","ImageText":"Image text: special offer","ContentHash":"HASH","MessageDateTicks":${ticks}}`
 const firstPage = `{"Messages":[${messageJSON}],"ContinuationToken":"next+/= page"}`
-const lastPage = `{"Messages":[{"ChatId":${chatId},"MessageId":8,"UserId":43,"UserName":"Bob Jones","Message":"Another pending message","ImageText":"","ContentHash":"HASH","MessageDateTicks":${ticks}}],"ContinuationToken":null}`
+const lastPage = `{"Messages":[{"ChatId":${chatId},"MessageId":8,"UserId":43,"From":{"Name":"Bob Jones","Nick":null},"ReplyTo":null,"Message":"Another pending message","ImageText":"","ContentHash":"HASH","MessageDateTicks":${ticks}}],"ContinuationToken":null}`
 const emptyPage = '{"Messages":[],"ContinuationToken":null}'
 const chatPage = `{"Chats":[{"ChatId":${chatId},"Name":"Test group","LastSeenUtc":"2026-10-25T00:00:00+00:00"}],"ContinuationToken":null}`
 

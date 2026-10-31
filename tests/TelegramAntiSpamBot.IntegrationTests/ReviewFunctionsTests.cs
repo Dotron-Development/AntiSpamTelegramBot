@@ -1,22 +1,3 @@
-using System.Net;
-using System.Reflection;
-using System.Security.Claims;
-using System.Text;
-using System.Text.Json;
-using Azure.Core.Serialization;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
-using Telegram.Bot;
-using TelegramAntispamBot.Configuration;
-using TelegramAntiSpamBot.Commands;
-using TelegramAntiSpamBot.Functions;
-using TelegramAntiSpamBot.OpenAI;
-using TelegramAntiSpamBot.Persistence;
-using TelegramAntiSpamBot.Persistence.DTO;
-using TelegramAntiSpamBot.Persistence.Repositories;
 
 namespace TelegramAntiSpamBot.IntegrationTests;
 
@@ -137,7 +118,39 @@ public class ReviewFunctionsTests
         Assert.Equal(isSpam ? 0 : 1, fixture.Telegram.Calls.Count);
         Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
         if (!isSpam)
-            Assert.Equal("from: Alice\nOriginal caption\nRecognized text", fixture.Telegram.Calls[0].Body.GetProperty("text").GetString());
+            Assert.Equal("from: Alice @alice\nOriginal caption\nRecognized text", fixture.Telegram.Calls[0].Body.GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public async Task NotSpamReplyTargetsOriginalRepliedToMessage()
+    {
+        using var fixture = new Fixture();
+        fixture.Message = fixture.Message! with
+        {
+            ReplyTo = new ReviewMessageReplyTo(5, new ReviewMessageFrom("Bob", "bob"), "Question")
+        };
+
+        await fixture.Functions.Review(fixture.Request("{\"isSpam\":false}"), -100, 7);
+
+        var sent = Assert.Single(fixture.Telegram.Calls, call => call.Method == "sendmessage");
+        var replyParameters = sent.Body.GetProperty("reply_parameters");
+        Assert.Equal(5, replyParameters.GetProperty("message_id").GetInt32());
+        Assert.True(replyParameters.GetProperty("allow_sending_without_reply").GetBoolean());
+    }
+
+    [Fact]
+    public async Task NotSpamRepublishOmitsMissingNick()
+    {
+        using var fixture = new Fixture
+        {
+            Message =             new ReviewMessage(-100, 7, 42, new ReviewMessageFrom("Alice", null), null,
+                "Original caption", "Recognized text", "HASH", DateTime.UtcNow.Ticks)
+        };
+
+        await fixture.Functions.Review(fixture.Request("{\"isSpam\":false}"), -100, 7);
+
+        Assert.Equal("from: Alice\nOriginal caption\nRecognized text",
+            fixture.Telegram.Calls[0].Body.GetProperty("text").GetString());
     }
 
     [Theory]
@@ -166,13 +179,21 @@ public class ReviewFunctionsTests
     public async Task ReviewPreservesLongUnicodeTextAcrossTelegramMessages()
     {
         using var fixture = new Fixture();
-        var original = new string('a', 4083) + char.ConvertFromUtf32(0x1F600) + new string('b', 4200);
-        fixture.Message = fixture.Message! with { Message = original, ImageText = string.Empty };
+        var original = new string('a', 4096 - "from: Alice @alice\n".Length - 1)
+            + char.ConvertFromUtf32(0x1F600) + new string('b', 4200);
+        fixture.Message = fixture.Message! with
+        {
+            Message = original,
+            ImageText = string.Empty,
+            ReplyTo = new ReviewMessageReplyTo(5, null, "Original question")
+        };
 
         await fixture.Functions.Review(fixture.Request("{\"isSpam\":false}"), -100, 7);
 
         var chunks = fixture.Telegram.Calls.Select(call => call.Body.GetProperty("text").GetString()!).ToArray();
-        Assert.Equal("from: Alice\n" + original, string.Concat(chunks));
+        Assert.Equal("from: Alice @alice\n" + original, string.Concat(chunks));
+        Assert.Equal(new[] { 5, 99, 100 }, fixture.Telegram.Calls.Select(call =>
+            call.Body.GetProperty("reply_parameters").GetProperty("message_id").GetInt32()));
         Assert.All(chunks, chunk =>
         {
             Assert.InRange(chunk.Length, 1, 4096);
@@ -350,7 +371,7 @@ public class ReviewFunctionsTests
         Assert.Equal(-100, message.ChatId);
         Assert.Equal(7, message.MessageId);
         Assert.Equal(42, message.UserId);
-        Assert.Equal("Alice Smith", message.UserName);
+        Assert.Equal(new ReviewMessageFrom("Alice Smith", "alice"), message.From);
         Assert.Equal("Original Caption 123!", message.Message);
         Assert.Equal("OCR \"quoted\"\nsecond line", message.ImageText);
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1700000000).UtcDateTime.Ticks, message.MessageDateTicks);
@@ -455,11 +476,31 @@ public class ReviewFunctionsTests
 
     private const string PhotoUpdate = """
         {"update_id":1,"message":{"message_id":7,"date":1700000000,
-        "from":{"id":42,"is_bot":false,"first_name":"Alice","last_name":"Smith"},
+        "from":{"id":42,"is_bot":false,"first_name":"Alice","last_name":"Smith","username":"alice"},
         "chat":{"id":-100,"type":"supergroup","title":"Test"},
         "caption":"Original Caption 123!",
         "photo":[{"file_id":"photo","file_unique_id":"unique","width":100,"height":100}]}}
         """;
+
+    [Fact]
+    public async Task WebhookSavesReplyContextForReviewQueue()
+    {
+        using var fixture = new Fixture();
+        const string update = """
+            {"update_id":3,"message":{"message_id":9,"date":1700000002,
+            "from":{"id":42,"is_bot":false,"first_name":"Alice","username":"alice"},
+            "chat":{"id":-100,"type":"supergroup","title":"Test"},"text":"This is a sufficiently long answer",
+            "reply_to_message":{"message_id":4,"date":1700000001,
+            "from":{"id":99,"is_bot":false,"first_name":"Bob","username":"bob"},
+            "chat":{"id":-100,"type":"supergroup","title":"Test"},"text":"Question"}}}
+            """;
+
+        var response = await fixture.Webhook.Run(fixture.Request(update));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(new ReviewMessageReplyTo(4, new ReviewMessageFrom("Bob", "bob"), "Question"),
+            Assert.IsType<ReviewMessage>(fixture.SavedMessage).ReplyTo);
+    }
 
     [Fact]
     public async Task WebhookSavesOriginalMessageToHistory()
@@ -473,7 +514,7 @@ public class ReviewFunctionsTests
         Assert.Equal(7, message.MessageId);
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1700000000).UtcDateTime.Ticks, message.DateTimeTicks);
         Assert.Equal("Original Caption 123!", message.Content.Text);
-        Assert.Equal(new HistoryMessageAuthor(42, "Alice Smith", null), message.Content.From);
+        Assert.Equal(new HistoryMessageAuthor(42, "Alice Smith", "alice"), message.Content.From);
     }
 
     [Fact]
@@ -571,7 +612,7 @@ public class ReviewFunctionsTests
             })).BuildServiceProvider();
         private readonly HttpClient httpClient;
         public TelegramHandler Telegram { get; } = new();
-        public ReviewMessage? Message { get; set; } = new(-100, 7, 42, "Alice", "Original caption", "Recognized text", "HASH", DateTime.UtcNow.Ticks);
+        public ReviewMessage? Message { get; set; } = new(-100, 7, 42, new ReviewMessageFrom("Alice", "alice"), null, "Original caption", "Recognized text", "HASH", DateTime.UtcNow.Ticks);
         public List<(string Hash, bool IsSpam)> HashDecisions { get; } = [];
         public bool Deleted { get; private set; }
         public List<HistoryMessage> History { get; } = [];
@@ -709,6 +750,7 @@ public class ReviewFunctionsTests
     private sealed class TelegramHandler : HttpMessageHandler
     {
         public List<(string Method, JsonElement Body)> Calls { get; } = [];
+        private int nextMessageId = 99;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -720,7 +762,7 @@ public class ReviewFunctionsTests
                 "restrictchatmember" or "deletemessage" => "true",
                 "getfile" => "{\"file_id\":\"photo\",\"file_unique_id\":\"unique\",\"file_path\":\"photos/test.jpg\"}",
                 "getchat" => "{\"id\":-100,\"type\":\"supergroup\",\"title\":\"Test\",\"permissions\":{\"can_send_messages\":true}}",
-                _ => "{\"message_id\":99,\"date\":0,\"chat\":{\"id\":-100,\"type\":\"supergroup\"}}"
+                _ => $"{{\"message_id\":{nextMessageId++},\"date\":0,\"chat\":{{\"id\":-100,\"type\":\"supergroup\"}}}}"
             };
             return new HttpResponseMessage(HttpStatusCode.OK)
             {

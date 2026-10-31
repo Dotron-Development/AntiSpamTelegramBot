@@ -1,12 +1,3 @@
-using System.Linq.Expressions;
-using Azure;
-using Azure.Core;
-using Azure.Data.Tables;
-using Azure.Data.Tables.Models;
-using Microsoft.Extensions.DependencyInjection;
-using TelegramAntiSpamBot.Persistence;
-using TelegramAntiSpamBot.Persistence.DTO;
-using TelegramAntiSpamBot.Persistence.Repositories;
 
 namespace TelegramAntiSpamBot.IntegrationTests;
 
@@ -38,12 +29,31 @@ public class RepositoryTests
         Assert.All(page.Messages, message =>
         {
             Assert.Equal(42, message.UserId);
-            Assert.Equal("Alice", message.UserName);
+            Assert.Equal(new ReviewMessageFrom("Alice", "alice"), message.From);
+            Assert.Equal(new ReviewMessageReplyTo(6, new ReviewMessageFrom("Bob", "bob"), "Question"), message.ReplyTo);
             Assert.Equal("caption", message.Message);
             Assert.Equal("OCR", message.ImageText);
             Assert.Equal("HASH", message.ContentHash);
             Assert.Equal(638000000000000000, message.MessageDateTicks);
         });
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("{\"messageId\":0}")]
+    public async Task ReviewIgnoresInvalidReplyContext(string json)
+    {
+        var row = MessageRow("-100", "7");
+        row["ReplyTo"] = json;
+        var table = new TableStub { LookupRow = row };
+        using var services = Services("ProbablySpam", table);
+
+        var message = await services.GetRequiredService<IProbablySpamRepository>().GetReviewMessageAsync(-100, 7);
+
+        Assert.NotNull(message);
+        Assert.Null(message.ReplyTo);
     }
 
     [Fact]
@@ -65,7 +75,9 @@ public class RepositoryTests
         var table = new TableStub();
         using var services = Services("ProbablySpam", table);
         var repository = services.GetRequiredService<IProbablySpamRepository>();
-        var message = new ReviewMessage(-100, 7, 42, "Alice", "caption", "OCR", "HASH", 638000000000000000);
+        var message = new ReviewMessage(-100, 7, 42, new ReviewMessageFrom("Alice", "alice"),
+            new ReviewMessageReplyTo(6, new ReviewMessageFrom("Bob", "bob"), "Question"),
+            "caption", "OCR", "HASH", 638000000000000000);
 
         await repository.SaveReviewMessageAsync(message);
         var write = Assert.Single(table.Writes);
@@ -73,6 +85,9 @@ public class RepositoryTests
         Assert.Equal("7", write.Entity.RowKey);
         Assert.Equal(TableUpdateMode.Replace, write.Mode);
         Assert.False(write.Update);
+        Assert.Equal("{\"name\":\"Alice\",\"nick\":\"alice\"}", Property<string>(write.Entity, "From"));
+        Assert.Equal("{\"messageId\":6,\"from\":{\"name\":\"Bob\",\"nick\":\"bob\"},\"text\":\"Question\"}",
+            Property<string>(write.Entity, "ReplyTo"));
         table.LookupRow = MessageRow("-100", "7");
         Assert.Equal(message, await repository.GetReviewMessageAsync(-100, 7));
         Assert.Equal(("-100", "7"), table.LookupKeys);
@@ -237,7 +252,9 @@ public class RepositoryTests
 
     private static Dictionary<string, object> MessageRow(string chatId, string messageId) => new()
     {
-        ["PartitionKey"] = chatId, ["RowKey"] = messageId, ["UserId"] = 42L, ["UserName"] = "Alice",
+        ["PartitionKey"] = chatId, ["RowKey"] = messageId, ["UserId"] = 42L,
+        ["From"] = "{\"name\":\"Alice\",\"nick\":\"alice\"}",
+        ["ReplyTo"] = "{\"messageId\":6,\"from\":{\"name\":\"Bob\",\"nick\":\"bob\"},\"text\":\"Question\"}",
         ["Message"] = "caption", ["ImageText"] = "OCR", ["ContentHash"] = "HASH", ["MessageDateTicks"] = 638000000000000000L
     };
 

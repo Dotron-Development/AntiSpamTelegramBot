@@ -1,6 +1,4 @@
-﻿using System.Text;
-using TelegramAntiSpamBot.Persistence.Repositories;
-
+﻿
 namespace TelegramAntiSpamBot.Commands.Commands
 {
     internal class StatCommand(ITelegramBotClient bot, ISpamStatsRepository repository) : ICommand

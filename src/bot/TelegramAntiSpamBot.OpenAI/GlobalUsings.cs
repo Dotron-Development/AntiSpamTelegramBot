@@ -11,3 +11,7 @@ global using TelegramAntiSpamBot.OpenAI.Instructions;
 global using Microsoft.Extensions.Options;
 global using System.Reflection;
 global using System.Text;
+global using Azure.AI.OpenAI.Chat;
+global using System.ComponentModel.DataAnnotations;
+global using TelegramAntiSpamBot.Persistence.DTO;
+global using TelegramAntiSpamBot.Persistence.Repositories;

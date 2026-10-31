@@ -1,5 +1,4 @@
-﻿using Azure.AI.OpenAI.Chat;
-
+﻿
 namespace TelegramAntiSpamBot.OpenAI
 {
     internal sealed partial class SpamDetectionService(

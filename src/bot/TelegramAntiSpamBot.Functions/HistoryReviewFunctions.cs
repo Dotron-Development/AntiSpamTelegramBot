@@ -1,6 +1,3 @@
-using TelegramAntiSpamBot.Persistence.Repositories;
-using Azure.Core.Serialization;
-using TelegramAntiSpamBot.OpenAI;
 
 namespace TelegramAntiSpamBot.Functions;
 

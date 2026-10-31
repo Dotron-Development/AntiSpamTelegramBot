@@ -1,9 +1,3 @@
-using Azure;
-using Azure.Data.Tables;
-using Azure.Data.Tables.Models;
-using Microsoft.Extensions.DependencyInjection;
-using TelegramAntiSpamBot.Persistence;
-using TelegramAntiSpamBot.Persistence.Repositories;
 
 namespace TelegramAntiSpamBot.IntegrationTests;
 

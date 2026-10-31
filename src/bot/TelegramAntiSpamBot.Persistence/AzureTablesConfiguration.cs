@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-
+﻿
 namespace TelegramAntiSpamBot.Persistence
 {
     public class AzureTablesConfiguration
