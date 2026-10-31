@@ -45,12 +45,7 @@ namespace TelegramAntiSpamBot.Commands.Commands
                 timing.MinDelayMs?.ToString() ?? "<No data> ",
                 timing.AvgDelayMs?.ToString() ?? "<No data> ");
 
-            var sendTask = bot.SendMessage(chatId, outputMessage);
-            var deleteTask = bot.DeleteMessage(chatId, message.Id);
-
-            await Task.WhenAll(sendTask, deleteTask);
-
-            var sentMessage = sendTask.Result;
+            var sentMessage = await bot.SendMessage(chatId, outputMessage);
 
             await Task.Delay(TimeSpan.FromSeconds(15));
             await bot.DeleteMessage(chatId, sentMessage.MessageId);

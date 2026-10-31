@@ -35,22 +35,35 @@ You need an already running Functions host with the review endpoints. Network re
 
 The agreed chat and message response contracts use PascalCase JSON fields (`Chats`, `Messages`, `ContinuationToken`, `ChatId`, etc.). TypeScript contracts and dedicated parsers are defined in [contracts.ts](src/api/contracts.ts). Parsers trust the backend contract without per-field runtime validation and map responses to UI models, preserving 64-bit IDs and date ticks without rounding. Validation of user-entered IDs remains separate.
 
+## History and Command Calls
+
+**Message history** and **Command calls** are read-only table views with optional chat filtering, refresh and continuation-token pagination. History includes original UTC timestamps, author information, plain text/captions and expandable reply context. Command calls show the latest admitted timestamp per chat and command, not every invocation. IDs and ticks remain lossless strings. These endpoints return camelCase JSON, unlike the existing queue/catalog contracts.
+
+Select a specific chat on **Message history** to enable **Test Chronicle**. It generates an inline, copyable recap using the same last-hour/latest-100 selection, embedded prompt and AI service as `/chronicle`. The selected chat is used even if the displayed history page was loaded with another filter. Changing chat clears the preview. Nothing is sent to Telegram.
+
+Preview uses `POST /api/review/chronicle/{chatId}` and shares the per-chat `/chronicle` cooldown with Telegram. Admitted attempts update `CommandsCall`, including failures; cooldown skips show an informational notice. Configure Functions `TelegramBotConfiguration__CommandCooldown` (default `00:05:00`) or Terraform `command_cooldown`. Requests are not automatically retried. A timeout can leave generation running on the backend; wait for cooldown before explicitly trying again.
+
 The catalog is loaded automatically on startup, following all continuation pages. It starts empty and fills as the bot receives new or edited messages. The backend creates its `Chats` table on the first successful write; the Function identity must have permission to create it. The configured moderation archive chat is excluded. Existing review entries are not used to backfill chat names.
 
 ## Review
 
 - Select a message to see its original text/caption, image transcription, sender IDs, and original UTC date.
 - **Spam** confirms spam and removes the queue entry after the API succeeds.
-- **Not spam** returns the saved text and image transcription to Telegram, not the original image. It does not remove restrictions.
+- **Not spam** returns the saved text and image transcription to Telegram, not the original image, only while the original message is within the configured spam restriction timeout (three hours by default). Older messages are classified as safe and removed from the queue without being republished. It does not remove restrictions.
 - **Remove restrictions** is independent of the review decision. It remains available in the last-decision row, or through the page-level action with editable chat and user IDs.
 - **Load more** follows the server's continuation token, including after an empty page. It and **Refresh queue** use the submitted chat filter/page size, even if the form has since changed. The counter reflects loaded pending messages, not the total on the server. Entries follow Azure Table Storage partition/row-key order, not date order; **All chats** does not mean the chronologically latest messages. `Page size` requests up to N entries per Azure page. Messages are identified by both chat ID and message ID, since message IDs can repeat across chats.
 - No mutation is retried automatically. After an error the outcome can be uncertain; refresh before manually retrying. A repeated not-spam decision can republish text because the API is not transactional.
 
 ## CORS and Credentials
 
+The shared restriction/republishing timeout is configured on Functions as
+`TelegramBotConfiguration__SpamRestrictionTimeout` in .NET TimeSpan format,
+for example `03:00:00`. Terraform supplies it from `spam_restriction_timeout`,
+which can be overridden in each environment's `.tfvars`. It is not a SPA setting.
+
 There is no proxy. Allow the exact frontend origin (normally `http://localhost:5173`) in the Function's CORS settings. `http://127.0.0.1:5173` is a different origin, as is another port. The Function host must handle preflight OPTIONS requests and allow GET/POST with `Authorization` and `Content-Type` headers. Terraform manages deployed Function CORS, automatically including the deployed SPA origin and the configured additional origins.
 
-For a local Functions host, you can start it with `func start --cors http://localhost:5173`. Remote Function URLs require HTTPS; HTTP is allowed only for loopback. Requests time out after 30 seconds, do not follow redirects, and do not send cookies. Browsers do not distinguish CORS failures from many network failures, so the error message mentions both.
+For a local Functions host, you can start it with `func start --cors http://localhost:5173`. Remote Function URLs require HTTPS; HTTP is allowed only for loopback. Requests time out after 30 seconds (two minutes for Chronicle previews), do not follow redirects, and do not send cookies. Browsers do not distinguish CORS failures from many network failures, so the error message mentions both.
 
 Each API request obtains an access token through MSAL and sends it in `Authorization: Bearer ...`. No Function key or ID token is sent to review endpoints. The application does not copy tokens into its own storage or query strings. Only the chat filter is remembered in local storage; review messages are not persisted. Use a trusted browser profile. Client-side role checks are only a UI gate: configure Easy Auth to enforce API access. Easy Auth does not run in the local Functions host. Static HTML/JS remains public; no sensitive data is included before login.
 

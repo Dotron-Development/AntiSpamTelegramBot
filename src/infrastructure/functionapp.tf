@@ -88,16 +88,19 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
 
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = azurerm_cognitive_deployment.image_text_extraction.name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = azurerm_cognitive_deployment.spam_recognition.name
+    "OpenAiServicesConfiguration__ChronicleDeployment"        = azurerm_cognitive_deployment.chronicle.name
     "OpenAiServicesConfiguration__ServiceUrl"                 = azurerm_cognitive_account.ai_services.endpoint
     "OpenAiServicesConfiguration__ApiKey"                     = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.ai_services_api_key.id})"
 
     "AzureTablesConfiguration__StorageAccountUrl"     = azurerm_storage_account.data_storage.primary_table_endpoint
     "AzureTablesConfiguration__TableIdentityClientId" = azurerm_user_assigned_identity.functionapp_identity.client_id
 
-    "TelegramBotConfiguration__ForwardSpamToChatId" = var.forwardSpamToChatId,
-    "TelegramBotConfiguration__BotName"             = var.bot_name,
-    "TelegramBotConfiguration__SecretHeader"        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_secret_header.id})"
-    "TelegramBotConfiguration__Token"               = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
+    "TelegramBotConfiguration__ForwardSpamToChatId"    = var.forwardSpamToChatId,
+    "TelegramBotConfiguration__BotName"                = var.bot_name,
+    "TelegramBotConfiguration__SpamRestrictionTimeout" = var.spam_restriction_timeout
+    "TelegramBotConfiguration__CommandCooldown"        = var.command_cooldown
+    "TelegramBotConfiguration__SecretHeader"           = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_secret_header.id})"
+    "TelegramBotConfiguration__Token"                  = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
     }, var.debug_ai_response != null ? {
     "TelegramBotConfiguration__DebugAiResponse" = var.debug_ai_response
   } : {})

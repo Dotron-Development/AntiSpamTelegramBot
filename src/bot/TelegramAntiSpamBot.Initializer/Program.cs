@@ -10,7 +10,8 @@ namespace TelegramAntiSpamBot.Initializer
             var bot = new TelegramBotClient(args[0]);
             await bot.SetWebhook(
                 url: args[1],
-                allowedUpdates: [UpdateType.Message, UpdateType.EditedMessage],
+                allowedUpdates: [UpdateType.Message, UpdateType.EditedMessage,
+                    UpdateType.ChannelPost, UpdateType.EditedChannelPost],
                 secretToken: args[2]);
         }
     }

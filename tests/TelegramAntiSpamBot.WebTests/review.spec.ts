@@ -550,3 +550,154 @@ for (const catalogFailure of [false, true]) {
     await expect(page.getByRole('dialog').getByLabel('Chat ID', { exact: true })).toHaveValue('')
   })
 }
+
+test('command calls tab filters, paginates, refreshes and stays read-only', async ({ page }, testInfo) => {
+  const queries: URL[] = []
+  await page.route('**/api/review/command-calls?*', route => {
+    expect(route.request().method()).toBe('GET')
+    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+    const url = new URL(route.request().url())
+    queries.push(url)
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      calls: [{ chatId, command: url.searchParams.has('continuationToken') ? '/stat' : '/chronicle', lastCall: '2026-10-31T12:00:00Z' }],
+      continuationToken: url.searchParams.has('continuationToken') ? null : 'next+/= page',
+    }) })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Command calls', exact: true }).click()
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
+  await page.getByRole('button', { name: 'Load records' }).click()
+  const table = page.getByRole('region', { name: 'Command calls table' })
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  await expect(table).toContainText('/chronicle')
+  await expect(table).toContainText('31 Oct 2026')
+  expect(queries[0].searchParams.get('chatId')).toBe(chatId)
+  expect(queries[0].searchParams.get('pageSize')).toBe('50')
+  await page.getByRole('button', { name: 'Load more', exact: true }).click()
+  await expect(table.locator('tbody tr')).toHaveCount(2)
+  expect(queries[1].searchParams.get('continuationToken')).toBe('next+/= page')
+  await page.getByRole('button', { name: 'Refresh records' }).click()
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  expect(queries[2].searchParams.get('continuationToken')).toBeNull()
+  await page.screenshot({ path: testInfo.outputPath('calls-desktop.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByRole('tab', { name: 'Message history' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('calls-mobile.png'), fullPage: true })
+  await page.getByRole('tab', { name: 'Review queue', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Load queue', exact: true })).toBeVisible()
+})
+
+test('message history preserves numeric precision, plain text and reply context', async ({ page }, testInfo) => {
+  const queries: URL[] = []
+  await page.route('**/api/review/history?*', route => {
+    const url = new URL(route.request().url())
+    queries.push(url)
+    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+    const body = url.searchParams.has('continuationToken')
+      ? `{"messages":[{"chatId":${chatId},"messageId":8,"dateTimeTicks":${ticks},"content":{"from":null,"replyTo":null,"text":""}}],"continuationToken":null}`
+      : `{"messages":[{"chatId":${chatId},"messageId":7,"dateTimeTicks":${ticks},"content":{"from":{"id":${userId},"name":"Alice Smith","username":"alice"},"text":"Hello team!\\n<em>Not HTML</em>","replyTo":{"messageId":6,"from":{"id":43,"name":"Bob Jones","username":null},"text":"Original question"}}}],"continuationToken":"history+/="}`
+    return route.fulfill({ contentType: 'application/json', body })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
+  await page.getByRole('button', { name: 'Load records' }).click()
+  const table = page.getByRole('region', { name: 'Message history table' })
+  await expect(table).toContainText(userId)
+  await expect(table.locator(`[title="${ticks}"]`)).toContainText('1 Jan 2025, 00:00')
+  await table.locator('summary').first().click()
+  await expect(table).toContainText('Original question')
+  await expect(table).toContainText('Bob Jones')
+  await expect(table.locator('em')).toHaveCount(0)
+  await expect(table.locator('.history-preview')).toHaveText('Hello team!\n<em>Not HTML</em>')
+  expect(queries[0].searchParams.get('chatId')).toBe(chatId)
+  await page.getByRole('button', { name: 'Load more', exact: true }).click()
+  await expect(table.locator('tbody tr')).toHaveCount(2)
+  await expect(table).toContainText('Unknown author')
+  expect(queries[1].searchParams.get('continuationToken')).toBe('history+/=')
+  await page.screenshot({ path: testInfo.outputPath('history-desktop.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('history-mobile.png'), fullPage: true })
+})
+
+test('table views handle empty pages, errors and retry without mutating data', async ({ page }) => {
+  let attempts = 0
+  await page.route('**/api/review/command-calls?*', route => {
+    attempts++
+    expect(route.request().method()).toBe('GET')
+    if (attempts === 2) return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Storage unavailable"}' })
+    return route.fulfill({ contentType: 'application/json', body: '{"calls":[],"continuationToken":null}' })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Command calls', exact: true }).click()
+  await page.getByRole('button', { name: 'Load records' }).click()
+  await expect(page.getByRole('region', { name: 'Command calls table' })).toContainText('No records found.')
+  await page.getByRole('button', { name: 'Refresh records' }).click()
+  await expect(page.getByRole('alert')).toContainText('Storage unavailable')
+  await page.getByRole('button', { name: 'Load records' }).click()
+  await expect(page.getByRole('region', { name: 'Command calls table' })).toContainText('No records found.')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('Chronicle preview is available for a selected history chat and renders without Telegram posting', async ({ page }, testInfo) => {
+  let posts = 0
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const summary = 'Alice raised the question. Bob answered.\nAI aside: apparently the future still needs a meeting. <b>Plain text</b>'
+  await page.route('**/api/review/chronicle/*', async route => {
+    posts++
+    expect(route.request().method()).toBe('POST')
+    expect(new URL(route.request().url()).pathname).toBe(`/api/review/chronicle/${chatId}`)
+    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+    await gate
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ chatId, summary, skipped: false }) })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await expect(page.getByRole('button', { name: 'Test Chronicle' })).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Test Chronicle' })).toHaveCount(0)
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
+  await page.getByRole('button', { name: 'Test Chronicle' }).click()
+  await expect(page.getByRole('button', { name: 'Generating...' })).toBeDisabled()
+  await expect(page.getByLabel('Chat', { exact: true })).toBeDisabled()
+  release()
+  const preview = page.getByRole('region', { name: 'Chronicle preview' })
+  await expect(preview).toContainText(summary)
+  await expect(preview.locator('b')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Copy Chronicle' })).toBeVisible()
+  expect(posts).toBe(1)
+  await page.screenshot({ path: testInfo.outputPath('preview-desktop.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByRole('button', { name: 'Test Chronicle' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('preview-mobile.png'), fullPage: true })
+  await page.getByLabel('Chat', { exact: true }).selectOption('')
+  await expect(preview).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Test Chronicle' })).toHaveCount(0)
+})
+
+test('Chronicle preview handles failure, cooldown and an explicit retry', async ({ page }) => {
+  let attempts = 0
+  await page.route('**/api/review/chronicle/*', route => {
+    attempts++
+    if (attempts === 1) return route.fulfill({ status: 502, contentType: 'application/json', body: '{"error":"AI unavailable"}' })
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      chatId, summary: attempts === 2 ? null : 'A fresh recap.', skipped: attempts === 2,
+    }) })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
+  await page.getByRole('button', { name: 'Test Chronicle' }).click()
+  await expect(page.getByRole('alert')).toContainText('AI unavailable')
+  expect(attempts).toBe(1)
+  await page.getByRole('button', { name: 'Test Chronicle' }).click()
+  await expect(page.getByRole('status')).toContainText('Chronicle is on cooldown')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Chronicle preview' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Test Chronicle' }).click()
+  await expect(page.getByRole('region', { name: 'Chronicle preview' })).toContainText('A fresh recap.')
+  expect(attempts).toBe(3)
+})

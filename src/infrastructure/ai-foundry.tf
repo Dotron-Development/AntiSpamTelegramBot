@@ -46,6 +46,23 @@ resource "azurerm_cognitive_deployment" "image_text_extraction" {
   }
 }
 
+resource "azurerm_cognitive_deployment" "chronicle" {
+  name                 = "chronicle"
+  cognitive_account_id = azurerm_cognitive_account.ai_services.id
+  rai_policy_name      = azurerm_cognitive_account_rai_policy.rai_policy_high.name
+
+  model {
+    format  = "OpenAI"
+    name    = var.chronicle.name
+    version = var.chronicle.version
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = var.chronicle.capacity
+  }
+}
+
 resource "azurerm_cognitive_account_rai_policy" "rai_policy_high" {
   name                 = "rai-policy-high"
   cognitive_account_id = azurerm_cognitive_account.ai_services.id

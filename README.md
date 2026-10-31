@@ -18,6 +18,7 @@ Azure infrastructure and deployment are managed with Terraform and GitHub Action
 - Optionally forwards removed messages and AI explanations to a moderation archive chat.
 - Tracks per-user message counts, daily and monthly deletion totals, and deletion latency.
 - Provides the `/stat` command for chat-level moderation statistics.
+- Provides `/chronicle` for an informal AI recap of the current chat's last hour, capped at the latest 100 messages.
 
 ## Architecture
 
@@ -70,31 +71,54 @@ If normalization produces an empty string, classification and review bypass the 
 | `MessageCount` | Recorded message counts per chat and sender. |
 | `SpamStats` | Daily/monthly deletion totals and minimum, maximum, and average deletion latency. |
 | `Chats` | Chat catalog: partition `chats`, row key is chat ID, with `Name` and UTC `LastSeenUtc`. Updated on incoming and edited messages, including commands; the configured archive chat is excluded. |
+| `MessageHistory` | Incoming messages and channel posts, including edits and commands. Partition is chat ID; row key is original UTC ticks (`D19`) followed by message ID (`D10`). `DateTimeTicks` and JSON `Content` preserve the timestamp, author, reply-to context and text/caption. |
+| `CommandsCall` | Latest admitted command attempt: partition is chat ID, row key is the canonical command (e.g. `/chronicle`), and `lastCall` is a UTC timestamp. |
 
-The four moderation tables are provisioned by Terraform through Azure CLI using Azure identity authentication; shared-key access is disabled for the application data storage account. `Chats` is created by the application on its first write if missing; Terraform is unchanged. The application identity needs table-creation permissions as well as entity read/write permissions. An absent catalog table reads as an empty list.
+The moderation tables and `MessageHistory` are provisioned by Terraform through Azure CLI using Azure identity authentication; shared-key access is disabled for the application data storage account. `Chats` and `MessageHistory` can also be created by the application on first write if missing. The application identity needs table-creation permissions as well as entity read/write permissions. An absent catalog table reads as an empty list.
+
+History saving and chat registration start before command handling and moderation and run concurrently with message processing. The webhook awaits both before returning, including early exits. If history saving fails, the response is 500 so Telegram can retry; processing may already have performed moderation, so a retry can repeat side effects. Chat registration remains best-effort. Only updates delivered after deployment are captured; old Telegram history is not backfilled. Edits with the same original date and message ID replace the previous content. History does not include photo binaries or OCR text.
+
+`CleanupMessageHistory` runs every hour at minute zero, UTC (`0 0 * * * *`). It scans keys in ascending order and deletes the oldest excess entries, leaving the latest 1000 messages **per chat**, with transactions of at most 100 deletes from one partition. Until the next sweep, a chat may temporarily exceed 1000 entries. Concurrent arrivals may require the next sweep to restore the limit. The cleanup scan uses only partition/row keys and retains at most 1000 candidates in memory per chat.
+
+`IMessageHistoryRepository.GetAsync(chatId, from, to)` streams the UTC interval `[from, to)` using a partition-and-row-key range query, not a filter on the unindexed `DateTimeTicks` property. Capture `to = DateTimeOffset.UtcNow` and use `from = to.AddHours(-1)` for the last hour. All messages sharing a timestamp remain distinct through their message ID suffix.
+
+The previous experimental reverse-ticks row keys are not compatible with this forward-key ordering. If those rows already exist in Azure, migrate their keys before deploying this change; no automatic migration or deletion of existing history is performed.
 
 Persistence is split into table-specific repositories: `Chats`, `ProbablySpam`, `SpamHash`, `MessageCount`, and `SpamStats` each have their own interface and implementation. Consumers inject only the repositories they use; there is no shared all-table repository. Table schemas, partition/row keys, and existing records remain unchanged.
 
-Chat registration is an awaited best-effort upsert before command processing and moderation, not a detached background task. Registration failures are logged separately and do not stop moderation. Names are refreshed on subsequent messages; existing chats are not backfilled without incoming traffic.
+Chat registration is a best-effort upsert started alongside history saving and awaited after message processing, not a detached background task. Registration failures are logged separately and do not stop moderation. Names are refreshed on subsequent messages; existing chats are not backfilled without incoming traffic.
 
 ### Review API
 
-All review endpoints require an Azure Functions key supplied in `x-functions-key` (or the `code` query parameter). They do not require Telegram's webhook secret. Function keys are normally not enforced by the local Functions host unless it is started with authentication enabled.
+All review endpoints rely on Functions Easy Auth with Entra access tokens in `Authorization: Bearer ...`; no Function key or Telegram webhook secret is required. Their host authorization is Anonymous, so configure platform protection before deploying them. Local Functions hosts do not run Easy Auth and must remain bound to loopback. See [Functions Easy Auth](docs/functions-easy-auth.md).
 
 | Method and route | Input and behavior |
 |---|---|
 | `GET /api/review/chats` | Optional `pageSize` (1-1000, default 100) and opaque `continuationToken`. Returns `chats` (`chatId`, `name`, `lastSeenUtc`) and `continuationToken`. Follow tokens until null, including after an empty page. |
 | `GET /api/review/messages?pageSize=100` | Optional non-zero `chatId` filters one chat's partition; omit it to query all chats. Optional `pageSize` (1-1000, default 100) and opaque `continuationToken`. Returns `messages` and `continuationToken`; request subsequent pages until the token is null. Results follow Azure Table Storage partition/row-key order, not date order. No chronological sorting or full-table aggregation is performed. |
+| `GET /api/review/history` | Same optional `chatId`, `pageSize` and `continuationToken`. Returns camelCase `messages` with author, text/caption, reply context and original ticks, plus `continuationToken`. Read-only; ordering follows table keys, oldest first within each chat. A missing table returns an empty page. |
+| `GET /api/review/command-calls` | Same pagination and filter. Returns camelCase `calls` (`chatId`, `command`, `lastCall`) and `continuationToken`. Shows latest admitted attempts, not an event log; a missing table returns an empty page. |
+| `POST /api/review/chronicle/{chatId}` | No body. Previews Chronicle for the selected chat using the same history selection, AI service and cooldown as Telegram. Returns camelCase `{chatId, summary, skipped}`; cooldown skips return 200 with null summary, AI failures return 502. Records an admitted `/chronicle` attempt, but never posts to Telegram. |
 | `POST /api/review/messages/{chatId}/{messageId}` | JSON body `{"isSpam":true}` or `{"isSpam":false}`. Updates `SpamHash` and removes the queued entry. For non-spam, first republishes the original text/caption and image transcription as plain text prefixed with `from: <display name>`. Long text is split across messages. No image is resent; no restrictions are lifted. Returns 204, or 404 if the entry is missing. |
 | `POST /api/review/restrictions/{chatId}/{userId}` | No body. Independently restores the chat's default member permissions for this user. Returns 204, or 409 when default permissions are unavailable. |
 
-Queue messages contain `chatId`, `messageId`, `userId`, `userName`, `message` (original text/caption), `imageText`, `contentHash`, and `messageDateTicks` (the original UTC date in .NET ticks). The date does not change during review. No `MessageHistory` table is used; completed reviews are not archived. Reviewers with a key have access to all chats and actions, without individual user roles.
+Queue messages contain `chatId`, `messageId`, `userId`, `userName`, `message` (original text/caption), `imageText`, `contentHash`, and `messageDateTicks` (the original UTC date in .NET ticks). The date does not change during review. Incoming message history is stored separately in `MessageHistory`; completed review decisions are not archived there. History is retained independently of removal from the review queue.
 
 Invalid inputs return 400. Review is not transactional across Table Storage and Telegram: failures can leave a queued entry after a cache update or partial publication. No deduplication, retry orchestration, or decision-locking mechanism is added; repeating a failed review can publish text again. Existing webhook error handling and Telegram redelivery behavior are unchanged.
 
 ### Bot commands
 
-`/stat` displays the current chat's daily and monthly deletion totals and deletion-latency statistics. The bot removes the command message and deletes its statistics response after approximately 15 seconds. Commands also accept the configured bot-name suffix, such as `/stat@YourBotName`.
+The shared command processor deletes each recognized command message immediately, before invoking its handler. It awaits deletion; if Telegram rejects it, the handler does not run. Ordinary messages and commands addressed to another bot are not deleted. Commands also accept the configured bot-name suffix, such as `/stat@YourBotName`.
+
+After deletion, the processor atomically acquires a per-chat, per-command cooldown in `CommandsCall`. The default is five minutes, configured through `TelegramBotConfiguration__CommandCooldown` or Terraform `command_cooldown` in .NET TimeSpan format (e.g. `00:05:00`). Zero disables the interval; negative values are rejected. Conditional ETag updates and inserts prevent simultaneous attempts from both proceeding. Cooldown skips are logged without replying; admitted attempts are recorded before generation, so failed attempts also consume cooldown. UI Chronicle previews share this record with Telegram.
+
+`/stat` displays the current chat's daily and monthly deletion totals and deletion-latency statistics. It deletes only its statistics response after approximately 15 seconds; command-message deletion is handled by the shared processor.
+
+`/chronicle` (or `/chronicle@YourBotName`) reads stored messages from the current chat in `[now - 1 hour, now)`, excluding its own invocation. If there are more than 100 messages, only the latest 100 are sent to AI and the response identifies that reduced scope. Otherwise all available messages from the hour are included. It does not reach further back to fill the selection to 100. Empty or missing history skips AI. The summary remains in the chat as one message; outputs beyond 4000 characters are truncated without splitting surrogate pairs.
+
+Chronicle makes one AI request, without intermediate summaries. Author, reply context, original timestamps, and text/captions are sent to the separate `chronicle` deployment; photos and OCR are not included. [ChronicleInstructions.md](src/bot/TelegramAntiSpamBot.OpenAI/Instructions/ChronicleInstructions.md) is embedded using the same resource loader as the anti-spam prompt. The prompt is written in English, but requires the recap, jokes, AI commentary, and coverage note to use the messages' language (the predominant discussion language in a multilingual chat). It requests an informal narrative with frequent sarcastic, playful AI comments while keeping reported facts separate from the narrator's opinions. The target is about 200 words (150-250), under 4000 characters in total so the recap fits one Telegram message; quieter chats get shorter recaps. The service enforces the character cap for both Telegram and UI previews. Coverage is limited to captured, retained history; Telegram history is not backfilled.
+
+Terraform creates a separate `chronicle` deployment using `gpt-6-luna`, version `2026-09-22`, `GlobalStandard`, capacity 10 by default in all environments. Override the `chronicle` object (`name`, `version`, `capacity`) in environment `.tfvars` files to configure it independently from spam classification and image extraction. Local validation does not provision the model or verify available Azure quota.
 
 ## Repository layout
 
@@ -103,7 +127,7 @@ Invalid inputs return 400. Review is not transactional across Table Storage and 
 | [TelegramAntiSpamBot.Functions](src/bot/TelegramAntiSpamBot.Functions/) | Webhook endpoint, request authorization, message processing, and Telegram image URLs. |
 | [TelegramAntiSpamBot.OpenAI](src/bot/TelegramAntiSpamBot.OpenAI/) | Azure AI clients, classification, image-text extraction, and embedded prompt instructions. |
 | [TelegramAntiSpamBot.Persistence](src/bot/TelegramAntiSpamBot.Persistence/) | Table Storage repository, entities, statistics, and message normalization. |
-| [TelegramAntiSpamBot.Commands](src/bot/TelegramAntiSpamBot.Commands/) | Command routing and `/stat`. |
+| [TelegramAntiSpamBot.Commands](src/bot/TelegramAntiSpamBot.Commands/) | Command routing, `/stat`, and `/chronicle`. |
 | [TelegramAntispamBot.Configuration](src/bot/TelegramAntispamBot.Configuration/) | Telegram bot configuration model. |
 | [TelegramAntiSpamBot.Initializer](src/bot/TelegramAntiSpamBot.Initializer/) | Console application that registers the Telegram webhook. |
 | [Review web app](src/web/) | Local React interface for the review queue and restriction removal. |
@@ -125,9 +149,11 @@ The application binds the following configuration sections. Use double underscor
 | `TelegramBotConfiguration__BotName` | Bot username including `@`, used for command suffix matching. Required. |
 | `TelegramBotConfiguration__ForwardSpamToChatId` | Optional moderation archive chat ID. |
 | `TelegramBotConfiguration__DebugAiResponse` | Enables AI explanations; defaults to `false`. |
+| `TelegramBotConfiguration__CommandCooldown` | Per-chat, per-command cooldown in .NET TimeSpan format; default `00:05:00`. Also applies to UI Chronicle previews. |
 | `OpenAiServicesConfiguration__ServiceUrl` | Azure AI service endpoint. Required. |
 | `OpenAiServicesConfiguration__SpamRecognitionDeployment` | Spam-classification deployment name. Required. |
 | `OpenAiServicesConfiguration__ImageRecognitionDeployment` | Image-text extraction deployment name. Required. |
+| `OpenAiServicesConfiguration__ChronicleDeployment` | Separate chat-summary deployment name. Defaults to `chronicle`; set automatically by Terraform. |
 | `OpenAiServicesConfiguration__ApiKey` | Optional AI API key; Azure identity authentication is used when omitted. |
 | `OpenAiServicesConfiguration__OpenAiIdentityClientId` | Optional user-assigned identity client ID for AI access. |
 | `AzureTablesConfiguration__StorageAccountUrl` | Azure Table Storage endpoint. Required. |

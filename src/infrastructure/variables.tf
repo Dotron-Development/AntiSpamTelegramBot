@@ -72,6 +72,13 @@ variable "bot_name" {
   type        = string
 }
 
+variable "spam_restriction_timeout" {
+  description = "Spam restriction and not-spam republishing timeout in .NET TimeSpan format (e.g. 03:00:00)."
+  type        = string
+  default     = "03:00:00"
+  nullable    = false
+}
+
 variable "image_text_extractor" {
   description = "The configuration of the image text extractor deployment."
   type = object({
@@ -81,6 +88,13 @@ variable "image_text_extractor" {
   })
 }
 
+variable "command_cooldown" {
+  description = "Minimum interval between calls of the same command in a chat, in .NET TimeSpan format."
+  type        = string
+  default     = "00:05:00"
+  nullable    = false
+}
+
 variable "spam_recognition" {
   description = "The configuration of the spam recognition deployment."
   type = object({
@@ -88,6 +102,20 @@ variable "spam_recognition" {
     version  = string
     capacity = number
   })
+}
+
+variable "chronicle" {
+  description = "The configuration of the separate chat-summary deployment."
+  type = object({
+    name     = string
+    version  = string
+    capacity = number
+  })
+  default = {
+    name     = "gpt-6-luna"
+    version  = "2026-09-22"
+    capacity = 10
+  }
 }
 
 variable "debug_ai_response" {

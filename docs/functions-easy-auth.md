@@ -164,23 +164,22 @@ Portal/REST changes should be reconciled with Terraform before future applies.
 
 ## Safe Deployment Order and Function Keys
 
-The current review triggers use `AuthorizationLevel.Function` as a safe default.
-Function keys and Easy Auth are independent gates. There is no Easy Auth setting
-that removes the Functions host's key requirement.
+The four review triggers now use `AuthorizationLevel.Anonymous` and rely on
+Easy Auth for API authentication. Function keys and Easy Auth are independent
+gates; retaining `AuthorizationLevel.Function` additionally requires a key.
 
 1. Enable Easy Auth with the user/client restrictions and exact webhook exclusion.
 2. Verify its saved configuration and verify the webhook is not redirected.
-3. Change ONLY the four review HttpTrigger attributes from
-   `AuthorizationLevel.Function` to `AuthorizationLevel.Anonymous`, update their
-   trigger-level test accordingly, and deploy. Keep business logic and the
-   Telegram authorization middleware unchanged. No JWT middleware is needed.
+3. Deploy Functions with the Anonymous review triggers. Their trigger-level test
+  asserts this configuration. Telegram authorization remains unchanged;
+  no JWT middleware is needed.
 4. Test Bearer-only calls without a Function key. Do not publish Anonymous review
    endpoints to an environment where Easy Auth is disabled.
 
-Until step 3, the MSAL frontend cannot call these key-protected routes with only
-a Bearer token. If absolutely no trigger-code changes are acceptable, retain
-Function authorization and put a trusted server/gateway in front that supplies
-the key; do not embed a shared Function key in the SPA.
+Older deployed Functions packages may still require keys and return 401 after
+successful Entra sign-in. Redeploy Functions to update the host-level gate; do
+not embed a shared Function key in the SPA. Local Functions hosts do not run
+Easy Auth, so these review routes are unauthenticated locally; bind to loopback.
 
 ## Verification
 

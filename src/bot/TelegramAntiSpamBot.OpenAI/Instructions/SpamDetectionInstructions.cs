@@ -23,6 +23,8 @@
             return instructions;
         }
 
+        public Task<string> GetChronicleInstructions() => FindResource("ChronicleInstructions.md");
+
         private static async Task<string> FindResource(string name)
         {
             var resource = Assembly.GetManifestResourceNames().First(x => x.EndsWith(name));

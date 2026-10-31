@@ -3,9 +3,13 @@
   <ItemGroup>
     <None Remove="Instructions\ImageAnalysis.md" />
     <None Remove="Instructions\SpamDetectionInstructions.md" />
+    <None Remove="Instructions\ChronicleInstructions.md" />
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Instructions\ChronicleInstructions.md">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </EmbeddedResource>
     <EmbeddedResource Include="Instructions\ImageAnalysis.md">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
@@ -28,6 +32,10 @@
     <None Update="SpamDetectionInstructions.md">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

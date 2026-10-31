@@ -1,7 +1,9 @@
-import { parseApiError, parseReviewChatPage, parseReviewMessagePage } from './contracts'
+import { parseApiError, parseReviewChatPage, parseReviewMessagePage, parseCommandCallPage, parseHistoryPage, parseChroniclePreview } from './contracts'
 import type { ReviewChatPage, ReviewMessage, ReviewMessageRequest, ReviewPage } from './contracts'
 
 export type { ReviewChat, ReviewChatPage, ReviewMessage, ReviewPage } from './contracts'
+export type { CommandCall, HistoryMessage, TablePage } from './contracts'
+export type { ChroniclePreview } from './contracts'
 
 export interface Connection {
   endpoint: string
@@ -44,7 +46,7 @@ export function messageDate(ticks: string): Date | null {
 }
 
 async function request(connection: Connection, path: string, method: 'GET' | 'POST', body?: unknown,
-  signal?: AbortSignal): Promise<string> {
+  signal?: AbortSignal, timeout = 30_000): Promise<string> {
   const endpoint = normalizeEndpoint(connection.endpoint)
   const api = endpoint.endsWith('/api') ? endpoint : `${endpoint}/api`
   const accessToken = await connection.getAccessToken()
@@ -57,7 +59,7 @@ async function request(connection: Connection, path: string, method: 'GET' | 'PO
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
       cache: 'no-store',
       credentials: 'omit',
       redirect: 'error',
@@ -96,6 +98,28 @@ export async function getMessages(connection: Connection, chatId: string, pageSi
   query.set('pageSize', String(pageSize))
   if (token) query.set('continuationToken', token)
   return parseReviewMessagePage(await request(connection, `/messages?${query}`, 'GET', undefined, signal))
+}
+
+function tableQuery(chatId: string, pageSize: number, token: string | null): URLSearchParams {
+  const query = new URLSearchParams({ pageSize: String(pageSize) })
+  if (chatId) query.set('chatId', chatId)
+  if (token) query.set('continuationToken', token)
+  return query
+}
+
+export async function getCommandCalls(connection: Connection, chatId: string, pageSize: number,
+  token: string | null, signal?: AbortSignal) {
+  return parseCommandCallPage(await request(connection, `/command-calls?${tableQuery(chatId, pageSize, token)}`, 'GET', undefined, signal))
+}
+
+export async function getHistory(connection: Connection, chatId: string, pageSize: number,
+  token: string | null, signal?: AbortSignal) {
+  return parseHistoryPage(await request(connection, `/history?${tableQuery(chatId, pageSize, token)}`, 'GET', undefined, signal))
+}
+
+export async function previewChronicle(connection: Connection, chatId: string, signal?: AbortSignal) {
+  if (!validId(chatId)) throw new Error('Select a valid chat from the list.')
+  return parseChroniclePreview(await request(connection, `/chronicle/${chatId}`, 'POST', undefined, signal, 120_000))
 }
 
 export async function reviewMessage(connection: Connection, message: ReviewMessage, isSpam: boolean) {

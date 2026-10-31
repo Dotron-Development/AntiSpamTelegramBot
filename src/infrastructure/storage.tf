@@ -29,7 +29,7 @@ resource "time_sleep" "data_storage_dns_propagation" {
 # azurerm_storage_table uses SharedKey auth for GetTableACL even when storage_use_azuread = true,
 # which is blocked by shared_access_key_enabled = false. Using null_resource + Azure CLI instead.
 resource "null_resource" "data_storage_tables" {
-  for_each = toset(["SpamStats", "ProbablySpam", "SpamHash", "MessageCount"])
+  for_each = toset(["SpamStats", "ProbablySpam", "SpamHash", "MessageCount", "MessageHistory", "CommandsCall"])
 
   triggers = {
     storage_account = azurerm_storage_account.data_storage.name

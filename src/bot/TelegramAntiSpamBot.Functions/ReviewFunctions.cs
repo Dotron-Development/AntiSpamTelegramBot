@@ -6,7 +6,8 @@ public sealed class ReviewFunctions(
     IChatsRepository chatsRepository,
     IProbablySpamRepository probablySpamRepository,
     ISpamHashRepository spamHashRepository,
-    ITelegramBotClient bot)
+    ITelegramBotClient bot,
+    IOptions<TelegramBotConfiguration> botConfig)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -76,7 +77,8 @@ public sealed class ReviewFunctions(
         if (!string.IsNullOrEmpty(message.ContentHash))
             await spamHashRepository.SaveMessageHash(message.ContentHash, isSpam);
 
-        if (!isSpam)
+        if (!isSpam && message.MessageDateTicks >=
+            DateTime.UtcNow.Subtract(botConfig.Value.SpamRestrictionTimeout).Ticks)
         {
             var content = string.Join("\n", new[] { message.Message, message.ImageText }
                 .Where(text => !string.IsNullOrEmpty(text)));

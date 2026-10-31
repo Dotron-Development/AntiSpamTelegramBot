@@ -2,7 +2,7 @@
 {
     public static class DependencyInjection
     {
-        private static readonly string[] TableNames = ["Chats", "ProbablySpam", "MessageCount", "SpamHash", "SpamStats"];
+        private static readonly string[] TableNames = ["Chats", "ProbablySpam", "MessageCount", "SpamHash", "SpamStats", "MessageHistory", "CommandsCall"];
 
         public static IServiceCollection AddPersistence(this IServiceCollection serviceCollection)
         {
@@ -31,6 +31,8 @@
             }
 
             serviceCollection.AddTransient<Repositories.IChatsRepository, Repositories.ChatsRepository>();
+            serviceCollection.AddTransient<Repositories.IMessageHistoryRepository, Repositories.MessageHistoryRepository>();
+            serviceCollection.AddTransient<Repositories.ICommandCallsRepository, Repositories.CommandCallsRepository>();
             serviceCollection.AddTransient<Repositories.IProbablySpamRepository, Repositories.ProbablySpamRepository>();
             serviceCollection.AddTransient<Repositories.IMessageCountRepository, Repositories.MessageCountRepository>();
             serviceCollection.AddTransient<Repositories.ISpamHashRepository, Repositories.SpamHashRepository>();

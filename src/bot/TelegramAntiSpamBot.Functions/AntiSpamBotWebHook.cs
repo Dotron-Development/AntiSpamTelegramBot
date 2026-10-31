@@ -6,6 +6,7 @@ namespace TelegramAntiSpamBot.Functions
     public class AntiSpamBotWebHook(ILogger<AntiSpamBotWebHook> logger,
         ISpamDetectionService detectionService,
         IChatsRepository chatsRepository,
+        IMessageHistoryRepository messageHistoryRepository,
         IProbablySpamRepository probablySpamRepository,
         IMessageCountRepository messageCountRepository,
         ISpamHashRepository spamHashRepository,
@@ -22,15 +23,64 @@ namespace TelegramAntiSpamBot.Functions
             {
                 var update = JsonSerializer.Deserialize<Update>(req.Body, JsonBotAPI.Options);
 
-                await RegisterChatAsync(update);
+                var message = ExtractMessageFromUpdate(update);
+                if (message is null)
+                    return req.CreateResponse(HttpStatusCode.NoContent);
 
+                var historyTask = SaveHistoryAsync(message);
+                var registerChatTask = RegisterChatAsync(update);
+                var persistenceTask = Task.WhenAll(historyTask, registerChatTask);
+                HttpResponseData response;
+                try
+                {
+                    response = await ProcessMessageAsync(req, update, message);
+                }
+                finally
+                {
+                    await persistenceTask;
+                }
+
+                if (!await historyTask)
+                    response.StatusCode = HttpStatusCode.InternalServerError;
+                return response;
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Unable to process Telegram update");
+                return req.CreateResponse(HttpStatusCode.NoContent);
+            }
+        }
+
+        private async Task<bool> SaveHistoryAsync(Message message)
+        {
+            try
+            {
+                await messageHistoryRepository.SaveAsync(new HistoryMessage(
+                    message.Chat.Id, message.MessageId, message.Date.ToUniversalTime().Ticks,
+                    new HistoryMessageContent(GetHistoryAuthor(message),
+                        message.ReplyToMessage is { } reply
+                            ? new HistoryMessageReply(reply.MessageId, GetHistoryAuthor(reply),
+                                reply.Text ?? reply.Caption ?? string.Empty)
+                            : null,
+                        message.Text ?? message.Caption ?? string.Empty)));
+                return true;
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Unable to save message history for chat {chatId}", message.Chat.Id);
+                return false;
+            }
+        }
+
+        private async Task<HttpResponseData> ProcessMessageAsync(HttpRequestData req, Update? update, Message message)
+        {
+            try
+            {
                 if (update != null && commandProcessor.IsCommand(update.Message?.Text))
                 {
                     await commandProcessor.ProcessCommand(update);
                     return req.CreateResponse(HttpStatusCode.NoContent);
                 }
-
-                var message = ExtractMessageFromUpdate(update);
 
                 if (message is { From: { } fromUser }
                     && fromUser.Id != 777000 // forwarded messages from main group (TG user)
@@ -119,7 +169,7 @@ namespace TelegramAntiSpamBot.Functions
 
         private async Task RegisterChatAsync(Update? update)
         {
-            var chat = (update?.Message ?? update?.EditedMessage)?.Chat;
+            var chat = ExtractMessageFromUpdate(update)?.Chat;
             if (chat is null || chat.Id == botConfig.Value.ForwardSpamToChatId)
                 return;
 
@@ -175,7 +225,7 @@ namespace TelegramAntiSpamBot.Functions
                 CanInviteUsers = false,
                 CanManageTopics = false,
                 CanPinMessages = false
-            }, false, DateTime.UtcNow.AddHours(3));
+            }, false, DateTime.UtcNow.Add(botConfig.Value.SpamRestrictionTimeout));
 
             await Task.WhenAll(t1, t2);
         }
@@ -212,13 +262,26 @@ namespace TelegramAntiSpamBot.Functions
                 : null;
         }
 
-        private static Message ExtractMessageFromUpdate(Update? update)
+        private static HistoryMessageAuthor? GetHistoryAuthor(Message message)
+        {
+            if (message.From is { } user)
+                return new HistoryMessageAuthor(user.Id,
+                    string.Join(" ", new[] { user.FirstName, user.LastName }.Where(part => !string.IsNullOrWhiteSpace(part))),
+                    user.Username);
+            if (message.SenderChat is { } chat)
+                return new HistoryMessageAuthor(chat.Id, chat.Title ?? string.Empty, chat.Username);
+            return null;
+        }
+
+        private static Message? ExtractMessageFromUpdate(Update? update)
         {
             return update switch
             {
                 { Type: UpdateType.Message, Message: { } addedMessage } => addedMessage,
                 { Type: UpdateType.EditedMessage, EditedMessage: { } editedMessage } => editedMessage,
-                _ => throw new InvalidDataException("Incoming update does not have added or edited message")
+                { Type: UpdateType.ChannelPost, ChannelPost: { } channelPost } => channelPost,
+                { Type: UpdateType.EditedChannelPost, EditedChannelPost: { } editedChannelPost } => editedChannelPost,
+                _ => null
             };
         }
     }

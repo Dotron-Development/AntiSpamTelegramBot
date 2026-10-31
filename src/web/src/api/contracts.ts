@@ -62,6 +62,95 @@ export interface ReviewPage {
   continuationToken: string | null
 }
 
+export interface CommandCall {
+  chatId: string
+  command: string
+  lastCall: string
+}
+
+export interface HistoryAuthor {
+  id: string
+  name: string
+  username: string | null
+}
+
+export interface HistoryMessage {
+  chatId: string
+  messageId: string
+  dateTimeTicks: string
+  content: {
+    from: HistoryAuthor | null
+    text: string
+    replyTo: { messageId: string; from: HistoryAuthor | null; text: string } | null
+  }
+}
+
+export interface TablePage<T> {
+  rows: T[]
+  continuationToken: string | null
+}
+
+export interface ChroniclePreview {
+  chatId: string
+  summary: string | null
+  skipped: boolean
+}
+
+export function parseChroniclePreview(text: string): ChroniclePreview {
+  const data = parse(text) as { chatId: LosslessNumber; summary: string | null; skipped: boolean }
+  
+  if (typeof data.skipped !== 'boolean' || (data.summary !== null && typeof data.summary !== 'string'))
+    throw new Error('Invalid Chronicle response.')
+  
+  return { chatId: data.chatId.toString(), summary: data.summary, skipped: data.skipped }
+}
+
+interface HistoryAuthorResponse {
+  id: LosslessNumber
+  name: string
+  username: string | null
+}
+
+interface HistoryMessageResponse {
+  chatId: LosslessNumber
+  messageId: LosslessNumber
+  dateTimeTicks: LosslessNumber
+  content: {
+    from: HistoryAuthorResponse | null
+    text: string
+    replyTo: { messageId: LosslessNumber; from: HistoryAuthorResponse | null; text: string } | null
+  }
+}
+
+function historyAuthor(data: HistoryAuthorResponse | null): HistoryAuthor | null {
+  return data ? { id: data.id.toString(), name: data.name, username: data.username } : null
+}
+
+export function parseCommandCallPage(text: string): TablePage<CommandCall> {
+  const data = parse(text) as { calls: { chatId: LosslessNumber; command: string; lastCall: string }[]; continuationToken: string | null }
+  return {
+    rows: data.calls.map(call => ({ chatId: call.chatId.toString(), command: call.command, lastCall: call.lastCall })),
+    continuationToken: data.continuationToken,
+  }
+}
+
+export function parseHistoryPage(text: string): TablePage<HistoryMessage> {
+  const data = parse(text) as { messages: HistoryMessageResponse[]; continuationToken: string | null }
+  return {
+    rows: data.messages.map(message => ({
+      chatId: message.chatId.toString(), messageId: message.messageId.toString(), dateTimeTicks: message.dateTimeTicks.toString(),
+      content: {
+        from: historyAuthor(message.content.from), text: message.content.text,
+        replyTo: message.content.replyTo ? {
+          messageId: message.content.replyTo.messageId.toString(), from: historyAuthor(message.content.replyTo.from),
+          text: message.content.replyTo.text,
+        } : null,
+      },
+    })),
+    continuationToken: data.continuationToken,
+  }
+}
+
 export function parseReviewChat(data: ReviewChatResponse): ReviewChat {
   return {
     chatId: data.ChatId.toString(),
