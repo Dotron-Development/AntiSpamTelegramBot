@@ -112,8 +112,8 @@ variable "chronicle" {
     capacity = number
   })
   default = {
-    name     = "gpt-6-luna"
-    version  = "2026-09-22"
+    name     = "gpt-6.1-terra"
+    version  = "2026-10-26"
     capacity = 10
   }
 }
