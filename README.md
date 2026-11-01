@@ -270,7 +270,7 @@ The resource-targeting warning during setup is expected. Only this bootstrap pla
 
 Secrets, the Function App, and table provisioning do not depend on temporary runner endpoints. Cleanup does not use `terraform destroy -target` or manually remove Azure resources. Infrastructure-destroy workflows restore runner connectivity before planning a full destroy.
 
-The default value of `enable_runner_endpoints` is `true`. CI, release, destroy, and state-lease workflows use environment-specific concurrency groups to avoid overlapping operations on the same environment. The manual state-lease workflow breaks the `terraform.tfstate` lease for a selected environment; only run it after verifying no Terraform operation is active, since breaking an active lease can corrupt state.
+The default value of `enable_runner_endpoints` is `true`. CI, release, and destroy workflows use environment-specific concurrency groups to avoid overlapping operations on the same environment.
 
 ## GitHub Actions deployment
 
@@ -283,7 +283,6 @@ The default value of `enable_runner_endpoints` is `true`. CI, release, destroy, 
 | [deploy](.github/workflows/functionapp.yaml) | Publishes the Linux Function App package, deploys it, and registers the webhook. |
 | [cleanup-runner-endpoints](.github/workflows/cleanup-runner-endpoints.yaml) | Invokes connectivity cleanup after application deployment. |
 | [destroy-ci](.github/workflows/destroy-ci.yaml) | Manual full infrastructure destruction for `dev`, `ppr`, or `prod`. |
-| [break-terraform-state-lease](.github/workflows/break-terraform-state-lease.yaml) | Manually breaks the `terraform.tfstate` lease for a selected environment after explicit confirmation. |
 | [destroy-infrastructure](.github/workflows/destroy-infrastructure.yaml) | Reusable connectivity setup followed by a full Terraform destroy plan/apply. |
 
 Configure the following GitHub secrets at repository or environment scope:
