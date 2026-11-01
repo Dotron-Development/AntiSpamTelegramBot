@@ -1,0 +1,85 @@
+name: break-terraform-state-lease
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment whose Terraform state lease should be broken"
+        required: true
+        type: choice
+        options:
+          - dev
+          - ppr
+          - prod
+      confirmation:
+        description: "Select BREAK only after confirming no Terraform operation is running"
+        required: true
+        default: "no"
+        type: choice
+        options:
+          - "no"
+          - BREAK
+
+concurrency:
+  group: infrastructure-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  break-state-lease:
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Require explicit confirmation
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [[ "$CONFIRMATION" != "BREAK" ]]; then
+            echo "Select BREAK only after confirming no Terraform operation is running."
+            exit 1
+          fi
+
+      - name: Azure login
+        uses: azure/login@v3.1.0
+        with:
+          creds: '{"clientId":"${{ secrets.ARM_CLIENT_ID }}","clientSecret":"${{ secrets.ARM_CLIENT_SECRET }}","subscriptionId":"${{ secrets.ARM_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.ARM_TENANT_ID }}"}'
+
+      - name: Break Terraform state lease
+        shell: bash
+        env:
+          AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
+          AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
+          AZ_STATE_FILE_KEY: terraform.tfstate
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$AZ_TERRAFORM_BACKEND_STORAGEACCOUNT" ]]; then
+            echo "Missing GitHub variable AZ_TERRAFORM_BACKEND_STORAGEACCOUNT."
+            exit 1
+          fi
+
+          lease_state=$(az storage blob show \
+            --account-name "$AZ_TERRAFORM_BACKEND_STORAGEACCOUNT" \
+            --container-name "$AZ_BACKEND_CONTAINER_NAME" \
+            --name "$AZ_STATE_FILE_KEY" \
+            --auth-mode login \
+            --query properties.lease.state \
+            --output tsv)
+
+          if [[ "$lease_state" != "leased" ]]; then
+            echo "No active lease to break (state: ${lease_state:-unknown})."
+            exit 0
+          fi
+
+          az storage blob lease break \
+            --account-name "$AZ_TERRAFORM_BACKEND_STORAGEACCOUNT" \
+            --container-name "$AZ_BACKEND_CONTAINER_NAME" \
+            --blob-name "$AZ_STATE_FILE_KEY" \
+            --auth-mode login \
+            --output none
+
+          echo "Broke the lease on ${AZ_BACKEND_CONTAINER_NAME}/${AZ_STATE_FILE_KEY}."
