@@ -537,6 +537,49 @@ public class ReviewFunctionsTests
         Assert.Single(fixture.SavedChats);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \t\n")]
+    public async Task WebhookSkipsEmptyAndServiceMessagesInHistory(string? text)
+    {
+        using var fixture = new Fixture();
+        var update = JsonSerializer.Serialize(new
+        {
+            update_id = 1,
+            message = new
+            {
+                message_id = 7,
+                date = 1700000000,
+                chat = new { id = -100, type = "supergroup", title = "Test" },
+                from = new { id = 42, is_bot = false, first_name = "Alice" },
+                new_chat_members = new[] { new { id = 42, is_bot = false, first_name = "Alice" } },
+                text
+            }
+        });
+
+        var response = await fixture.Webhook.Run(fixture.Request(update));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Empty(fixture.History);
+        Assert.Single(fixture.SavedChats);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" \t\n")]
+    public async Task WebhookSkipsPhotosWithoutMeaningfulCaptionInHistory(string caption)
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
+        var update = PhotoUpdate.Replace("\"Original Caption 123!\"", JsonSerializer.Serialize(caption));
+
+        var response = await fixture.Webhook.Run(fixture.Request(update));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Empty(fixture.History);
+    }
+
     [Fact]
     public async Task WebhookSavesOriginalMessageToHistory()
     {

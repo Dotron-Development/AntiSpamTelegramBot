@@ -50,6 +50,10 @@ namespace TelegramAntiSpamBot.Functions
 
         private async Task SaveHistoryAsync(Message message)
         {
+            var text = message.Text ?? message.Caption;
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+
             try
             {
                 await messageHistoryRepository.SaveAsync(new HistoryMessage(
@@ -59,7 +63,7 @@ namespace TelegramAntiSpamBot.Functions
                             ? new HistoryMessageReply(reply.MessageId, GetHistoryAuthor(reply),
                                 reply.Text ?? reply.Caption ?? string.Empty)
                             : null,
-                        message.Text ?? message.Caption ?? string.Empty)));
+                        text)));
             }
             catch (Exception exception)
             {
