@@ -41,9 +41,9 @@ The Function App uses a user-assigned managed identity to read Key Vault secrets
 1. Validate the webhook secret and handle recognized commands.
 2. Extract the new or edited message, excluding Telegram's channel-forwarding sender and the configured moderation archive chat.
 3. Read the sender's recorded message count for that chat and increment it.
-4. For a photo, resolve its Telegram file URL and extract image text using the image-analysis deployment.
-5. Combine message text (or a photo caption) and extracted image text. Classification runs when the text exceeds 30 characters or a photo is present, and the sender has fewer than 100 previously recorded messages in that chat.
-6. Normalize the combined content and check its SHA-256 hash in the classification cache.
+4. For a photo, resolve its Telegram file URL and obtain a typed image analysis (description and full transcription) using a strict JSON Schema response.
+5. Build a `MessagePayload` with optional `UserMessage`, `ImageText`, and `ImageDescription`. Classification runs when their combined length exceeds 20 characters or a photo is present, and the sender has fewer than 100 previously recorded messages in that chat.
+6. Normalize each payload field, serialize the typed payload, and check its SHA-256 hash in the classification cache.
 7. On a cache miss, ask the spam-classification deployment for a probability. A score of at least 95 triggers moderation; lower scores are cached as non-spam.
 8. For new AI-detected spam, save the original text/caption, image transcription, sender ID and display name, message ID, content hash, and original UTC message date as .NET ticks in `ProbablySpam` before moderation. Do not cache an AI-positive decision. Optionally forward the original message, delete it, restrict the sender for three hours, and update statistics. Cached human-confirmed spam triggers moderation without another review.
 
@@ -51,16 +51,16 @@ These thresholds are currently implemented in [AntiSpamBotWebHook.cs](src/bot/Te
 
 ### Message normalization and caching
 
-AI receives the original combined text. The cache hash uses text processed by [MessageContentSanitizer.cs](src/bot/TelegramAntiSpamBot.Persistence/MessageContentSanitizer.cs); the review queue preserves the original text:
+AI receives `{ "Message": { "UserMessage"?: string, "ImageText"?: string, "ImageDescription"?: string }, "UserMessageCount": integer }`, not flattened text. History stores the same typed payload in `Content.Payload`, alongside `From` and `ReplyTo`; history does not store `UserMessageCount`. The cache applies [MessageContentSanitizer.cs](src/bot/TelegramAntiSpamBot.Persistence/MessageContentSanitizer.cs) independently to each payload field; the review queue preserves the original text:
 
 - Apply Unicode NFKC normalization and invariant lowercase conversion.
 - Remove whitespace, supported emoji ranges, invisible formatting/control characters, and variation selectors.
 - Replace sequences of Unicode decimal digits with a single Cyrillic `х` marker, regardless of number length.
 - Preserve letters from different languages, diacritics, and other punctuation. Digit-to-letter substitutions are not normalized separately.
 
-For example, `Hello 1000 world` and `hello 🔥 10001 world` produce the same normalized content and hash. SHA-256 is calculated over the UTF-16 encoded normalized text.
+For example, `Hello 1000 world` and `hello 🔥 10001 world` in the same payload field produce the same normalized content and hash. SHA-256 is calculated over UTF-16 encoded JSON of the normalized payload; field boundaries are preserved. Previous flattened-text cache keys are not migrated and will be re-evaluated on a cache miss.
 
-If normalization produces an empty string, classification and review bypass the hash cache so unrelated emoji-only messages do not share one decision. AI can cache only `false`; human review writes `true` or `false`. Cache entries use a stable partition (`1`) and the content hash as row key, so subsequent decisions replace the same entry. Existing records are not migrated.
+If all normalized payload fields are empty, classification and review bypass the hash cache so unrelated emoji-only messages do not share one decision. AI can cache only `false`; human review writes `true` or `false`. Cache entries use a stable partition (`1`) and the content hash as row key, so subsequent decisions replace the same entry. Existing records are not migrated.
 
 ### Stored data
 
@@ -71,12 +71,12 @@ If normalization produces an empty string, classification and review bypass the 
 | `MessageCount` | Recorded message counts per chat and sender. |
 | `SpamStats` | Daily/monthly deletion totals and minimum, maximum, and average deletion latency. |
 | `Chats` | Chat catalog: partition `chats`, row key is chat ID, with `Name` and UTC `LastSeenUtc`. Updated on incoming and edited messages, including commands; the configured archive chat is excluded. |
-| `MessageHistory` | Incoming messages and channel posts, including edits and commands. Partition is chat ID; row key is original UTC ticks (`D19`) followed by message ID (`D10`). `DateTimeTicks` and JSON `Content` preserve the timestamp, author, reply-to context and text/caption. |
+| `MessageHistory` | Non-spam messages and channel posts, including edited versions. Partition is chat ID; row key is send/edit UTC ticks (`D19`), message ID (`D10`), and Telegram update ID (`D10`, absent in legacy keys). `DateTimeTicks`, `UpdateType`, `UpdateId`, and JSON `Content` preserve the event time, update kind, author, reply context, and typed payload. Commands are excluded. |
 | `CommandsCall` | Latest admitted command attempt: partition is chat ID, row key is the URI-escaped canonical command (e.g. `%2Fchronicle`), and `lastCall` is a UTC timestamp. The review API decodes the command for display. |
 
 The moderation tables and `MessageHistory` are provisioned by Terraform through Azure CLI using Azure identity authentication; shared-key access is disabled for the application data storage account. `Chats` and `MessageHistory` can also be created by the application on first write if missing. The application identity needs table-creation permissions as well as entity read/write permissions. An absent catalog table reads as an empty list.
 
-History saving and chat registration start before command handling and moderation and run concurrently with message processing. The webhook awaits both before returning, including early exits. If history saving fails, the response is 500 so Telegram can retry; processing may already have performed moderation, so a retry can repeat side effects. Chat registration remains best-effort. Only updates delivered after deployment are captured; old Telegram history is not backfilled. Edits with the same original date and message ID replace the previous content. History does not include photo binaries or OCR text. Messages without non-whitespace text or a caption are not saved, including join notifications and media without captions.
+History is saved after a non-spam decision (including cache shortcuts), and chat registration starts alongside message processing. Both writes are awaited before the webhook returns. If history saving fails, the response is 500 so Telegram can retry. Chat registration remains best-effort. Only updates delivered after deployment are captured; old Telegram history is not backfilled. Original and edited versions share a message ID but use their send/edit timestamp plus Telegram `UpdateId` for separate row keys, preserving even multiple edits within one second. `UpdateType` identifies `Message`, `EditedMessage`, `ChannelPost`, or `EditedChannelPost`; retries of the same update upsert the same row. All retained versions remain available to `/chronicle`, with their types and typed payloads, so AI can interpret changes. Legacy `Content.Text` records are read as `Payload.UserMessage`, with a default `Message` update type when missing. Photo binaries are not stored; descriptions and recognized image text are stored separately, even without a caption. Updates with no meaningful payload content are not saved.
 
 `CleanupMessageHistory` runs every hour at minute zero, UTC (`0 0 * * * *`). It scans keys in ascending order and deletes the oldest excess entries, leaving the latest 1000 messages **per chat**, with transactions of at most 100 deletes from one partition. Until the next sweep, a chat may temporarily exceed 1000 entries. Concurrent arrivals may require the next sweep to restore the limit. The cleanup scan uses only partition/row keys and retains at most 1000 candidates in memory per chat.
 
@@ -328,7 +328,7 @@ terraform validate
 ## Operational notes
 
 - Telegram moderation requires suitable bot permissions in each supergroup. AI decisions can be incorrect; use the archive chat to review moderation results.
-- Photo processing uses the largest available Telegram photo. The current pipeline uses `Message.Text` and extracted photo text; captions, documents, and other media are not separate classification inputs.
+- Photo processing uses the largest available Telegram photo. Classification receives separate user text/caption, recognized photo text, and image description fields. Documents and other media are not analyzed.
 - Senders with at least 100 recorded messages bypass classification, although photo text extraction happens before that check.
 - Logs can contain message content, AI explanations, and, at debug level, image URLs. Review log retention and access permissions before production use. Message text and photos are sent to the configured AI service.
 - Cached decisions persist in Table Storage; changing model prompts or normalization does not automatically invalidate existing cache entries.

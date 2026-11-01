@@ -74,7 +74,7 @@ public class ReviewFunctionsTests
         if (calls)
             Assert.Equal("/chronicle", row.GetProperty("command").GetString());
         else
-            Assert.Equal("Original text", row.GetProperty("content").GetProperty("text").GetString());
+            Assert.Equal("Original text", row.GetProperty("content").GetProperty("payload").GetProperty("userMessage").GetString());
     }
 
     [Theory]
@@ -379,8 +379,11 @@ public class ReviewFunctionsTests
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1700000000).UtcDateTime.Ticks, message.MessageDateTicks);
         Assert.Contains(message.Message, fixture.Detector.ClassifiedText);
         Assert.Contains(message.ImageText, fixture.Detector.ClassifiedText);
+        var sanitizedPayload = new MessagePayload(
+            ImageText: MessageContentSanitizer.Sanitize(message.ImageText),
+            UserMessage: MessageContentSanitizer.Sanitize(message.Message));
         Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.Unicode.GetBytes(
-            MessageContentSanitizer.Sanitize(fixture.Detector.ClassifiedText!)))), message.ContentHash);
+            JsonSerializer.Serialize(sanitizedPayload)))), message.ContentHash);
         Assert.Empty(fixture.HashDecisions);
         Assert.Empty(fixture.History);
         Assert.Contains(fixture.Telegram.Calls, call => call.Method == "deletemessage");
@@ -568,7 +571,7 @@ public class ReviewFunctionsTests
     [Theory]
     [InlineData("")]
     [InlineData(" \t\n")]
-    public async Task WebhookSkipsPhotosWithoutMeaningfulCaptionInHistory(string caption)
+    public async Task WebhookSavesImageContentWithoutMeaningfulCaptionInHistory(string caption)
     {
         using var fixture = new Fixture();
         fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
@@ -577,11 +580,13 @@ public class ReviewFunctionsTests
         var response = await fixture.Webhook.Run(fixture.Request(update));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Empty(fixture.History);
+        var payload = Assert.Single(fixture.History).Content.Payload;
+        Assert.Equal(fixture.Detector.ImageContent, payload.ImageText);
+        Assert.Null(payload.UserMessage);
     }
 
     [Fact]
-    public async Task WebhookSavesOriginalMessageToHistory()
+    public async Task WebhookSavesCaptionAndImageContentToHistory()
     {
         using var fixture = new Fixture();
         fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
@@ -592,8 +597,107 @@ public class ReviewFunctionsTests
         Assert.Equal(-100, message.ChatId);
         Assert.Equal(7, message.MessageId);
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1700000000).UtcDateTime.Ticks, message.DateTimeTicks);
-        Assert.Equal("Original Caption 123!", message.Content.Text);
+        Assert.Equal("Original Caption 123!", message.Content.Payload.UserMessage);
+        Assert.Equal(fixture.Detector.ImageContent, message.Content.Payload.ImageText);
+        Assert.Equal(fixture.Detector.ClassifiedPayload, message.Content.Payload);
         Assert.Equal(new HistoryMessageAuthor(42, "Alice Smith", "alice"), message.Content.From);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WebhookSavesImageDescriptionAndFullTextIncludingNonSpamShortcut(bool shortcut)
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
+        fixture.Detector.ImageDescription = "A poster with a cat";
+        fixture.Detector.ImageContent = "OCR \"quoted\"\nsecond line";
+        if (shortcut)
+            fixture.Shortcut = ShortcutCheckResult.NotSpam;
+
+        await fixture.Webhook.Run(fixture.Request(PhotoUpdate));
+
+        var content = Assert.Single(fixture.History).Content.Payload;
+        Assert.Equal(new MessagePayload(fixture.Detector.ImageDescription, fixture.Detector.ImageContent,
+            "Original Caption 123!"), content);
+        if (shortcut)
+            Assert.Null(fixture.Detector.ClassifiedPayload);
+        else
+            Assert.Same(content, fixture.Detector.ClassifiedPayload);
+    }
+
+    [Fact]
+    public async Task CacheHashPreservesTypedFieldBoundaries()
+    {
+        using var first = new Fixture();
+        using var second = new Fixture();
+        first.Detector.Result = second.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
+        first.Detector.ImageContent = "CD";
+        second.Detector.ImageContent = "BCD";
+
+        await first.Webhook.Run(first.Request(PhotoUpdate.Replace("Original Caption 123!", "AB")));
+        await second.Webhook.Run(second.Request(PhotoUpdate.Replace("Original Caption 123!", "A")));
+
+        Assert.NotEqual(Assert.Single(first.HashDecisions).Hash, Assert.Single(second.HashDecisions).Hash);
+    }
+
+    [Fact]
+    public async Task WebhookSavesDescriptionAndTranscriptionForSpamReview()
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.ImageContent = "A poster\nFull poster text";
+
+        await fixture.Webhook.Run(fixture.Request(PhotoUpdate));
+
+        Assert.Equal(fixture.Detector.ImageContent, Assert.IsType<ReviewMessage>(fixture.SavedMessage).ImageText);
+        Assert.Empty(fixture.History);
+    }
+
+    [Fact]
+    public async Task WebhookSavesImageDescriptionWithoutCaptionOrVisibleText()
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
+        fixture.Detector.ImageDescription = "A cat sleeping on a sofa";
+        fixture.Detector.ImageContent = string.Empty;
+        var update = PhotoUpdate.Replace("\"caption\":\"Original Caption 123!\",", "");
+
+        await fixture.Webhook.Run(fixture.Request(update));
+
+        var payload = Assert.Single(fixture.History).Content.Payload;
+        Assert.Equal(fixture.Detector.ImageDescription, payload.ImageDescription);
+        Assert.Null(payload.ImageText);
+        Assert.Null(payload.UserMessage);
+        Assert.Same(payload, fixture.Detector.ClassifiedPayload);
+    }
+
+    [Fact]
+    public async Task WebhookSkipsPhotoWithoutCaptionOrAnalysisContent()
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
+        fixture.Detector.ImageContent = string.Empty;
+        var update = PhotoUpdate.Replace("\"caption\":\"Original Caption 123!\",", "");
+
+        await fixture.Webhook.Run(fixture.Request(update));
+
+        Assert.Empty(fixture.History);
+    }
+
+    [Fact]
+    public async Task WebhookSavesChannelPhotoContentWithoutUserModeration()
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.ImageContent = "A poster\nFull poster text";
+        var update = PhotoUpdate.Replace("\"message\":", "\"channel_post\":")
+            .Replace("\"from\":{\"id\":42,\"is_bot\":false,\"first_name\":\"Alice\",\"last_name\":\"Smith\",\"username\":\"alice\"},", "");
+
+        await fixture.Webhook.Run(fixture.Request(update));
+
+        var history = Assert.Single(fixture.History);
+        Assert.Equal(fixture.Detector.ImageContent, history.Content.Payload.ImageText);
+        Assert.Equal(HistoryUpdateType.ChannelPost, history.UpdateType);
+        Assert.Null(fixture.Detector.ClassifiedText);
     }
 
     [Fact]
@@ -618,6 +722,43 @@ public class ReviewFunctionsTests
         Assert.Equal(new HistoryMessageReply(7, new(42, "Alice", null), "Previous post"), message.Content.ReplyTo);
         Assert.Empty(fixture.Telegram.Calls);
         Assert.Single(fixture.SavedChats);
+    }
+
+    [Theory]
+    [InlineData("message", "edited_message", HistoryUpdateType.Message, HistoryUpdateType.EditedMessage)]
+    [InlineData("channel_post", "edited_channel_post", HistoryUpdateType.ChannelPost, HistoryUpdateType.EditedChannelPost)]
+    public async Task WebhookPreservesOriginalAndEditedVersionsWithTypedPayloads(string originalKey,
+        string editedKey, HistoryUpdateType originalType, HistoryUpdateType editedType)
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
+        string Update(string key, string text, long? editedAt) => JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["update_id"] = editedAt is null ? 1 : 2,
+            [key] = new
+            {
+                message_id = 7,
+                date = 1700000000,
+                edit_date = editedAt,
+                from = new { id = 42, is_bot = false, first_name = "Alice" },
+                chat = new { id = -100, type = "supergroup", title = "Test" },
+                text
+            }
+        });
+        await fixture.Webhook.Run(fixture.Request(Update(originalKey, "Original message", null)));
+        await fixture.Webhook.Run(fixture.Request(Update(editedKey, "Edited message", 1700000060)));
+
+        Assert.Equal(2, fixture.History.Count);
+        var original = fixture.History[0];
+        var edited = fixture.History[1];
+        Assert.Equal(original.MessageId, edited.MessageId);
+        Assert.Equal(originalType, original.UpdateType);
+        Assert.Equal(editedType, edited.UpdateType);
+        Assert.Equal("Original message", original.Content.Payload.UserMessage);
+        Assert.Equal("Edited message", edited.Content.Payload.UserMessage);
+        Assert.Equal(TimeSpan.TicksPerMinute, edited.DateTimeTicks - original.DateTimeTicks);
+        using var serialized = JsonDocument.Parse(JsonSerializer.Serialize(edited));
+        Assert.Equal(editedType.ToString(), serialized.RootElement.GetProperty("UpdateType").GetString());
     }
 
     [Fact]
@@ -861,13 +1002,19 @@ public class ReviewFunctionsTests
     private sealed class DetectorStub : ISpamDetectionService
     {
         public SpamRequestResult Result { get; set; } = new(ResultType.Evaluated, 99);
-        public string? ClassifiedText { get; private set; }
+        public MessagePayload? ClassifiedPayload { get; private set; }
+        public string? ClassifiedText => ClassifiedPayload is null ? null : string.Join("\n",
+            new[] { ClassifiedPayload.UserMessage, ClassifiedPayload.ImageDescription, ClassifiedPayload.ImageText }
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
         public TaskCompletionSource<SpamRequestResult>? ClassificationGate { get; set; }
         public TaskCompletionSource ClassificationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public Task<string> ExtractImageText(string imageUrl) => Task.FromResult("OCR \"quoted\"\nsecond line");
-        public Task<SpamRequestResult> IsSpamAsync(string userMessage, int userMessagesCount, bool explainDecision = false)
+        public string ImageContent { get; set; } = "OCR \"quoted\"\nsecond line";
+        public string ImageDescription { get; set; } = string.Empty;
+        public Task<ImageAnalysisResult> ExtractImageText(string imageUrl) =>
+            Task.FromResult(new ImageAnalysisResult { TextOnImage = ImageContent, ImageDescription = ImageDescription });
+        public Task<SpamRequestResult> IsSpamAsync(MessagePayload userMessage, int userMessagesCount, bool explainDecision = false)
         {
-            ClassifiedText = userMessage;
+            ClassifiedPayload = userMessage;
             ClassificationStarted.TrySetResult();
             return ClassificationGate?.Task ?? Task.FromResult(Result);
         }

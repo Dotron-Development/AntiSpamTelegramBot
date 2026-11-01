@@ -162,6 +162,14 @@
     overflow: hidden;
 }
 
+.history-message section {
+    margin-top: 12px;
+}
+
+.history-message section p {
+    margin-top: 6px;
+}
+
 .history-message blockquote {
     margin-top: 12px;
     padding-left: 12px;

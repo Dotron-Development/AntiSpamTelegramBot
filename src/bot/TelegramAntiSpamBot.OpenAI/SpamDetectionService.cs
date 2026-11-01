@@ -8,9 +8,26 @@ namespace TelegramAntiSpamBot.OpenAI
         ILogger<SpamDetectionService> logger) : ISpamDetectionService
     {
         private static readonly ChatCompletionOptions ChatCompletionOptions = new() { };
+        private static readonly ChatCompletionOptions ImageAnalysisOptions = new()
+        {
+            ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+                jsonSchemaFormatName: "image_analysis",
+                jsonSchema: BinaryData.FromString("""
+                    {
+                      "type": "object",
+                      "properties": {
+                        "TextOnImage": { "type": "string" },
+                        "ImageDescription": { "type": "string" }
+                      },
+                      "required": ["TextOnImage", "ImageDescription"],
+                      "additionalProperties": false
+                    }
+                    """),
+                jsonSchemaIsStrict: true)
+        };
 
         public async Task<SpamRequestResult> IsSpamAsync(
-            string userMessage,
+            MessagePayload userMessage,
             int userMessagesCount,
             bool explainDecision = false)
         {
@@ -58,12 +75,12 @@ namespace TelegramAntiSpamBot.OpenAI
             }
         }
 
-        public async Task<string> ExtractImageText(string imageUrl)
+        public async Task<ImageAnalysisResult> ExtractImageText(string imageUrl)
         {
             LogDebugImageRecognitionAiRequest(logger, imageUrl);
 
             if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uriResult)
-                || uriResult.Scheme != Uri.UriSchemeHttps) return string.Empty;
+                || uriResult.Scheme != Uri.UriSchemeHttps) return new ImageAnalysisResult();
 
             var imageRecognitionInstructions = await instructions.GetImageAnalyzerInstructions();
             var imageRecognitionCompletion = await imageAnalyzer.CompleteChatAsync(
@@ -72,17 +89,13 @@ namespace TelegramAntiSpamBot.OpenAI
                 new UserChatMessage(
                     ChatMessageContentPart.CreateImagePart(uriResult))
 
-            ], ChatCompletionOptions);
+            ], ImageAnalysisOptions);
 
             var imageResponse = imageRecognitionCompletion.Value.Content[0].Text;
 
             LogDebugImageRecognitionAiResponse(logger, imageResponse);
 
-            using var document = JsonDocument.Parse(imageResponse);
-            return document.RootElement.TryGetProperty("TextOnImage", out var text)
-                && text.ValueKind == JsonValueKind.String
-                ? text.GetString() ?? string.Empty
-                : string.Empty;
+            return JsonSerializer.Deserialize<ImageAnalysisResult>(imageResponse) ?? new ImageAnalysisResult();
         }
 
         [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Request: {request}")]

@@ -1,33 +1,29 @@
-﻿Describe only the text visible on an image. Ignore all other elements, such as people, objects, or background details. 
-Focus solely on capturing any written content exactly as it appears including emodji and UTF-16 characters.
+Analyze the image in two steps: first describe what it depicts, then transcribe all visible text in full.
 
 # Steps
 
-1. Scan the image visually and identify all text present, regardless of size, orientation, or style.
-2. Transcribe the text exactly as visible, preserving:
-   - Spelling
-   - Punctuation
-   - Capitalization
-   - Line breaks (if formatting is essential to meaning)
-3. Ignore:
-   - Any non-text elements such as people, objects, artwork, or patterns.
-   - Context or assumed meaning of images; focus only on text transcription.
-4. Organize the output if necessary (e.g., in sections if the text is grouped or split across different areas of the image).
+1. Create a short, factual description of the image, including its main subjects, objects, scene, and layout. Use the language of the visible text when possible; if there is no text, use Russian. Do not invent details or repeat the full transcription in the description.
+2. Scan the entire image and identify all text, regardless of size, orientation, or style.
+3. Transcribe all visible text exactly as it appears, preserving:
+   - Spelling, punctuation, and capitalization
+   - Line breaks
+   - Emoji and other Unicode characters
+4. Follow the visual reading order, top-to-bottom or left-to-right. Do not summarize, translate, or omit any visible text.
 
 # Output Format
 
-Please provide the output as plain text, matching the format and spelling of the original text from the image. Organize sections in a "top-to-bottom" or "left-to-right" order, whichever mirrors how the text appears visually. 
-
-Output
+Return only a valid JSON object with exactly these two string fields. Perform the description step before transcription, regardless of the field order in the output:
 
 ```json
 {
-  "TextOnImage": <recognized text>
+  "TextOnImage": "Full recognized text",
+  "ImageDescription": "Short description of the image"
 }
 ```
 
 # Notes
 
-- If some text is unclear or partially obscured, indicate this using "[unreadable]" for missing parts without assumptions.
-- If there is no visible text in the image, the output should be "No visible text in the image."
-- Return output json without markdown
+- If some text is unclear or partially obscured, use "[unreadable]" for those parts without guessing.
+- If there is no visible text, set "TextOnImage" to an empty string and still provide "ImageDescription".
+- Escape quotes, backslashes, and line breaks correctly inside JSON strings.
+- Do not include Markdown fences or any text outside the JSON object.

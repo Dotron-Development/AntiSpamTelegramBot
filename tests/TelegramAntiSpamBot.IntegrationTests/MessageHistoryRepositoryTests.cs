@@ -28,6 +28,85 @@ public class MessageHistoryRepositoryTests
     }
 
     [Fact]
+    public async Task SaveAndReadPreserveTypedPayloadAndAllEditedVersions()
+    {
+        var table = new HistoryTable { Paging = true };
+        using var services = CreateServices(table);
+        var repository = services.GetRequiredService<IMessageHistoryRepository>();
+        var ticks = DateTime.UtcNow.Ticks;
+        var payload = new MessagePayload("A poster", "Full text\nSecond line", "Caption");
+        var original = new HistoryMessage(-100, 7, ticks, new(null, null, payload));
+        var edited = original with
+        {
+            DateTimeTicks = ticks + TimeSpan.TicksPerMinute,
+            UpdateType = HistoryUpdateType.EditedMessage,
+            Content = new(null, null, payload with { UserMessage = "Edited caption" })
+        };
+        await repository.SaveAsync(original);
+        await repository.SaveAsync(edited);
+        table.Rows.AddRange(table.Saved);
+
+        Assert.NotEqual(table.Saved[0].RowKey, table.Saved[1].RowKey);
+        using var content = JsonDocument.Parse(table.Saved[1].GetString("Content"));
+        Assert.False(content.RootElement.TryGetProperty("Text", out _));
+        Assert.False(content.RootElement.TryGetProperty("UserMessageCount", out _));
+        Assert.Equal("Full text\nSecond line", content.RootElement.GetProperty("Payload").GetProperty("ImageText").GetString());
+        Assert.Equal("EditedMessage", table.Saved[1].GetString("UpdateType"));
+        var page = await repository.GetPageAsync(-100, 25, null);
+        Assert.Equal(new[] { original, edited }, page.Messages);
+        var range = new List<HistoryMessage>();
+        await foreach (var message in repository.GetAsync(-100, new DateTimeOffset(new DateTime(ticks, DateTimeKind.Utc)),
+            new DateTimeOffset(new DateTime(ticks + TimeSpan.TicksPerHour, DateTimeKind.Utc))))
+            range.Add(message);
+        Assert.Equal(new[] { original, edited }, range);
+    }
+
+    [Fact]
+    public async Task SameSecondEditsUseUpdateIdToPreserveDistinctVersionsAndStableRetryKeys()
+    {
+        var table = new HistoryTable { Paging = true };
+        using var services = CreateServices(table);
+        var repository = services.GetRequiredService<IMessageHistoryRepository>();
+        var first = new HistoryMessage(-100, 7, DateTime.UtcNow.Ticks,
+            new(null, null, new MessagePayload(UserMessage: "First edit")), HistoryUpdateType.EditedMessage, 100);
+        var second = first with
+        {
+            UpdateId = 101,
+            Content = new(null, null, new MessagePayload(UserMessage: "Second edit"))
+        };
+        await repository.SaveAsync(first);
+        await repository.SaveAsync(second);
+        await repository.SaveAsync(second);
+
+        Assert.NotEqual(table.Saved[0].RowKey, table.Saved[1].RowKey);
+        Assert.Equal(table.Saved[1].RowKey, table.Saved[2].RowKey);
+        table.Rows.AddRange(table.Saved.Take(2));
+        var page = await repository.GetPageAsync(-100, 25, null);
+        Assert.Equal(new[] { first, second }, page.Messages);
+    }
+
+    [Fact]
+    public async Task LegacyHistoryTextIsReadAsTypedUserMessage()
+    {
+        var table = new HistoryTable { Paging = true };
+        var ticks = DateTime.UtcNow.Ticks;
+        table.Rows.Add(new TableEntity("-100", ticks.ToString("D19") + "-0000000007")
+        {
+            ["DateTimeTicks"] = ticks,
+            ["Content"] = "{\"From\":null,\"ReplyTo\":null,\"Text\":\"Legacy text\"}"
+        });
+        using var services = CreateServices(table);
+        var repository = services.GetRequiredService<IMessageHistoryRepository>();
+        var message = Assert.Single((await repository.GetPageAsync(-100, 25, null)).Messages);
+        Assert.Equal(new MessagePayload(UserMessage: "Legacy text"), message.Content.Payload);
+        Assert.Equal(HistoryUpdateType.Message, message.UpdateType);
+        var range = new List<HistoryMessage>();
+        await foreach (var row in repository.GetAsync(-100, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddHours(1)))
+            range.Add(row);
+        Assert.Equal(message, Assert.Single(range));
+    }
+
+    [Fact]
     public async Task TrimKeepsLatestThousandPerChatAndBatchesDeletesByPartition()
     {
         var table = new HistoryTable();

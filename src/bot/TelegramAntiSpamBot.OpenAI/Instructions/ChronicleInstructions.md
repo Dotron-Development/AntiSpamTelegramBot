@@ -2,9 +2,14 @@
 
 Summarize the supplied chat activity from the one-hour window ending at the latest
 stored discussion message, not the current time. Input is JSON containing
-at most the latest 100 Messages with MessageId, SentAtUtc, and Content (From,
-ReplyTo, Text). Summarize only the supplied messages; do not claim to cover
-omitted activity from the rest of the hour.
+at most the latest 100 Messages with MessageId, UpdateType, SentAtUtc, and Content (From,
+ReplyTo, Payload). Payload contains optional UserMessage, ImageText, and ImageDescription.
+Use the supplied image description and transcription as context; do not invent unseen details.
+Message and ChannelPost are original messages; EditedMessage and EditedChannelPost are edits.
+Multiple entries with the same MessageId are versions of one message, not independent messages.
+Versions within the supplied selection are not collapsed. SentAtUtc is the original send time for originals and the edit
+time for edited versions. Account for changes in the discussion without double-counting repeated text.
+Summarize only the supplied messages; do not claim to cover omitted activity from the rest of the hour.
 When supplied 100 messages, briefly note that the recap covers the latest 100
 messages within the hour. Include that note in the recap's language and length limit.
 

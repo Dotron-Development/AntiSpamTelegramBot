@@ -32,7 +32,7 @@ namespace TelegramAntiSpamBot.Functions
                     if (update is not null && commandProcessor.IsCommand(update.Message?.Text))
                         await commandProcessor.ProcessCommand(update);
                     else
-                        await ProcessMessageAsync(message);
+                        await ProcessMessageAsync(message, update!.Type, update.Id);
                 }
                 finally
                 {
@@ -48,22 +48,28 @@ namespace TelegramAntiSpamBot.Functions
             }
         }
 
-        private async Task SaveHistoryAsync(Message message)
+        private async Task SaveHistoryAsync(Message message, MessagePayload payload, UpdateType updateType, int updateId)
         {
-            var text = message.Text ?? message.Caption;
-            if (string.IsNullOrWhiteSpace(text))
+            if (!payload.HasContent)
                 return;
 
             try
             {
                 await messageHistoryRepository.SaveAsync(new HistoryMessage(
-                    message.Chat.Id, message.MessageId, message.Date.ToUniversalTime().Ticks,
+                    message.Chat.Id, message.MessageId,
+                    (message.EditDate ?? message.Date).ToUniversalTime().Ticks,
                     new HistoryMessageContent(GetHistoryAuthor(message),
                         message.ReplyToMessage is { } reply
                             ? new HistoryMessageReply(reply.MessageId, GetHistoryAuthor(reply),
                                 reply.Text ?? reply.Caption ?? string.Empty)
                             : null,
-                        text)));
+                        payload), updateType switch
+                        {
+                            UpdateType.EditedMessage => HistoryUpdateType.EditedMessage,
+                            UpdateType.ChannelPost => HistoryUpdateType.ChannelPost,
+                            UpdateType.EditedChannelPost => HistoryUpdateType.EditedChannelPost,
+                            _ => HistoryUpdateType.Message
+                        }, updateId));
             }
             catch (Exception exception)
             {
@@ -72,11 +78,26 @@ namespace TelegramAntiSpamBot.Functions
             }
         }
 
-        private async Task<bool> ProcessMessageAsync(Message message)
+        private async Task<bool> ProcessMessageAsync(Message message, UpdateType updateType, int updateId)
         {
             try
             {
                 var isSpam = false;
+                var originalText = message.Text ?? message.Caption ?? string.Empty;
+
+                var imageUrl = message.Chat.Id != botConfig.Value.ForwardSpamToChatId
+                    ? await ExtractUrlImageFromMessage(message)
+                    : null;
+                var imageAnalysis = imageUrl is not null
+                    ? await detectionService.ExtractImageText(imageUrl)
+                    : null;
+
+                var imageText = imageAnalysis?.ToMessageContent() ?? string.Empty;
+                var messageContent = new MessagePayload(
+                    ImageDescription: NullIfEmpty(imageAnalysis?.ImageDescription),
+                    ImageText: NullIfEmpty(imageAnalysis?.TextOnImage),
+                    UserMessage: NullIfEmpty(originalText));
+
                 if (message is { From: { } fromUser }
                     && fromUser.Id != 777000 // forwarded messages from main group (TG user)
 
@@ -86,32 +107,23 @@ namespace TelegramAntiSpamBot.Functions
                 {
                     var userMessageCount = await messageCountRepository.GetUserMessageCount(message.Chat.Id, fromUser.Id);
                     var increaseCounterTask = messageCountRepository.IncreaseMessageCount(message.Chat.Id, fromUser.Id);
-                    var imageUrl = await ExtractUrlImageFromMessage(message);
-
-
-                    // Step 1. Extract message text
-                    var originalText = message.Text ?? message.Caption ?? string.Empty;
-                    var messageContent = originalText;
-                    var imageText = string.Empty;
-
-                    // Step 2. Extract image text
-                    if (imageUrl != null)
-                    {
-                        imageText = await detectionService.ExtractImageText(imageUrl);
-                        messageContent = MergeMessageContent(messageContent, imageText);
-                    }
-
                     logger.LogInformation("Message content: {messageContent}", messageContent);
 
                     // Step 3. Check message content for spam
-                    if ((messageContent.Length > 20 || imageUrl is not null) && userMessageCount < 100)
+                    if ((messageContent.ContentLength > 20 || imageUrl is not null) && userMessageCount < 100)
                     {
                         // Step 3.1 Shortcut. if there is hashed spam message in db
                         // Quick access
-                        var sanitizedContent = MessageContentSanitizer.Sanitize(messageContent);
+                        var sanitizedPayload = messageContent with
+                        {
+                            ImageDescription = NullIfEmpty(MessageContentSanitizer.Sanitize(messageContent.ImageDescription ?? string.Empty)),
+                            ImageText = NullIfEmpty(MessageContentSanitizer.Sanitize(messageContent.ImageText ?? string.Empty)),
+                            UserMessage = NullIfEmpty(MessageContentSanitizer.Sanitize(messageContent.UserMessage ?? string.Empty))
+                        };
+                        var sanitizedContent = JsonSerializer.Serialize(sanitizedPayload);
                         var contentHash = SHA256.HashData(Encoding.Unicode.GetBytes(sanitizedContent));
                         var hex = Convert.ToHexString(contentHash);
-                        var shortcutResult = sanitizedContent.Length > 0
+                        var shortcutResult = sanitizedPayload.HasContent
                             ? await spamHashRepository.IsSpam(hex)
                             : ShortcutCheckResult.NotFound;
 
@@ -125,7 +137,7 @@ namespace TelegramAntiSpamBot.Functions
                                 return true;
                             }
 
-                            await SaveHistoryAsync(message);
+                            await SaveHistoryAsync(message, messageContent, updateType, updateId);
                             return false;
                         }
 
@@ -146,9 +158,9 @@ namespace TelegramAntiSpamBot.Functions
                         {
                             isSpam = true;
                             await HandleSpam(message, originalText, imageText,
-                                spamDetectionResult, sanitizedContent.Length > 0 ? hex : string.Empty);
+                                spamDetectionResult, sanitizedPayload.HasContent ? hex : string.Empty);
                         }
-                        else if (sanitizedContent.Length > 0)
+                        else if (sanitizedPayload.HasContent)
                         {
                             await spamHashRepository.SaveMessageHash(hex, false);
                         }
@@ -158,7 +170,7 @@ namespace TelegramAntiSpamBot.Functions
                 }
 
                 if (!isSpam)
-                    await SaveHistoryAsync(message);
+                    await SaveHistoryAsync(message, messageContent, updateType, updateId);
 
                 return isSpam;
             }
@@ -253,7 +265,7 @@ namespace TelegramAntiSpamBot.Functions
             }
         }
 
-        private static string MergeMessageContent(string messageText, string imageText) => $"{messageText}\n\r{imageText}";
+        private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
 
         private async Task<string?> ExtractUrlImageFromMessage(Message message)

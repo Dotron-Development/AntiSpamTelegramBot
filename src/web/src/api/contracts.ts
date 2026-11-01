@@ -87,13 +87,22 @@ export interface HistoryAuthor {
   username: string | null
 }
 
+export interface HistoryPayload {
+  userMessage?: string | null
+  imageText?: string | null
+  imageDescription?: string | null
+}
+
+export type HistoryUpdateType = 'Message' | 'EditedMessage' | 'ChannelPost' | 'EditedChannelPost'
+
 export interface HistoryMessage {
   chatId: string
   messageId: string
   dateTimeTicks: string
+  updateType: HistoryUpdateType
   content: {
     from: HistoryAuthor | null
-    text: string
+    payload: HistoryPayload
     replyTo: { messageId: string; from: HistoryAuthor | null; text: string } | null
   }
 }
@@ -128,10 +137,24 @@ interface HistoryMessageResponse {
   chatId: LosslessNumber
   messageId: LosslessNumber
   dateTimeTicks: LosslessNumber
+  updateType?: unknown
   content: {
     from: HistoryAuthorResponse | null
-    text: string
+    payload?: HistoryPayload | null
+    text?: string | null
     replyTo: { messageId: LosslessNumber; from: HistoryAuthorResponse | null; text: string } | null
+  }
+}
+
+function historyUpdateType(value: unknown): HistoryUpdateType {
+  switch (value) {
+    case 'Message':
+    case 'EditedMessage':
+    case 'ChannelPost':
+    case 'EditedChannelPost':
+      return value
+    default:
+      return 'Message'
   }
 }
 
@@ -152,8 +175,10 @@ export function parseHistoryPage(text: string): TablePage<HistoryMessage> {
   return {
     rows: data.messages.map(message => ({
       chatId: message.chatId.toString(), messageId: message.messageId.toString(), dateTimeTicks: message.dateTimeTicks.toString(),
+      updateType: historyUpdateType(message.updateType),
       content: {
-        from: historyAuthor(message.content.from), text: message.content.text,
+        from: historyAuthor(message.content.from),
+        payload: message.content.payload ?? { userMessage: message.content.text ?? null },
         replyTo: message.content.replyTo ? {
           messageId: message.content.replyTo.messageId.toString(), from: historyAuthor(message.content.replyTo.from),
           text: message.content.replyTo.text,

@@ -122,6 +122,28 @@ public class ChronicleCommandTests
     }
 
     [Fact]
+    public async Task ChronicleReceivesEveryVersionWithUpdateTypeAndTypedPayload()
+    {
+        using var fixture = new Fixture();
+        var latest = DateTimeOffset.UtcNow.AddDays(-3);
+        var original = new HistoryMessage(-100, 7, latest.UtcTicks,
+            new(null, null, new MessagePayload("A poster", "Full image text", "Original caption")));
+        var edited = original with
+        {
+            DateTimeTicks = latest.AddMinutes(1).UtcTicks,
+            UpdateType = HistoryUpdateType.EditedMessage,
+            Content = original.Content with { Payload = original.Content.Payload with { UserMessage = "Edited caption" } }
+        };
+        fixture.History.Messages.AddRange([original, edited]);
+
+        await fixture.ProcessAsync();
+
+        Assert.Equal(new[] { original, edited }, fixture.Ai.Messages);
+        Assert.Contains("versions of one message", fixture.Ai.Prompt);
+        Assert.Equal(1, fixture.Ai.Requests);
+    }
+
+    [Fact]
     public async Task DirectSummaryAcceptsFilteredMessagesAndSkipsEmptyInput()
     {
         using var fixture = new Fixture();
@@ -422,7 +444,8 @@ public class ChronicleCommandTests
             Messages = payload.RootElement.GetProperty("Messages").EnumerateArray().Select(row => new HistoryMessage(
                 -100, row.GetProperty("MessageId").GetInt32(),
                 DateTime.Parse(row.GetProperty("SentAtUtc").GetString()!, null, System.Globalization.DateTimeStyles.RoundtripKind).Ticks,
-                JsonSerializer.Deserialize<HistoryMessageContent>(row.GetProperty("Content"))!)).ToArray();
+                JsonSerializer.Deserialize<HistoryMessageContent>(row.GetProperty("Content"))!,
+                JsonSerializer.Deserialize<HistoryUpdateType>(row.GetProperty("UpdateType")))).ToArray();
             var json = Fail ? "{\"error\":{\"message\":\"AI unavailable\",\"type\":\"invalid_request_error\"}}" : JsonSerializer.Serialize(new
             {
                 id = "chatcmpl-test",

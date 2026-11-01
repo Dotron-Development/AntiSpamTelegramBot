@@ -16,9 +16,9 @@ internal sealed class MessageHistoryRepository(
             {
                 return new HistoryMessagePage(page.Values.Select(entry => new HistoryMessage(
                     long.Parse(entry.PartitionKey, CultureInfo.InvariantCulture),
-                    int.Parse(entry.RowKey.AsSpan(20), CultureInfo.InvariantCulture),
+                    int.Parse(entry.RowKey.AsSpan(20, 10), CultureInfo.InvariantCulture),
                     entry.GetInt64("DateTimeTicks")!.Value,
-                    JsonSerializer.Deserialize<HistoryMessageContent>(entry.GetString("Content"))!))
+                    DeserializeContent(entry.GetString("Content")), ReadUpdateType(entry), entry.GetInt32("UpdateId")))
                     .ToArray(), page.ContinuationToken);
             }
         }
@@ -33,11 +33,16 @@ internal sealed class MessageHistoryRepository(
         var entry = new TableEntity(
             message.ChatId.ToString(CultureInfo.InvariantCulture),
             message.DateTimeTicks.ToString("D19", CultureInfo.InvariantCulture)
-                + "-" + message.MessageId.ToString("D10", CultureInfo.InvariantCulture))
+                + "-" + message.MessageId.ToString("D10", CultureInfo.InvariantCulture)
+                + (message.UpdateId is { } updateId ? "-" + updateId.ToString("D10", CultureInfo.InvariantCulture) : string.Empty))
         {
             ["DateTimeTicks"] = message.DateTimeTicks,
+            ["UpdateType"] = message.UpdateType.ToString(),
             ["Content"] = JsonSerializer.Serialize(message.Content)
         };
+
+        if (message.UpdateId is { } id)
+            entry["UpdateId"] = id;
 
         try
         {
@@ -64,10 +69,26 @@ internal sealed class MessageHistoryRepository(
         await foreach (var entry in historyTable.QueryAsync<TableEntity>(filter: filter, cancellationToken: cancellationToken))
         {
             yield return new HistoryMessage(chatId,
-                int.Parse(entry.RowKey.AsSpan(20), CultureInfo.InvariantCulture),
+                int.Parse(entry.RowKey.AsSpan(20, 10), CultureInfo.InvariantCulture),
                 entry.GetInt64("DateTimeTicks")!.Value,
-                JsonSerializer.Deserialize<HistoryMessageContent>(entry.GetString("Content"))!);
+                DeserializeContent(entry.GetString("Content")), ReadUpdateType(entry), entry.GetInt32("UpdateId"));
         }
+    }
+
+    private static HistoryUpdateType ReadUpdateType(TableEntity entry) =>
+        Enum.TryParse<HistoryUpdateType>(entry.GetString("UpdateType"), out var updateType)
+            ? updateType : HistoryUpdateType.Message;
+
+    private static HistoryMessageContent DeserializeContent(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var content = JsonSerializer.Deserialize<HistoryMessageContent>(json)!;
+        if (content.Payload is not null)
+            return content;
+
+        var text = document.RootElement.TryGetProperty("Text", out var legacyText)
+            && legacyText.ValueKind == JsonValueKind.String ? legacyText.GetString() : null;
+        return content with { Payload = new MessagePayload(UserMessage: text) };
     }
 
     public async Task<int> TrimAsync(CancellationToken cancellationToken = default)

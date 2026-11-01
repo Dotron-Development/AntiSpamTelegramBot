@@ -61,6 +61,7 @@ internal sealed class ChronicleService(
                 .Select(message => new
                 {
                     message.MessageId,
+                    message.UpdateType,
                     SentAtUtc = new DateTime(message.DateTimeTicks, DateTimeKind.Utc),
                     message.Content
                 })
@@ -83,7 +84,7 @@ internal sealed class ChronicleService(
     }
 
     private static bool ContainsChronicleCommand(HistoryMessage message) =>
-        message.Content.Text.Contains("/chronicle", StringComparison.OrdinalIgnoreCase);
+        message.Content.Payload.UserMessage?.Contains("/chronicle", StringComparison.OrdinalIgnoreCase) == true;
 
     private async Task<string> CompleteAsync(string prompt, string content, CancellationToken cancellationToken)
     {

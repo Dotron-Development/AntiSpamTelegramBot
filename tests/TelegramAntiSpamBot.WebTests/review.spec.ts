@@ -610,7 +610,8 @@ test('message history preserves numeric precision, plain text and reply context'
   await expect(table).toContainText('Original question')
   await expect(table).toContainText('Bob Jones')
   await expect(table.locator('em')).toHaveCount(0)
-  await expect(table.locator('.history-preview')).toHaveText('Hello team!\n<em>Not HTML</em>')
+  await expect(table.locator('summary .history-preview')).toHaveText('Hello team!\n<em>Not HTML</em>')
+  await expect(table.getByRole('region', { name: 'User text', exact: true })).toContainText('Hello team!\n<em>Not HTML</em>')
   expect(queries[0].searchParams.get('chatId')).toBe(chatId)
   await page.getByRole('button', { name: 'Load more', exact: true }).click()
   await expect(table.locator('tbody tr')).toHaveCount(2)
@@ -620,6 +621,84 @@ test('message history preserves numeric precision, plain text and reply context'
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('history-mobile.png'), fullPage: true })
+})
+
+test('message history displays typed payload fields separately and handles image-only and empty payloads', async ({ page }) => {
+  await page.route('**/api/review/history?*', route => route.fulfill({
+    contentType: 'application/json',
+    body: `{"messages":[
+      {"chatId":${chatId},"messageId":7,"dateTimeTicks":${ticks},"content":{"from":{"id":${userId},"name":"Alice Smith","username":"alice"},"text":"Ignored legacy text","payload":{"userMessage":"Caption\\n<em>Not HTML</em>","imageDescription":"A sign\\n<strong>Not HTML</strong>","imageText":"Welcome\\n<script>Not HTML</script>"},"replyTo":{"messageId":9223372036854775806,"from":{"id":9223372036854775805,"name":"Bob Jones","username":null},"text":"Original question"}}},
+      {"chatId":${chatId},"messageId":8,"dateTimeTicks":${ticks},"content":{"from":null,"replyTo":null,"payload":{"userMessage":null,"imageDescription":"Image-only description","imageText":"Image-only transcription"}}},
+      {"chatId":${chatId},"messageId":9,"dateTimeTicks":${ticks},"content":{"from":null,"replyTo":null,"payload":{"imageText":"Transcription only"}}},
+      {"chatId":${chatId},"messageId":10,"dateTimeTicks":${ticks},"content":{"from":null,"replyTo":null,"text":"Must not replace empty typed payload","payload":{}}},
+      {"chatId":${chatId},"messageId":11,"dateTimeTicks":${ticks},"content":{"from":null,"replyTo":null,"payload":{"userMessage":null,"imageDescription":null,"imageText":null}}},
+      {"chatId":${chatId},"messageId":12,"dateTimeTicks":${ticks},"content":{"from":null,"replyTo":null,"payload":{"userMessage":"","imageDescription":"","imageText":""}}}
+    ],"continuationToken":null}`,
+  }))
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await page.getByRole('button', { name: 'Load records' }).click()
+  const table = page.getByRole('region', { name: 'Message history table' })
+  const rows = table.locator('tbody tr')
+  await expect(rows).toHaveCount(6)
+  await expect(rows.first()).toContainText(userId)
+  await expect(rows.first().locator(`[title="${ticks}"]`)).toContainText('1 Jan 2025, 00:00')
+  await expect(rows.first().locator('summary')).toHaveText('Caption\n<em>Not HTML</em>')
+  await rows.first().locator('summary').click()
+  await expect(rows.first().getByRole('region', { name: 'User text', exact: true }).locator('p')).toHaveText('Caption\n<em>Not HTML</em>')
+  await expect(rows.first().getByRole('region', { name: 'Image description' }).locator('p')).toHaveText('A sign\n<strong>Not HTML</strong>')
+  await expect(rows.first().getByRole('region', { name: 'Image text', exact: true }).locator('p')).toHaveText('Welcome\n<script>Not HTML</script>')
+  await expect(rows.first().locator('blockquote')).toHaveText('Bob Jones · #9223372036854775806Original question')
+  await expect(table.locator('em, script, p strong')).toHaveCount(0)
+  await expect(table).not.toContainText('Ignored legacy text')
+  await expect(rows.nth(1).locator('summary')).toHaveText('Image-only description')
+  await rows.nth(1).locator('summary').click()
+  await expect(rows.nth(1).getByRole('region', { name: 'User text', exact: true })).toHaveCount(0)
+  await expect(rows.nth(1).getByRole('region', { name: 'Image text', exact: true })).toContainText('Image-only transcription')
+  await expect(rows.nth(2).locator('summary')).toHaveText('Transcription only')
+  await rows.nth(2).locator('summary').click()
+  await expect(rows.nth(2).getByRole('region', { name: 'Image description' })).toHaveCount(0)
+  await expect(rows.nth(2).getByRole('region', { name: 'Image text', exact: true })).toContainText('Transcription only')
+  for (const index of [3, 4, 5]) {
+    await expect(rows.nth(index).locator('summary')).toHaveText('No text or caption')
+    await rows.nth(index).locator('summary').click()
+    await expect(rows.nth(index).getByRole('region')).toHaveCount(0)
+  }
+  await expect(table).not.toContainText('Must not replace empty typed payload')
+})
+
+test('message history distinguishes edited messages and channel posts with safe legacy update types', async ({ page }) => {
+  const updateTypes = ['Message', 'EditedMessage', 'ChannelPost', 'EditedChannelPost', undefined, null, 'FutureUpdate', 42]
+  await page.route('**/api/review/history?*', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      messages: updateTypes.map((updateType, index) => ({
+        chatId, messageId: index + 1, dateTimeTicks: ticks, updateType,
+        content: {
+          from: null,
+          ...(index === 4 ? { text: 'Legacy message' } : { payload: { userMessage: `Record ${index + 1}` } }),
+          replyTo: index === 1 ? { messageId: 1, from: null, text: 'Original question' } : null,
+        },
+      })),
+      continuationToken: null,
+    }),
+  }))
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await page.getByRole('button', { name: 'Load records' }).click()
+  const table = page.getByRole('region', { name: 'Message history table' })
+  await expect(table.locator('.history-update-type')).toHaveText([
+    'Message', 'Edited message', 'Channel post', 'Edited channel post', 'Message', 'Message', 'Message', 'Message',
+  ])
+  await expect(table.locator('details[open]')).toHaveCount(0)
+  const rows = table.locator('tbody tr')
+  await expect(rows.nth(4).locator('summary')).toHaveText('Legacy message')
+  await rows.nth(1).locator('summary').click()
+  await expect(rows.nth(1).getByRole('region', { name: 'User text', exact: true })).toContainText('Record 2')
+  await expect(rows.nth(1).locator('blockquote')).toHaveText('Unknown author · #1Original question')
+  await page.getByRole('button', { name: 'Refresh records' }).click()
+  await expect(table.locator('tbody tr')).toHaveCount(8)
+  await expect(rows.nth(3).locator('.history-update-type')).toHaveText('Edited channel post')
 })
 
 test('table views handle empty pages, errors and retry without mutating data', async ({ page }) => {
