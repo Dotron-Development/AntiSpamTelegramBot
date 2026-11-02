@@ -169,13 +169,23 @@ public class ChronicleCommandTests
     }
 
     [Fact]
-    public async Task AiFailureSendsReadableError()
+    public async Task AiFailureDoesNotSendAnything()
     {
         using var fixture = new Fixture();
         fixture.History.Messages.Add(new(-100, 6, DateTime.UtcNow.Ticks, new(null, null, "Discussion")));
         fixture.Ai.Fail = true;
         await fixture.ProcessAsync();
-        Assert.Contains("Unable to generate", Assert.Single(fixture.Telegram.Texts));
+        Assert.Empty(fixture.Telegram.Texts);
+    }
+
+    [Fact]
+    public async Task EmptyAiResponseDoesNotSendAnything()
+    {
+        using var fixture = new Fixture();
+        fixture.History.Messages.Add(new(-100, 6, DateTime.UtcNow.Ticks, new(null, null, "Discussion")));
+        fixture.Ai.Summary = "";
+        await fixture.ProcessAsync();
+        Assert.Empty(fixture.Telegram.Texts);
     }
 
     [Fact]

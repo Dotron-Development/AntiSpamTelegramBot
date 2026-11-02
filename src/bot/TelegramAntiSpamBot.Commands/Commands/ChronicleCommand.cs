@@ -21,7 +21,7 @@ internal sealed class ChronicleCommand(
         catch (Exception exception)
         {
             logger.LogError(exception, "Unable to generate chronicle for chat {chatId}", message.Chat.Id);
-            summary = "Unable to generate the last-hour summary. Please try again later.";
+            return;
         }
 
         await bot.SendMessage(message.Chat.Id, summary);
