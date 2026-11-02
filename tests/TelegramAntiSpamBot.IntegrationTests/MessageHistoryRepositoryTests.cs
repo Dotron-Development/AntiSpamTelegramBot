@@ -27,42 +27,46 @@ public class MessageHistoryRepositoryTests
         Assert.Equal(ticks, table.Saved[0].GetInt64("DateTimeTicks"));
     }
 
-    [Fact]
-    public async Task SaveAndReadPreserveTypedPayloadAndAllEditedVersions()
+    [Theory]
+    [InlineData(HistoryUpdateType.Message, HistoryUpdateType.EditedMessage)]
+    [InlineData(HistoryUpdateType.ChannelPost, HistoryUpdateType.EditedChannelPost)]
+    public async Task SaveAndReadReplaceOriginalWithEditedPayload(HistoryUpdateType originalType,
+        HistoryUpdateType editedType)
     {
         var table = new HistoryTable { Paging = true };
         using var services = CreateServices(table);
         var repository = services.GetRequiredService<IMessageHistoryRepository>();
         var ticks = DateTime.UtcNow.Ticks;
         var payload = new MessagePayload("A poster", "Full text\nSecond line", "Caption");
-        var original = new HistoryMessage(-100, 7, ticks, new(null, null, payload));
+        var original = new HistoryMessage(-100, 7, ticks, new(null, null, payload), originalType, 100);
         var edited = original with
         {
-            DateTimeTicks = ticks + TimeSpan.TicksPerMinute,
-            UpdateType = HistoryUpdateType.EditedMessage,
+            UpdateType = editedType,
+            UpdateId = 101,
             Content = new(null, null, payload with { UserMessage = "Edited caption" })
         };
         await repository.SaveAsync(original);
         await repository.SaveAsync(edited);
-        table.Rows.AddRange(table.Saved);
 
-        Assert.NotEqual(table.Saved[0].RowKey, table.Saved[1].RowKey);
+        Assert.Equal(table.Saved[0].RowKey, table.Saved[1].RowKey);
+        Assert.Equal(ticks.ToString("D19") + "-0000000007", table.Saved[1].RowKey);
+        Assert.Single(table.Rows);
         using var content = JsonDocument.Parse(table.Saved[1].GetString("Content"));
         Assert.False(content.RootElement.TryGetProperty("Text", out _));
         Assert.False(content.RootElement.TryGetProperty("UserMessageCount", out _));
         Assert.Equal("Full text\nSecond line", content.RootElement.GetProperty("Payload").GetProperty("ImageText").GetString());
-        Assert.Equal("EditedMessage", table.Saved[1].GetString("UpdateType"));
+        Assert.Equal(editedType.ToString(), table.Saved[1].GetString("UpdateType"));
         var page = await repository.GetPageAsync(-100, 25, null);
-        Assert.Equal(new[] { original, edited }, page.Messages);
+        Assert.Equal(edited, Assert.Single(page.Messages));
         var range = new List<HistoryMessage>();
         await foreach (var message in repository.GetAsync(-100, new DateTimeOffset(new DateTime(ticks, DateTimeKind.Utc)),
             new DateTimeOffset(new DateTime(ticks + TimeSpan.TicksPerHour, DateTimeKind.Utc))))
             range.Add(message);
-        Assert.Equal(new[] { original, edited }, range);
+        Assert.Equal(edited, Assert.Single(range));
     }
 
     [Fact]
-    public async Task SameSecondEditsUseUpdateIdToPreserveDistinctVersionsAndStableRetryKeys()
+    public async Task RepeatedEditsAndRetriesUpsertSameRow()
     {
         var table = new HistoryTable { Paging = true };
         using var services = CreateServices(table);
@@ -78,11 +82,11 @@ public class MessageHistoryRepositoryTests
         await repository.SaveAsync(second);
         await repository.SaveAsync(second);
 
-        Assert.NotEqual(table.Saved[0].RowKey, table.Saved[1].RowKey);
+        Assert.Equal(table.Saved[0].RowKey, table.Saved[1].RowKey);
         Assert.Equal(table.Saved[1].RowKey, table.Saved[2].RowKey);
-        table.Rows.AddRange(table.Saved.Take(2));
+        Assert.Single(table.Rows);
         var page = await repository.GetPageAsync(-100, 25, null);
-        Assert.Equal(new[] { first, second }, page.Messages);
+        Assert.Equal(second, Assert.Single(page.Messages));
     }
 
     [Fact]
@@ -147,7 +151,6 @@ public class MessageHistoryRepositoryTests
         var content = new HistoryMessageContent(new(42, "Alice", null), null, "Text");
         var message = new HistoryMessage(-100, 7, from.UtcDateTime.Ticks, content);
         await repository.SaveAsync(message);
-        table.Rows.Add(table.Saved[0]);
 
         var messages = new List<HistoryMessage>();
         await foreach (var entry in repository.GetAsync(-100, from, to))
@@ -173,7 +176,6 @@ public class MessageHistoryRepositoryTests
         var message = new HistoryMessage(-100, 7, DateTime.UtcNow.Ticks,
             new(new(42, "Alice", "alice"), new(6, new(43, "Bob", null), "Quoted"), "Original"));
         await repository.SaveAsync(message);
-        table.Rows.Add(table.Saved[0]);
         var page = await repository.GetPageAsync(chatId, 25, "previous");
         Assert.Equal(message, Assert.Single(page.Messages));
         Assert.Equal("next", page.ContinuationToken);
@@ -211,7 +213,11 @@ public class MessageHistoryRepositoryTests
         public override Task<Response> UpsertEntityAsync<T>(T entity,
             TableUpdateMode mode = TableUpdateMode.Merge, CancellationToken cancellationToken = default)
         {
-            Saved.Add((TableEntity)(object)entity);
+            Assert.Equal(TableUpdateMode.Replace, mode);
+            var row = (TableEntity)(object)entity;
+            Saved.Add(row);
+            Rows.RemoveAll(existing => existing.PartitionKey == row.PartitionKey && existing.RowKey == row.RowKey);
+            Rows.Add(row);
             return Task.FromResult<Response>(null!);
         }
 

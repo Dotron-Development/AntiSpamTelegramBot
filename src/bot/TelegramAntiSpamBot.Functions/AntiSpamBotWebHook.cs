@@ -57,7 +57,7 @@ namespace TelegramAntiSpamBot.Functions
             {
                 await messageHistoryRepository.SaveAsync(new HistoryMessage(
                     message.Chat.Id, message.MessageId,
-                    (message.EditDate ?? message.Date).ToUniversalTime().Ticks,
+                    message.Date.ToUniversalTime().Ticks,
                     new HistoryMessageContent(GetHistoryAuthor(message),
                         message.ReplyToMessage is { } reply
                             ? new HistoryMessageReply(reply.MessageId, GetHistoryAuthor(reply),

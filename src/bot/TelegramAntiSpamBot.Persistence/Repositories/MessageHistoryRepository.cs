@@ -33,8 +33,7 @@ internal sealed class MessageHistoryRepository(
         var entry = new TableEntity(
             message.ChatId.ToString(CultureInfo.InvariantCulture),
             message.DateTimeTicks.ToString("D19", CultureInfo.InvariantCulture)
-                + "-" + message.MessageId.ToString("D10", CultureInfo.InvariantCulture)
-                + (message.UpdateId is { } updateId ? "-" + updateId.ToString("D10", CultureInfo.InvariantCulture) : string.Empty))
+                + "-" + message.MessageId.ToString("D10", CultureInfo.InvariantCulture))
         {
             ["DateTimeTicks"] = message.DateTimeTicks,
             ["UpdateType"] = message.UpdateType.ToString(),

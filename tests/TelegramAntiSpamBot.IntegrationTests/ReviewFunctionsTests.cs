@@ -727,7 +727,7 @@ public class ReviewFunctionsTests
     [Theory]
     [InlineData("message", "edited_message", HistoryUpdateType.Message, HistoryUpdateType.EditedMessage)]
     [InlineData("channel_post", "edited_channel_post", HistoryUpdateType.ChannelPost, HistoryUpdateType.EditedChannelPost)]
-    public async Task WebhookPreservesOriginalAndEditedVersionsWithTypedPayloads(string originalKey,
+    public async Task WebhookPreservesSendTimeAndTypedPayloadForEdits(string originalKey,
         string editedKey, HistoryUpdateType originalType, HistoryUpdateType editedType)
     {
         using var fixture = new Fixture();
@@ -756,7 +756,9 @@ public class ReviewFunctionsTests
         Assert.Equal(editedType, edited.UpdateType);
         Assert.Equal("Original message", original.Content.Payload.UserMessage);
         Assert.Equal("Edited message", edited.Content.Payload.UserMessage);
-        Assert.Equal(TimeSpan.TicksPerMinute, edited.DateTimeTicks - original.DateTimeTicks);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1700000000).UtcTicks, original.DateTimeTicks);
+        Assert.Equal(original.DateTimeTicks, edited.DateTimeTicks);
+        Assert.Equal(2, edited.UpdateId);
         using var serialized = JsonDocument.Parse(JsonSerializer.Serialize(edited));
         Assert.Equal(editedType.ToString(), serialized.RootElement.GetProperty("UpdateType").GetString());
     }
