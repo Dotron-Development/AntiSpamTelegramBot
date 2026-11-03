@@ -82,20 +82,39 @@ namespace TelegramAntiSpamBot.OpenAI
             if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uriResult)
                 || uriResult.Scheme != Uri.UriSchemeHttps) return new ImageAnalysisResult();
 
-            var imageRecognitionInstructions = await instructions.GetImageAnalyzerInstructions();
-            var imageRecognitionCompletion = await imageAnalyzer.CompleteChatAsync(
-            [
-                new SystemChatMessage(imageRecognitionInstructions),
-                new UserChatMessage(
-                    ChatMessageContentPart.CreateImagePart(uriResult))
+            try
+            {
+                var imageRecognitionInstructions = await instructions.GetImageAnalyzerInstructions();
+                ChatCompletion completion = await imageAnalyzer.CompleteChatAsync(
+                [
+                    new SystemChatMessage(imageRecognitionInstructions),
+                    new UserChatMessage(
+                        ChatMessageContentPart.CreateImagePart(uriResult))
 
-            ], ImageAnalysisOptions);
+                ], ImageAnalysisOptions);
 
-            var imageResponse = imageRecognitionCompletion.Value.Content[0].Text;
+                if (completion.FinishReason != ChatFinishReason.Stop || completion.Content.Count == 0)
+                {
+                    logger.LogWarning("Image analysis returned no usable completion. Finish reason: {finishReason}", completion.FinishReason);
+                    return new ImageAnalysisResult();
+                }
 
-            LogDebugImageRecognitionAiResponse(logger, imageResponse);
+                var imageResponse = string.Concat(completion.Content.Select(part => part.Text));
+                if (string.IsNullOrWhiteSpace(imageResponse))
+                {
+                    logger.LogWarning("Image analysis returned empty text");
+                    return new ImageAnalysisResult();
+                }
 
-            return JsonSerializer.Deserialize<ImageAnalysisResult>(imageResponse) ?? new ImageAnalysisResult();
+                LogDebugImageRecognitionAiResponse(logger, imageResponse);
+
+                return JsonSerializer.Deserialize<ImageAnalysisResult>(imageResponse) ?? new ImageAnalysisResult();
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Image analysis failed; continuing without image content");
+                return new ImageAnalysisResult();
+            }
         }
 
         [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Request: {request}")]

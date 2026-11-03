@@ -110,7 +110,8 @@ namespace TelegramAntiSpamBot.Functions
                     logger.LogInformation("Message content: {messageContent}", messageContent);
 
                     // Step 3. Check message content for spam
-                    if ((messageContent.ContentLength > 20 || imageUrl is not null) && userMessageCount < 100)
+                    if (messageContent.HasContent
+                        && (messageContent.ContentLength > 20 || imageUrl is not null) && userMessageCount < 100)
                     {
                         // Step 3.1 Shortcut. if there is hashed spam message in db
                         // Quick access

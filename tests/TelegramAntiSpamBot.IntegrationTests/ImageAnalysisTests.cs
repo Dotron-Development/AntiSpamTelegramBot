@@ -100,6 +100,40 @@ public class ImageAnalysisTests
         Assert.Null(fixture.Handler.Request);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not JSON")]
+    [InlineData("{\"TextOnImage\":")]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("{\"TextOnImage\":123}")]
+    [InlineData("{\"TextOnImage\":\"Partial text\"}", "length")]
+    [InlineData(null, "content_filter")]
+    public async Task UnusableImageResponsesReturnEmptyResult(string? payload, string finishReason = "stop")
+    {
+        using var fixture = new Fixture(payload, finishReason);
+
+        var result = await fixture.Detector.ExtractImageText("https://images.example.test/photo.jpg");
+
+        Assert.Empty(result.ToMessageContent());
+        Assert.NotNull(fixture.Handler.Request);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    public async Task AnalyzerHttpErrorsReturnEmptyResult(HttpStatusCode statusCode)
+    {
+        using var fixture = new Fixture("{}", statusCode: statusCode);
+
+        var result = await fixture.Detector.ExtractImageText("https://images.example.test/photo.jpg");
+
+        Assert.Empty(result.ToMessageContent());
+        Assert.NotNull(fixture.Handler.Request);
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly HttpClient http;
@@ -107,9 +141,9 @@ public class ImageAnalysisTests
         public AnalyzerHandler Handler { get; }
         public ISpamDetectionService Detector => services.GetRequiredService<ISpamDetectionService>();
 
-        public Fixture(string payload)
+        public Fixture(string? payload, string finishReason = "stop", HttpStatusCode statusCode = HttpStatusCode.OK)
         {
-            Handler = new AnalyzerHandler(payload);
+            Handler = new AnalyzerHandler(payload, finishReason, statusCode);
             http = new HttpClient(Handler);
             var client = new ChatClient("image-analyzer", new ApiKeyCredential("test-only"), new OpenAIClientOptions
             {
@@ -128,7 +162,7 @@ public class ImageAnalysisTests
         }
     }
 
-    private sealed class AnalyzerHandler(string payload) : HttpMessageHandler
+    private sealed class AnalyzerHandler(string? payload, string finishReason, HttpStatusCode statusCode) : HttpMessageHandler
     {
         public JsonElement? Request { get; private set; }
 
@@ -142,9 +176,9 @@ public class ImageAnalysisTests
                 @object = "chat.completion",
                 created = 0,
                 model = "image-analyzer",
-                choices = new[] { new { index = 0, message = new { role = "assistant", content = payload }, finish_reason = "stop" } }
+                choices = new[] { new { index = 0, message = new { role = "assistant", content = payload }, finish_reason = finishReason } }
             });
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(statusCode)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };

@@ -675,13 +675,35 @@ public class ReviewFunctionsTests
     public async Task WebhookSkipsPhotoWithoutCaptionOrAnalysisContent()
     {
         using var fixture = new Fixture();
-        fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
+        fixture.Detector.Result = new SpamRequestResult(ResultType.Error);
         fixture.Detector.ImageContent = string.Empty;
         var update = PhotoUpdate.Replace("\"caption\":\"Original Caption 123!\",", "");
 
-        await fixture.Webhook.Run(fixture.Request(update));
+        var response = await fixture.Webhook.Run(fixture.Request(update));
 
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Null(fixture.Detector.ClassifiedPayload);
+        Assert.Empty(fixture.HashDecisions);
+        Assert.False(fixture.Deleted);
         Assert.Empty(fixture.History);
+    }
+
+    [Theory]
+    [InlineData("Original Caption 123!")]
+    [InlineData("Hi")]
+    public async Task WebhookClassifiesAndSavesCaptionWhenImageAnalysisReturnsNoContent(string caption)
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 10);
+        fixture.Detector.ImageContent = string.Empty;
+        var update = PhotoUpdate.Replace("Original Caption 123!", caption);
+
+        var response = await fixture.Webhook.Run(fixture.Request(update));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(new MessagePayload(UserMessage: caption), fixture.Detector.ClassifiedPayload);
+        Assert.Equal(fixture.Detector.ClassifiedPayload, Assert.Single(fixture.History).Content.Payload);
+        Assert.False(fixture.Deleted);
     }
 
     [Fact]
