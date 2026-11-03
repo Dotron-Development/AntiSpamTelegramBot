@@ -28,6 +28,46 @@ public class ChronicleCommandTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task MissingCommandMessageDoesNotPreventCooldownCheck(bool allowed)
+    {
+        using var fixture = new Fixture();
+        fixture.Calls.Allowed = allowed;
+        fixture.Telegram.DeleteErrorCode = 400;
+        fixture.Telegram.DeleteErrorDescription = "Bad Request: message to delete not found";
+
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Equal(1000, Assert.Single(fixture.Telegram.DeletedMessageIds));
+        Assert.Equal(1, fixture.Calls.Count);
+        if (allowed)
+            Assert.Equal("No messages in the last hour.", Assert.Single(fixture.Telegram.Texts));
+        else
+            Assert.Empty(fixture.Telegram.Texts);
+    }
+
+    [Theory]
+    [InlineData(400, "Bad Request: message can't be deleted")]
+    [InlineData(403, "Forbidden: bot was kicked from the supergroup chat")]
+    [InlineData(404, "Bad Request: message to delete not found")]
+    public async Task OtherDeletionErrorsPropagateWithoutExecutingCommand(int errorCode, string description)
+    {
+        using var fixture = new Fixture();
+        fixture.Telegram.DeleteErrorCode = errorCode;
+        fixture.Telegram.DeleteErrorDescription = description;
+
+        var exception = await Assert.ThrowsAsync<Telegram.Bot.Exceptions.ApiRequestException>(() =>
+            fixture.Processor.ProcessCommand(fixture.Update));
+
+        Assert.Equal(errorCode, exception.ErrorCode);
+        Assert.Equal(description, exception.Message);
+        Assert.Equal(0, fixture.Calls.Count);
+        Assert.Empty(fixture.Telegram.Texts);
+        Assert.Equal(0, fixture.History.PageReads);
+    }
+
+    [Theory]
     [InlineData("/chronicle")]
     [InlineData("/CHRONICLE@TestBot")]
     public async Task CoolingDownCommandIsDeletedAndSkippedWithoutReply(string text)
@@ -477,6 +517,8 @@ public class ChronicleCommandTests
         public List<int> DeletedMessageIds { get; } = [];
         public TaskCompletionSource? DeleteGate { get; set; }
         public TaskCompletionSource DeleteStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int? DeleteErrorCode { get; set; }
+        public string? DeleteErrorDescription { get; set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
@@ -487,6 +529,16 @@ public class ChronicleCommandTests
                 DeleteStarted.TrySetResult();
                 if (DeleteGate is not null)
                     await DeleteGate.Task.WaitAsync(cancellationToken);
+                if (DeleteErrorCode is { } errorCode)
+                    return new HttpResponseMessage((HttpStatusCode)errorCode)
+                    {
+                        Content = new StringContent(JsonSerializer.Serialize(new
+                        {
+                            ok = false,
+                            error_code = errorCode,
+                            description = DeleteErrorDescription
+                        }), Encoding.UTF8, "application/json")
+                    };
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent("{\"ok\":true,\"result\":true}", Encoding.UTF8, "application/json")
