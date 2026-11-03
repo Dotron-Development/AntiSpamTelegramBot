@@ -852,6 +852,54 @@ public class ReviewFunctionsTests
         Assert.Single(fixture.SavedChats);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WebhookMissingSpamMessageStillRestrictsUserAndUpdatesStats(bool shortcut)
+    {
+        using var fixture = new Fixture();
+        if (shortcut)
+            fixture.Shortcut = ShortcutCheckResult.Spam;
+        fixture.Telegram.DeleteErrorCode = 400;
+        fixture.Telegram.DeleteErrorDescription = "Bad Request: message to delete not found";
+
+        var response = await fixture.Webhook.Run(fixture.Request(PhotoUpdate));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Single(fixture.Telegram.Calls, call => call.Method == "deletemessage");
+        var restriction = Assert.Single(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
+        Assert.Equal(-100, restriction.Body.GetProperty("chat_id").GetInt64());
+        Assert.Equal(42, restriction.Body.GetProperty("user_id").GetInt64());
+        Assert.Equal(1, fixture.SpamStatsUpdates);
+        Assert.Empty(fixture.History);
+        Assert.Equal(!shortcut, fixture.SavedMessage is not null);
+    }
+
+    [Theory]
+    [InlineData(true, 400, "Bad Request: message can't be deleted")]
+    [InlineData(false, 400, "Bad Request: message can't be deleted")]
+    [InlineData(true, 403, "Forbidden: bot was kicked from the supergroup chat")]
+    [InlineData(false, 403, "Forbidden: bot was kicked from the supergroup chat")]
+    [InlineData(true, 404, "Bad Request: message to delete not found")]
+    [InlineData(false, 404, "Bad Request: message to delete not found")]
+    public async Task WebhookOtherSpamDeletionErrorsPropagate(bool shortcut, int errorCode, string description)
+    {
+        using var fixture = new Fixture();
+        if (shortcut)
+            fixture.Shortcut = ShortcutCheckResult.Spam;
+        fixture.Telegram.DeleteErrorCode = errorCode;
+        fixture.Telegram.DeleteErrorDescription = description;
+
+        var exception = await Assert.ThrowsAsync<Telegram.Bot.Exceptions.ApiRequestException>(() =>
+            fixture.Webhook.Run(fixture.Request(PhotoUpdate)));
+
+        Assert.Equal(errorCode, exception.ErrorCode);
+        Assert.Equal(description, exception.Message);
+        Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
+        Assert.Equal(0, fixture.SpamStatsUpdates);
+        Assert.Empty(fixture.History);
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly ServiceProvider services = new ServiceCollection()
@@ -887,6 +935,7 @@ public class ReviewFunctionsTests
         public List<ReviewChat> SavedChats { get; } = [];
         public bool ChatSaveFails { get; set; }
         public (int PageSize, string? Token)? ChatQuery { get; private set; }
+        public int SpamStatsUpdates { get; private set; }
 
         public Fixture(TimeSpan? spamRestrictionTimeout = null, TimeSpan? commandCooldown = null)
         {
@@ -925,7 +974,9 @@ public class ReviewFunctionsTests
                     case nameof(IMessageCountRepository.GetUserMessageCount):
                         return Task.FromResult(0);
                     case nameof(IMessageCountRepository.IncreaseMessageCount):
+                        return Task.CompletedTask;
                     case nameof(ISpamStatsRepository.UpdateChannelSpamStats):
+                        SpamStatsUpdates++;
                         return Task.CompletedTask;
                     case nameof(ISpamHashRepository.IsSpam):
                         SpamChecked.TrySetResult();
@@ -1002,6 +1053,8 @@ public class ReviewFunctionsTests
     private sealed class TelegramHandler : HttpMessageHandler
     {
         public List<(string Method, JsonElement Body)> Calls { get; } = [];
+        public int? DeleteErrorCode { get; set; }
+        public string? DeleteErrorDescription { get; set; }
         private int nextMessageId = 99;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -1009,6 +1062,16 @@ public class ReviewFunctionsTests
             var method = request.RequestUri!.Segments[^1].ToLowerInvariant();
             using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
             Calls.Add((method, document.RootElement.Clone()));
+            if (method == "deletemessage" && DeleteErrorCode is { } errorCode)
+                return new HttpResponseMessage((HttpStatusCode)errorCode)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(new
+                    {
+                        ok = false,
+                        error_code = errorCode,
+                        description = DeleteErrorDescription
+                    }), Encoding.UTF8, "application/json")
+                };
             var result = method switch
             {
                 "restrictchatmember" or "deletemessage" => "true",

@@ -1,3 +1,4 @@
+using Telegram.Bot.Exceptions;
 
 namespace TelegramAntiSpamBot.Functions
 {
@@ -220,7 +221,15 @@ namespace TelegramAntiSpamBot.Functions
                 }
             }
 
-            await bot.DeleteMessage(chatId, messageId);
+            try
+            {
+                await bot.DeleteMessage(chatId, messageId);
+            }
+            catch (ApiRequestException exception) when (exception.ErrorCode == 400 &&
+                string.Equals(exception.Message, "Bad Request: message to delete not found", StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogInformation("Spam message {messageId} in chat {chatId} is already absent", messageId, chatId);
+            }
 
             var diff = DateTime.UtcNow - message.Date;
             var t1 = spamStatsRepository.UpdateChannelSpamStats(chatId, (int)diff.TotalMilliseconds);
