@@ -1,5 +1,5 @@
-import { parseApiError, parseReviewChatPage, parseReviewMessagePage, parseCommandCallPage, parseHistoryPage, parseChroniclePreview } from './contracts'
-import type { ReviewChatPage, ReviewMessage, ReviewMessageRequest, ReviewPage } from './contracts'
+import { parseApiError, parseReviewChatPage, parseReviewMessagePage, parseCommandCallPage, parseHistoryPage, parseChroniclePreview, parseMentionPreview } from './contracts'
+import type { MentionPreviewRequest, ReviewChatPage, ReviewMessage, ReviewMessageRequest, ReviewPage } from './contracts'
 
 export type { ReviewChat, ReviewChatPage, ReviewMessage, ReviewMessageFrom, ReviewMessageReplyTo, ReviewPage } from './contracts'
 export type { CommandCall, HistoryMessage, TablePage } from './contracts'
@@ -120,6 +120,10 @@ export async function getHistory(connection: Connection, chatId: string, pageSiz
 export async function previewChronicle(connection: Connection, chatId: string, signal?: AbortSignal) {
   if (!validId(chatId)) throw new Error('Select a valid chat from the list.')
   return parseChroniclePreview(await request(connection, `/chronicle/${chatId}`, 'POST', undefined, signal, 120_000))
+}
+
+export async function previewMention(connection: Connection, body: MentionPreviewRequest, signal?: AbortSignal) {
+  return parseMentionPreview(await request(connection, '/mention', 'POST', body, signal, 120_000))
 }
 
 export async function reviewMessage(connection: Connection, message: ReviewMessage, isSpam: boolean) {

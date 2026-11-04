@@ -780,3 +780,74 @@ test('Chronicle preview handles failure, cooldown and an explicit retry', async 
   await expect(page.getByRole('region', { name: 'Chronicle preview' })).toContainText('A fresh recap.')
   expect(attempts).toBe(3)
 })
+test('mention preview sends question and only explicit reply context without Telegram actions', async ({ page }) => {
+  const requests: unknown[] = []
+  await page.route('**/api/review/mention', route => {
+    expect(route.request().method()).toBe('POST')
+    requests.push(route.request().postDataJSON())
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ answer: '**A comment!**\n<em>Not HTML</em>' }) })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Test mention', exact: true }).click()
+  await expect(page.getByLabel('Chat', { exact: true })).toHaveCount(0)
+  await page.getByLabel('Question', { exact: true }).fill('have any comments on that?')
+  await page.getByLabel('Question author (optional)', { exact: true }).fill('Ben')
+  await page.getByLabel('Include Telegram reply context').check()
+  await page.getByLabel('Reply author (optional)', { exact: true }).fill('Alice')
+  await page.getByLabel('Reply author username (optional)', { exact: true }).fill('alice')
+  await page.getByLabel('Reply text or caption', { exact: true }).fill('Democrats won today')
+  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Mention answer' })).toContainText('**A comment!**')
+  await expect(page.getByRole('region', { name: 'Mention answer' }).locator('em')).toHaveCount(0)
+  expect(requests).toEqual([{
+    question: 'have any comments on that?', fromName: 'Ben',
+    replyTo: { name: 'Alice', username: 'alice', text: 'Democrats won today' },
+  }])
+  await page.getByLabel('Include Telegram reply context').uncheck()
+  await expect(page.getByRole('region', { name: 'Mention answer' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Mention answer' })).toBeVisible()
+  expect(requests[1]).toEqual({ question: 'have any comments on that?', fromName: 'Ben' })
+})
+
+test('mention preview handles failures and allows an explicit retry of a bare mention', async ({ page }) => {
+  let attempts = 0
+  await page.route('**/api/review/mention', route => {
+    attempts++
+    expect(route.request().postDataJSON()).toEqual({ question: '' })
+    return route.fulfill(attempts === 1
+      ? { status: 502, contentType: 'application/json', body: '{"error":"Unable to generate mention preview."}' }
+      : { contentType: 'application/json', body: '{"answer":"Listening."}' })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Test mention', exact: true }).click()
+  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Unable to generate mention preview.')
+  expect(attempts).toBe(1)
+  await expect(page.getByRole('button', { name: 'Generate answer', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Mention answer' })).toContainText('Listening.')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(attempts).toBe(2)
+})
+
+test('mention preview locks fields and navigation while generating', async ({ page }) => {
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  let attempts = 0
+  await page.route('**/api/review/mention', async route => {
+    attempts++
+    await gate
+    await route.fulfill({ contentType: 'application/json', body: '{"answer":"Done."}' })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Test mention', exact: true }).click()
+  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Generating...', exact: true })).toBeDisabled()
+  await expect(page.getByLabel('Question', { exact: true })).toBeDisabled()
+  await expect(page.getByRole('tab', { name: 'Message history', exact: true })).toBeDisabled()
+  release()
+  await expect(page.getByRole('region', { name: 'Mention answer' })).toContainText('Done.')
+  await expect(page.getByLabel('Question', { exact: true })).toBeEnabled()
+  expect(attempts).toBe(1)
+})

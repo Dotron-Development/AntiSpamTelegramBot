@@ -32,8 +32,7 @@ internal sealed class MessageHistoryRepository(
     {
         var entry = new TableEntity(
             message.ChatId.ToString(CultureInfo.InvariantCulture),
-            message.DateTimeTicks.ToString("D19", CultureInfo.InvariantCulture)
-                + "-" + message.MessageId.ToString("D10", CultureInfo.InvariantCulture))
+            GetRowKey(message.DateTimeTicks, message.MessageId))
         {
             ["DateTimeTicks"] = message.DateTimeTicks,
             ["UpdateType"] = message.UpdateType.ToString(),
@@ -73,6 +72,10 @@ internal sealed class MessageHistoryRepository(
                 DeserializeContent(entry.GetString("Content")), ReadUpdateType(entry), entry.GetInt32("UpdateId"));
         }
     }
+
+    private static string GetRowKey(long dateTimeTicks, int messageId) =>
+        dateTimeTicks.ToString("D19", CultureInfo.InvariantCulture)
+            + "-" + messageId.ToString("D10", CultureInfo.InvariantCulture);
 
     private static HistoryUpdateType ReadUpdateType(TableEntity entry) =>
         Enum.TryParse<HistoryUpdateType>(entry.GetString("UpdateType"), out var updateType)

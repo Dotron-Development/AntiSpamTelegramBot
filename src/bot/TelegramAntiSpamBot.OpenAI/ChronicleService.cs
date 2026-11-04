@@ -69,18 +69,7 @@ internal sealed class ChronicleService(
 
         var summary = await CompleteAsync(prompt, content, cancellationToken);
 
-        // Telegram limits text messages to 4096 characters; 4000 keeps the recap safely within one message.
-        if (summary.Length > 4000)
-        {
-            var length = 3997;
-
-            if (char.IsHighSurrogate(summary[length - 1]))
-                length--;
-
-            summary = summary[..length] + "...";
-        }
-
-        return summary;
+        return TelegramTextUtils.Truncate(summary);
     }
 
     private static bool ContainsChronicleCommand(HistoryMessage message) =>

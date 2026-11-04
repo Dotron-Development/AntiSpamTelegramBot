@@ -89,6 +89,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = azurerm_cognitive_deployment.image_text_extraction.name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = azurerm_cognitive_deployment.spam_recognition.name
     "OpenAiServicesConfiguration__ChronicleDeployment"        = azurerm_cognitive_deployment.chronicle.name
+    "OpenAiServicesConfiguration__MentionDeployment"          = azurerm_cognitive_deployment.mention.name
     "OpenAiServicesConfiguration__ServiceUrl"                 = azurerm_cognitive_account.ai_services.endpoint
     "OpenAiServicesConfiguration__ApiKey"                     = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.ai_services_api_key.id})"
 

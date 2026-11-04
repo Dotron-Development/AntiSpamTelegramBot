@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Telegram.Bot" />
+    <InternalsVisibleTo Include="TelegramAntiSpamBot.IntegrationTests" />
   </ItemGroup>
 
   <ItemGroup>

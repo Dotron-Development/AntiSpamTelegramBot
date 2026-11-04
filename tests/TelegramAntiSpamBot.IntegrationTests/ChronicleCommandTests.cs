@@ -125,8 +125,8 @@ public class ChronicleCommandTests
         Assert.Equal(firstId, fixture.Ai.Messages[0].MessageId);
         Assert.Equal(count, fixture.Ai.Messages[^1].MessageId);
         Assert.Equal(1, fixture.Ai.Requests);
-        Assert.Contains("same language", fixture.Ai.Prompt);
-        Assert.Contains("about 200 words", fixture.Ai.Prompt);
+        Assert.Contains("Use the predominant language of substantive discussion", fixture.Ai.Prompt);
+        Assert.Contains("ENTIRE output must stay under 4000 characters", fixture.Ai.Prompt);
         Assert.Equal("Summary", Assert.Single(fixture.Telegram.Texts));
     }
 
@@ -276,7 +276,7 @@ public class ChronicleCommandTests
         Assert.Equal(new[] { 1001, 1002 }, fixture.Ai.Messages!.Select(message => message.MessageId));
         Assert.Equal(latest.AddHours(-1).UtcTicks, fixture.Ai.Messages![0].DateTimeTicks);
         Assert.Equal(latest.UtcTicks, fixture.Ai.Messages[1].DateTimeTicks);
-        Assert.Equal(2, fixture.History.PageReads);
+        Assert.Equal(4, fixture.History.PageReads);
         Assert.Equal(default, fixture.History.To);
     }
 
@@ -295,7 +295,7 @@ public class ChronicleCommandTests
 
         await fixture.ProcessAsync();
 
-        Assert.Equal(3, fixture.History.PageReads);
+        Assert.Equal(10, fixture.History.PageReads);
         Assert.Equal(default, fixture.History.To);
         Assert.Equal(new[] { 1002, 1003 }, fixture.Ai.Messages!.Select(message => message.MessageId));
         Assert.Equal(1, fixture.Ai.Requests);
@@ -311,7 +311,7 @@ public class ChronicleCommandTests
 
         await fixture.ProcessAsync();
 
-        Assert.Equal(2, fixture.History.PageReads);
+        Assert.Equal(5, fixture.History.PageReads);
         Assert.Equal(Enumerable.Range(1401, 100), fixture.Ai.Messages!.Select(message => message.MessageId));
         Assert.Equal(1, fixture.Ai.Requests);
     }

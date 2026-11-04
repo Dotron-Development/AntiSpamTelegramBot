@@ -118,6 +118,20 @@ variable "chronicle" {
   }
 }
 
+variable "mention" {
+  description = "The configuration of the separate bot-mention reply deployment."
+  type = object({
+    name     = string
+    version  = string
+    capacity = number
+  })
+  default = {
+    name     = "gpt-6.1-terra"
+    version  = "2026-10-26"
+    capacity = 10
+  }
+}
+
 variable "debug_ai_response" {
   description = "Enable debugging of AI responses."
   type        = bool

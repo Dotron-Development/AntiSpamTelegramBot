@@ -4,9 +4,13 @@
     <None Remove="Instructions\ImageAnalysis.md" />
     <None Remove="Instructions\SpamDetectionInstructions.md" />
     <None Remove="Instructions\ChronicleInstructions.md" />
+    <None Remove="Instructions\MentionInstructions.md" />
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Instructions\MentionInstructions.md">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </EmbeddedResource>
     <EmbeddedResource Include="Instructions\ChronicleInstructions.md">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>

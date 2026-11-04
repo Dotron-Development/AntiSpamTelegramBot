@@ -12,37 +12,36 @@ namespace TelegramAntiSpamBot.Commands
         public bool IsCommand(string? message)
         {
             return !string.IsNullOrEmpty(message)
-                   && commands.Any(c => EqualsPredicate(c.Command, message));
+                   && commands.Any(c => c.Matches(message, configuration.BotName));
         }
 
         public async Task ProcessCommand(Update update)
         {
-            if (IsCommand(update.Message?.Text))
+            if (update.Message is { Text: { } text } message && IsCommand(text))
             {
-                var command = commands.First(c => EqualsPredicate(c.Command, update.Message!.Text!));
-                try
+                var command = commands.First(c => c.Matches(text, configuration.BotName));
+                if (command.DeleteInvocation)
                 {
-                    await bot.DeleteMessage(update.Message!.Chat.Id, update.Message.Id);
+                    try
+                    {
+                        await bot.DeleteMessage(message.Chat.Id, message.Id);
+                    }
+                    catch (ApiRequestException exception) when (exception.ErrorCode == 400 &&
+                        string.Equals(exception.Message, "Bad Request: message to delete not found", StringComparison.OrdinalIgnoreCase))
+                    {
+                        logger.LogInformation("Command message {messageId} in chat {chatId} is already absent",
+                            message.Id, message.Chat.Id);
+                    }
                 }
-                catch (ApiRequestException exception) when (exception.ErrorCode == 400 &&
-                    string.Equals(exception.Message, "Bad Request: message to delete not found", StringComparison.OrdinalIgnoreCase))
-                {
-                    logger.LogInformation("Command message {messageId} in chat {chatId} is already absent",
-                        update.Message!.Id, update.Message.Chat.Id);
-                }
-                if (!await calls.TryAcquireAsync(update.Message.Chat.Id, command.Command, DateTimeOffset.UtcNow,
+                if (!await calls.TryAcquireAsync(message.Chat.Id, command.Command, DateTimeOffset.UtcNow,
                     configuration.CommandCooldown))
                 {
                     logger.LogInformation("Skipping command {command} for chat {chatId}: cooldown {cooldown} is active",
-                        command.Command, update.Message.Chat.Id, configuration.CommandCooldown);
+                        command.Command, message.Chat.Id, configuration.CommandCooldown);
                     return;
                 }
                 await command.ProcessAsync(update);
             }
         }
-
-        private bool EqualsPredicate(string command, string message) =>
-            command.Equals(message, StringComparison.InvariantCultureIgnoreCase) ||
-            $"{command}{configuration.BotName}".Equals(message, StringComparison.InvariantCultureIgnoreCase);
     }
 }

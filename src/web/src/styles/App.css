@@ -53,6 +53,7 @@
 
 .workspace-tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 20px;
     border-bottom: 1px solid var(--line);
     margin-bottom: 26px;
@@ -75,6 +76,97 @@
 .workspace-tabs button[aria-selected="true"] {
     color: var(--green-dark);
     border-bottom-color: var(--green);
+}
+
+.mention-preview {
+    max-width: 800px;
+}
+
+.mention-description {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.7;
+    margin-bottom: 24px;
+}
+
+.mention-fields {
+    border: 0;
+    padding: 0;
+    margin: 0 0 24px;
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+}
+
+.mention-fields label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.mention-fields textarea {
+    width: 100%;
+    min-width: 0;
+    resize: vertical;
+    border: 1px solid #cfd9d3;
+    border-radius: 5px;
+    padding: 12px;
+    background: white;
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.mention-fields textarea:focus {
+    outline: 2px solid #a4d1bf;
+    outline-offset: 1px;
+    border-color: var(--green);
+}
+
+.mention-hint {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.mention-authors {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.mention-authors label {
+    margin-bottom: 8px;
+}
+
+.mention-fields .mention-reply-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.mention-reply-toggle input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--green);
+}
+
+.mention-reply-fields {
+    display: grid;
+    gap: 12px;
+    padding-left: 16px;
+    border-left: 2px solid var(--green);
+}
+
+.mention-fields .button {
+    justify-self: start;
+}
+
+@media (max-width: 600px) {
+    .mention-authors {
+        grid-template-columns: 1fr;
+    }
 }
 
 .records-toolbar {

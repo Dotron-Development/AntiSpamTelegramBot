@@ -10,6 +10,7 @@ namespace TelegramAntiSpamBot.OpenAI
         [Required]
         public required string SpamRecognitionDeployment { get; init; }
         public string ChronicleDeployment { get; init; } = "chronicle";
+        public string MentionDeployment { get; init; } = "mention";
 
         /// <summary>
         /// Optional. If specified, the application will use this Managed Identity to access Open AI services.

@@ -45,6 +45,12 @@ Preview uses `POST /api/review/chronicle/{chatId}` and shares the per-chat `/chr
 
 The catalog is loaded automatically on startup, following all continuation pages. It starts empty and fills as the bot receives new or edited messages. The backend creates its `Chats` table on the first successful write; the Function identity must have permission to create it. The configured moderation archive chat is excluded. Existing review entries are not used to backfill chat names.
 
+## Test mention command
+
+Open **Test mention** to try `@botname` without selecting a chat or posting to Telegram. Enter the text after the bot name in **Question**; an empty question tests a bare mention. The question author's name and username are optional. Enable **Include Telegram reply context** to supply only the explicit reply's author and text/caption. No preceding chat history is read, and disabling the checkbox omits reply context even if its fields were previously filled.
+
+**Generate answer** calls `POST /api/review/mention` using the same AI service and embedded prompt as Telegram. It does not check or consume command cooldown or write to `CommandsCall`. The inline result displays safe, copyable Markdown source; Telegram formatting is applied only when the actual command posts a message. Fields and navigation are locked during generation. Failures preserve the input and allow a manual retry; there are no automatic retries. The new backend endpoint must be deployed before the form can generate an answer. Existing Easy Auth and CORS protections apply.
+
 ## Review
 
 - Select a message to see its original text/caption, image transcription, sender name and `@nick` when available, sender ID, and original UTC date.

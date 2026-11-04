@@ -112,6 +112,24 @@ export interface TablePage<T> {
   continuationToken: string | null
 }
 
+export interface MentionPreviewRequest {
+  question: string
+  fromName?: string
+  fromUsername?: string
+  replyTo?: { name?: string; username?: string; text: string }
+}
+
+export interface MentionPreview {
+  answer: string
+}
+
+export function parseMentionPreview(text: string): MentionPreview {
+  const data = JSON.parse(text) as MentionPreview
+  if (typeof data.answer !== 'string' || !data.answer.trim())
+    throw new Error('Mention returned an empty or invalid response.')
+  return data
+}
+
 export interface ChroniclePreview {
   chatId: string
   summary: string | null

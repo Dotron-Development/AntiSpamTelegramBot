@@ -6,6 +6,7 @@ import { DecisionDialog } from './components/DecisionDialog'
 import { LastReview } from './components/LastReview'
 import { MessageDetails } from './components/MessageDetails'
 import { MessageQueue } from './components/MessageQueue'
+import { MentionPreview } from './components/MentionPreview'
 import { QueryForm } from './components/QueryForm'
 import { RestrictionsDialog } from './components/RestrictionsDialog'
 import { RecordsTable } from './components/RecordsTable'
@@ -19,10 +20,11 @@ import { currentAccount, signOut } from './lib/auth'
 import './styles/App.css'
 
 function App() {
-    const [view, setView] = useState<'queue' | 'calls' | 'history'>('queue')
+    const [view, setView] = useState<'queue' | 'calls' | 'history' | 'mention'>('queue')
     const [notice, setNotice] = useState<Notice | null>(null)
     const [preview, setPreview] = useState<{ chatId: string; summary: string } | null>(null)
     const [generating, setGenerating] = useState(false)
+    const [mentionGenerating, setMentionGenerating] = useState(false)
     const previewRequest = useRef<AbortController | null>(null)
     useEffect(() => () => previewRequest.current?.abort(), [])
     const chats = useChats(connection, setNotice)
@@ -30,9 +32,9 @@ function App() {
     const moderation = useModeration(connection, setNotice, queue.remove)
     const calls = useTablePage(connection, setNotice, getCommandCalls, row => `${row.chatId}:${row.command}`)
     const history = useTablePage(connection, setNotice, getHistory, row => `${row.chatId}:${row.messageId}`)
-    const locked = queue.loading || moderation.working || chats.loading || calls.loading || history.loading || generating
+    const locked = queue.loading || moderation.working || chats.loading || calls.loading || history.loading || generating || mentionGenerating
     const records = view === 'history' ? history : calls
-    const title = view === 'queue' ? 'Review queue' : view === 'calls' ? 'Command calls' : 'Message history'
+    const title = view === 'queue' ? 'Review queue' : view === 'calls' ? 'Command calls' : view === 'history' ? 'Message history' : 'Test mention command'
     const hasMore = !!queue.continuationToken
 
     function load(query: QueueQuery) {
@@ -98,6 +100,7 @@ function App() {
                 <button role="tab" aria-selected={view === 'queue'} disabled={locked} onClick={() => { setView('queue'); setNotice(null) }}><ListChecks size={16} />Review queue</button>
                 <button role="tab" aria-selected={view === 'calls'} disabled={locked} onClick={() => { setView('calls'); setNotice(null) }}><Terminal size={16} />Command calls</button>
                 <button role="tab" aria-selected={view === 'history'} disabled={locked} onClick={() => { setView('history'); setNotice(null) }}><History size={16} />Message history</button>
+                <button role="tab" aria-selected={view === 'mention'} disabled={locked} onClick={() => { setView('mention'); setNotice(null) }}><Sparkles size={16} />Test mention</button>
             </nav>
             <section className="page-heading">
                 <div><div className="eyebrow">TELEGRAM MODERATION</div><h1>{title}<span className="heading-dot">.</span></h1></div>
@@ -111,10 +114,10 @@ function App() {
                 </button>}
             </section>
 
-            <QueryForm chats={chats.chats} chatId={chats.chatId} endpoint={connection.endpoint}
+            {view !== 'mention' && <QueryForm chats={chats.chats} chatId={chats.chatId} endpoint={connection.endpoint}
                 busy={locked} chatsLoading={chats.loading} loading={view === 'queue' ? queue.loading : records.loading}
                 submitLabel={view === 'queue' ? 'Load queue' : 'Load records'} itemLabel={view === 'calls' ? 'calls' : 'messages'}
-                onChatChange={chatId => { chats.setChatId(chatId); setPreview(null) }} onRefresh={chats.refresh} onSubmit={load} />
+                onChatChange={chatId => { chats.setChatId(chatId); setPreview(null) }} onRefresh={chats.refresh} onSubmit={load} />}
 
             {notice && <div className={`notice ${notice.error ? 'error' : 'success'}`} role={notice.error ? 'alert' : 'status'}>
                 {notice.error ? <CircleAlert size={17} /> : <Check size={17} />}<span>{notice.text}</span>
@@ -129,7 +132,8 @@ function App() {
                 </div><div className="chronicle-preview-text">{preview.summary}</div>
             </section>}
 
-            {view === 'queue' ? <section className="workspace" aria-label="Message review workspace">
+            {view === 'mention' ? <MentionPreview connection={connection} busy={locked} onBusyChange={setMentionGenerating} onCopy={copy} />
+                : view === 'queue' ? <section className="workspace" aria-label="Message review workspace">
                 <MessageQueue messages={queue.messages} selected={queue.selected} query={queue.query}
                     loading={queue.loading} working={moderation.working} busy={locked} hasLoaded={queue.hasLoaded}
                     hasMore={hasMore} onSelect={queue.select} onLoadMore={queue.loadMore}
