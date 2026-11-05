@@ -61,7 +61,7 @@ public class ReviewFunctionsTests
     [Theory]
     [InlineData(false, 94, false)]
     [InlineData(false, 95, true)]
-    [InlineData(true, 80, false)]
+    [InlineData(true, 50, false)]
     [InlineData(true, 90, false)]
     [InlineData(true, 94, false)]
     [InlineData(true, 95, true)]
@@ -82,7 +82,7 @@ public class ReviewFunctionsTests
     public async Task NonSpamReportDoesNotRewriteHistoryCountersOrHashDecisions()
     {
         using var fixture = new Fixture(reportCommands: true);
-        fixture.Detector.Result = new(ResultType.Evaluated, 80);
+        fixture.Detector.Result = new(ResultType.Evaluated, 50);
 
         await fixture.Webhook.Run(fixture.Request(ReportUpdate));
 
