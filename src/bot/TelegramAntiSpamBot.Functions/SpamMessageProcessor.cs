@@ -29,7 +29,7 @@ namespace TelegramAntiSpamBot.Functions
                     new HistoryMessageContent(GetHistoryAuthor(message),
                         message.ReplyToMessage is { } reply
                             ? new HistoryMessageReply(reply.MessageId, GetHistoryAuthor(reply),
-                                reply.Text ?? reply.Caption ?? string.Empty)
+                                GetMessageText(reply))
                             : null,
                         payload), updateType switch
                         {
@@ -51,7 +51,7 @@ namespace TelegramAntiSpamBot.Functions
             try
             {
                 var isSpam = false;
-                var originalText = message.Text ?? message.Caption ?? string.Empty;
+                var originalText = GetMessageText(message);
 
                 var imageUrl = message.Chat.Id != botConfig.Value.ForwardSpamToChatId
                     ? await ExtractUrlImageFromMessage(message)
@@ -211,7 +211,7 @@ namespace TelegramAntiSpamBot.Functions
             var from = new ReviewMessageFrom(string.Join(" ", new[] { user.FirstName, user.LastName }
                 .Where(part => !string.IsNullOrWhiteSpace(part))), user.Username);
             var replyTo = message.ReplyToMessage is { } reply
-                ? new ReviewMessageReplyTo(reply.MessageId, GetReviewFrom(reply), reply.Text ?? reply.Caption ?? string.Empty)
+                ? new ReviewMessageReplyTo(reply.MessageId, GetReviewFrom(reply), GetMessageText(reply))
                 : null;
 
             await probablySpamRepository.SaveReviewMessageAsync(new ReviewMessage(chatId, message.MessageId,
@@ -223,6 +223,27 @@ namespace TelegramAntiSpamBot.Functions
             {
                 await bot.SendMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), spamDetectionResult.Explanation);
             }
+        }
+
+        private static string GetMessageText(Message message)
+        {
+            var text = message.Text ?? message.Caption ?? string.Empty;
+            var entities = message.Text is not null ? message.Entities : message.CaptionEntities;
+            if (entities is null)
+                return text;
+
+            // Telegram entity offsets and .NET string indices both use UTF-16 code units.
+            foreach (var entity in entities
+                .Where(entity => entity.Type == MessageEntityType.TextLink && !string.IsNullOrWhiteSpace(entity.Url)
+                    && entity.Offset >= 0 && entity.Length > 0 && entity.Offset <= text.Length
+                    && entity.Length <= text.Length - entity.Offset)
+                .DistinctBy(entity => (entity.Offset, entity.Length, entity.Url))
+                .OrderByDescending(entity => entity.Offset + entity.Length))
+            {
+                text = text.Insert(entity.Offset + entity.Length, $" ({entity.Url})");
+            }
+
+            return text;
         }
 
         private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;

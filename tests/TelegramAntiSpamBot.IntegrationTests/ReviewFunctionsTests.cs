@@ -155,6 +155,125 @@ public class ReviewFunctionsTests
         Assert.Empty(fixture.History);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task HiddenLinksReachSpamDetectionHistoryAndReview(bool caption, bool spam)
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.Result = new(ResultType.Evaluated, spam ? 99 : 10);
+        var update = JsonNode.Parse(caption ? PhotoUpdate : ReportUpdate)!;
+        if (!caption)
+            update["message"] = update["message"]!["reply_to_message"]!.DeepClone();
+        var message = update["message"]!;
+        const string text = "😀 Discuss Qwen in Polzastas and Documentation for details";
+        const string chatUrl = "https://t.me/+qVhOdjhm7sRhZjg6";
+        const string docsUrl = "https://example.test/docs";
+        message[caption ? "caption" : "text"] = text;
+        message[caption ? "caption_entities" : "entities"] = new JsonArray(
+            new JsonObject { ["type"] = "text_link", ["offset"] = text.IndexOf("Polzastas", StringComparison.Ordinal),
+                ["length"] = "Polzastas".Length, ["url"] = chatUrl },
+            new JsonObject { ["type"] = "text_link", ["offset"] = text.IndexOf("Documentation", StringComparison.Ordinal),
+                ["length"] = "Documentation".Length, ["url"] = docsUrl });
+        var expected = text.Replace("Polzastas", $"Polzastas ({chatUrl})")
+            .Replace("Documentation", $"Documentation ({docsUrl})");
+
+        await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        Assert.Equal(expected, fixture.Detector.ClassifiedPayload!.UserMessage);
+        if (spam)
+            Assert.Equal(expected, fixture.SavedMessage!.Message);
+        else
+            Assert.Equal(expected, Assert.Single(fixture.History).Content.Payload.UserMessage);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StoredReplyContextRetainsHiddenLinks(bool spam)
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.Result = new(ResultType.Evaluated, spam ? 99 : 10);
+        var update = JsonNode.Parse(ReportUpdate)!;
+        update["message"]!["text"] = "Discuss the linked Qwen cases in this message";
+        var target = update["message"]!["reply_to_message"]!;
+        target["text"] = "Polzastas";
+        target["entities"] = JsonNode.Parse("""
+            [{"type":"text_link","offset":0,"length":9,"url":"https://t.me/example"}]
+            """);
+
+        await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        var replyText = spam ? fixture.SavedMessage!.ReplyTo!.Text : Assert.Single(fixture.History).Content.ReplyTo!.Text;
+        Assert.Equal("Polzastas (https://t.me/example)", replyText);
+    }
+
+    [Fact]
+    public async Task ReportRecheckIncludesHiddenReplyLinks()
+    {
+        using var fixture = new Fixture(reportCommands: true);
+        var update = JsonNode.Parse(ReportUpdate)!;
+        var target = update["message"]!["reply_to_message"]!;
+        target["text"] = "Polzastas";
+        target["entities"] = JsonNode.Parse("""
+            [{"type":"text_link","offset":0,"length":9,"url":"https://t.me/example"}]
+            """);
+
+        await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        Assert.True(fixture.Detector.IsReported);
+        Assert.Equal("Polzastas (https://t.me/example)", fixture.Detector.ClassifiedPayload!.UserMessage);
+    }
+
+    [Fact]
+    public async Task HiddenLinksIgnoreInvalidEntitiesAndDuplicateAnnotations()
+    {
+        using var fixture = new Fixture();
+        fixture.Detector.Result = new(ResultType.Evaluated, 10);
+        var update = JsonNode.Parse(ReportUpdate)!;
+        update["message"] = update["message"]!["reply_to_message"]!.DeepClone();
+        update["message"]!["text"] = "Polzastas";
+        update["message"]!["entities"] = JsonNode.Parse("""
+            [
+              {"type":"text_link","offset":0,"length":9,"url":"https://t.me/example"},
+              {"type":"text_link","offset":0,"length":9,"url":"https://t.me/example"},
+              {"type":"bold","offset":0,"length":9},
+              {"type":"url","offset":0,"length":9},
+              {"type":"text_link","offset":-1,"length":9,"url":"https://t.me/invalid"},
+              {"type":"text_link","offset":0,"length":0,"url":"https://t.me/invalid"},
+              {"type":"text_link","offset":0,"length":2147483647,"url":"https://t.me/invalid"},
+              {"type":"text_link","offset":2147483647,"length":1,"url":"https://t.me/invalid"},
+              {"type":"text_link","offset":0,"length":9}
+            ]
+            """);
+
+        await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        Assert.Equal("Polzastas (https://t.me/example)", fixture.Detector.ClassifiedPayload!.UserMessage);
+        Assert.Equal(fixture.Detector.ClassifiedPayload, Assert.Single(fixture.History).Content.Payload);
+    }
+
+    [Fact]
+    public async Task HiddenLinkDestinationsAffectCacheHashes()
+    {
+        using var first = new Fixture();
+        using var second = new Fixture();
+        first.Detector.Result = second.Detector.Result = new(ResultType.Evaluated, 10);
+        var update = JsonNode.Parse(ReportUpdate)!;
+        update["message"] = update["message"]!["reply_to_message"]!.DeepClone();
+        update["message"]!["text"] = "Some interesting Qwen cases in Polzastas";
+        update["message"]!["entities"] = JsonNode.Parse("""
+            [{"type":"text_link","offset":31,"length":9,"url":"https://t.me/alpha"}]
+            """);
+
+        await first.Webhook.Run(first.Request(update.ToJsonString()));
+        await second.Webhook.Run(second.Request(update.ToJsonString().Replace("https://t.me/alpha", "https://t.me/beta")));
+
+        Assert.NotEqual(Assert.Single(first.HashDecisions).Hash, Assert.Single(second.HashDecisions).Hash);
+    }
+
     [Fact]
     public async Task ChroniclePreviewDoesNotRecordCallsOrPostToTelegram()
     {

@@ -52,7 +52,9 @@ These thresholds are currently implemented in [AntiSpamBotWebHook.cs](src/bot/Te
 
 ### Message normalization and caching
 
-AI receives `{ "Message": { "UserMessage"?: string, "ImageText"?: string, "ImageDescription"?: string }, "UserMessageCount": integer }`, not flattened text. History stores the same typed payload in `Content.Payload`, alongside `From` and `ReplyTo`; history does not store `UserMessageCount`. The cache applies [MessageContentSanitizer.cs](src/bot/TelegramAntiSpamBot.Persistence/MessageContentSanitizer.cs) independently to each payload field; the review queue preserves the original text:
+AI receives `{ "Message": { "UserMessage"?: string, "ImageText"?: string, "ImageDescription"?: string }, "UserMessageCount": integer }`, not flattened text. History stores the same typed payload in `Content.Payload`, alongside `From` and `ReplyTo`; history does not store `UserMessageCount`. Hidden Telegram `text_link` URLs from `Entities` (text) and `CaptionEntities` (captions) are exposed inline as `label (URL)` before spam detection, including `/report` rechecks. AI input, cache hashes, stored history, review text and stored reply context retain these URLs; messages without hidden links are unchanged. Entity offsets are interpreted as UTF-16 indices, matching Telegram and .NET. Invalid ranges are ignored and duplicate entities are expanded only once. Links are not fetched.
+
+The cache applies [MessageContentSanitizer.cs](src/bot/TelegramAntiSpamBot.Persistence/MessageContentSanitizer.cs) independently to each payload field; the review queue preserves the text with hidden URLs exposed:
 
 - Apply Unicode NFKC normalization and invariant lowercase conversion.
 - Remove whitespace, supported emoji ranges, invisible formatting/control characters, and variation selectors.
