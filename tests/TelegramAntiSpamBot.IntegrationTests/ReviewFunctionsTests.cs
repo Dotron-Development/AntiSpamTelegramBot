@@ -58,11 +58,31 @@ public class ReviewFunctionsTests
         Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
     }
 
+    [Theory]
+    [InlineData(false, 94, false)]
+    [InlineData(false, 95, true)]
+    [InlineData(true, 80, false)]
+    [InlineData(true, 90, false)]
+    [InlineData(true, 94, false)]
+    [InlineData(true, 95, true)]
+    public async Task SpamModerationStartsAtNinetyFivePercent(bool reported, int probability, bool spam)
+    {
+        using var fixture = new Fixture(reportCommands: reported);
+        fixture.Detector.Result = new(ResultType.Evaluated, probability);
+
+        await fixture.Webhook.Run(fixture.Request(reported ? ReportUpdate : PhotoUpdate));
+
+        Assert.Equal(reported, fixture.Detector.IsReported);
+        Assert.Equal(spam, fixture.SavedMessage is not null);
+        Assert.Equal(spam, fixture.Telegram.Calls.Any(call => call.Method == "restrictchatmember"));
+        Assert.Equal(spam ? 1 : 0, fixture.SpamStatsUpdates);
+    }
+
     [Fact]
     public async Task NonSpamReportDoesNotRewriteHistoryCountersOrHashDecisions()
     {
         using var fixture = new Fixture(reportCommands: true);
-        fixture.Detector.Result = new(ResultType.Evaluated, 90);
+        fixture.Detector.Result = new(ResultType.Evaluated, 80);
 
         await fixture.Webhook.Run(fixture.Request(ReportUpdate));
 
