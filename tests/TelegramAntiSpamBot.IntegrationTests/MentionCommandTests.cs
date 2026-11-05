@@ -167,6 +167,137 @@ public class MentionCommandTests
         Assert.Equal(fixture.Ai.Answer, await fixture.Service.GenerateAsync(new("Question", null, null)));
     }
 
+    [Fact]
+    public async Task WithoutReplySendsTenLatestMessagesBeforeQuestionAcrossPages()
+    {
+        using var fixture = new Fixture();
+        fixture.History.Messages.AddRange(Enumerable.Range(980, 23).Select(History));
+        fixture.History.Messages.Add(History(999) with { ChatId = -200 });
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Equal(Enumerable.Range(990, 10), fixture.Ai.Input!.Context!.Select(item => item.MessageId));
+        Assert.True(fixture.History.PageCalls > 1);
+    }
+
+    [Fact]
+    public async Task ReplySendsTenMessagesOnEachSideWithoutTargetQuestionOrFutureMessages()
+    {
+        using var fixture = new Fixture();
+        fixture.Update.Message!.ReplyToMessage = new Message { Id = 980, Text = "Target" };
+        fixture.History.Messages.AddRange(Enumerable.Range(965, 40).Select(History));
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Equal(Enumerable.Range(970, 10).Concat(Enumerable.Range(981, 10)),
+            fixture.Ai.Input!.Context!.Select(item => item.MessageId));
+        Assert.Equal("Target", fixture.Ai.Input.ReplyTo!.Text);
+        Assert.Contains("Focus specifically on Question and its explicit ReplyTo", fixture.Ai.Prompt);
+        Assert.Contains("Nearby messages may be entirely unrelated", fixture.Ai.Prompt);
+    }
+
+    [Fact]
+    public async Task ReplyUsesIndependentLimitsEvenWhenTargetIsMissingFromHistory()
+    {
+        using var fixture = new Fixture();
+        fixture.Update.Message!.ReplyToMessage = new Message { Id = 997, Text = "Target" };
+        fixture.History.Messages.AddRange(Enumerable.Range(980, 17).Select(History));
+        fixture.History.Messages.AddRange(Enumerable.Range(998, 2).Select(History));
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Equal(Enumerable.Range(987, 10).Concat(Enumerable.Range(998, 2)),
+            fixture.Ai.Input!.Context!.Select(item => item.MessageId));
+    }
+
+    [Fact]
+    public async Task ContextUsesLatestHistoryMessagesAndPreservesPayloadAndMetadata()
+    {
+        using var fixture = new Fixture();
+        var author = new HistoryMessageAuthor(2, "Boris", "boris");
+        var reply = new HistoryMessageReply(40, author, "Nested reply");
+        fixture.History.Messages.Add(History(998) with
+        {
+            UpdateId = 20, UpdateType = HistoryUpdateType.EditedMessage,
+            Content = new(author, reply, "Updated caption")
+        });
+        fixture.History.Messages.Add(History(998) with { UpdateId = 10 });
+        fixture.History.Messages.Add(History(999) with
+        {
+            Content = new(null, null, new MessagePayload(ImageDescription: "Image only", ImageText: "Extracted text"))
+        });
+        fixture.History.Messages.Add(History(997) with { Content = new(null, null, new MessagePayload()) });
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        var context = fixture.Ai.Input!.Context!;
+        Assert.Equal(new[] { 998, 999 }, context.Select(item => item.MessageId));
+        Assert.Equal(fixture.History.Messages[0], context[0]);
+        Assert.Equal(fixture.History.Messages[2], context[1]);
+        Assert.Equal(author, context[0].Content.From);
+        Assert.Equal(reply, context[0].Content.ReplyTo);
+        Assert.Equal("Updated caption", context[0].Content.Payload.UserMessage);
+        Assert.Equal(HistoryUpdateType.EditedMessage, context[0].UpdateType);
+        Assert.Equal(20, context[0].UpdateId);
+        Assert.Equal("Image only", context[1].Content.Payload.ImageDescription);
+        Assert.Equal("Extracted text", context[1].Content.Payload.ImageText);
+    }
+
+    [Fact]
+    public async Task ContextPreservesFullTextAndNestedReply()
+    {
+        using var fixture = new Fixture();
+        var text = new string('a', 3996) + "😀" + new string('b', 100);
+        var replyText = new string('a', 1996) + "😀" + new string('b', 100);
+        fixture.History.Messages.Add(History(999) with
+        {
+            Content = new(null, new HistoryMessageReply(42, null, replyText), text)
+        });
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        var context = Assert.Single(fixture.Ai.Input!.Context!);
+        Assert.Equal(text, context.Content.Payload.UserMessage);
+        Assert.Equal(replyText, context.Content.ReplyTo!.Text);
+    }
+
+    [Fact]
+    public async Task HistoryFailureStillAnswersQuestionAndReplyWithoutContext()
+    {
+        using var fixture = new Fixture();
+        fixture.History.Fail = true;
+        fixture.Update.Message!.ReplyToMessage = new Message { Id = 42, Text = "Target" };
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Empty(fixture.Ai.Input!.Context!);
+        Assert.Equal("Question", fixture.Ai.Input.Question);
+        Assert.Equal("Target", fixture.Ai.Input.ReplyTo!.Text);
+        Assert.Single(fixture.Telegram.Sent);
+    }
+
+    private static HistoryMessage History(int id) => new(-100, id,
+        new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(id).Ticks,
+        new(null, null, "Message " + id));
+
+    private sealed class HistoryStub : IMessageHistoryRepository
+    {
+        public List<HistoryMessage> Messages { get; } = [];
+        public int PageCalls { get; private set; }
+        public bool Fail { get; set; }
+        public Task<HistoryMessagePage> GetPageAsync(long? chatId, int pageSize, string? continuationToken,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.Equal(-100, chatId);
+            PageCalls++;
+            if (Fail)
+                throw new InvalidOperationException("History unavailable");
+            var offset = continuationToken is null ? 0 : int.Parse(continuationToken);
+            var items = Messages.Skip(offset).Take(7).ToArray();
+            var next = offset + items.Length;
+            return Task.FromResult(new HistoryMessagePage(items, next < Messages.Count ? next.ToString() : null));
+        }
+        public Task SaveAsync(HistoryMessage message, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public IAsyncEnumerable<HistoryMessage> GetAsync(long chatId, DateTimeOffset from, DateTimeOffset to,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<int> TrimAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly HttpClient telegramHttp;
@@ -175,6 +306,7 @@ public class MentionCommandTests
         public TelegramHandler Telegram { get; } = new();
         public AiHandler Ai { get; } = new();
         public CallsStub Calls { get; } = new();
+        public HistoryStub History { get; } = new();
         public ICommandProcessor Processor => services.GetRequiredService<ICommandProcessor>();
         public IMentionService Service => services.GetRequiredService<IMentionService>();
         public Update Update { get; } = new()
@@ -193,6 +325,7 @@ public class MentionCommandTests
             var collection = new ServiceCollection().AddLogging().AddOpenAiService().AddCommands()
                 .AddSingleton<ITelegramBotClient>(new TelegramBotClient("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk", telegramHttp))
                 .AddSingleton<ICommandCallsRepository>(Calls)
+                .AddSingleton<IMessageHistoryRepository>(History)
                 .AddKeyedSingleton<ChatClient>("Mention", client);
             collection.AddSingleton<IOptions<TelegramBotConfiguration>>(Options.Create(new TelegramBotConfiguration
             {

@@ -8,7 +8,7 @@ internal sealed class MentionService(
     {
         var prompt = await instructions.GetMentionInstructions();
         var completion = await client.CompleteChatAsync(
-            [new SystemChatMessage(prompt), new UserChatMessage(JsonSerializer.Serialize(request))],
+            [new SystemChatMessage(prompt), new UserChatMessage(JsonSerializer.Serialize(request with { Context = request.Context ?? [] }))],
             new ChatCompletionOptions(), cancellationToken);
 
         var answer = string.Join("\n", completion.Value.Content.Select(part => part.Text)
