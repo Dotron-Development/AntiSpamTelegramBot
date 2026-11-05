@@ -9,6 +9,9 @@
                .ValidateDataAnnotations()
                .ValidateOnStart();
 
+            serviceCollection.AddScoped<SpamMessageProcessor>();
+            serviceCollection.AddScoped<IReportedMessageProcessor>(provider => provider.GetRequiredService<SpamMessageProcessor>());
+
             serviceCollection.AddScoped<ITelegramBotClient>(provider =>
             {
                 var configuration = provider.GetRequiredService<IOptions<TelegramBotConfiguration>>().Value;

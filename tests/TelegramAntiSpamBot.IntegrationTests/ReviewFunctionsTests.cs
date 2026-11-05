@@ -1,8 +1,160 @@
+using System.Text.Json.Nodes;
 
 namespace TelegramAntiSpamBot.IntegrationTests;
 
 public class ReviewFunctionsTests
 {
+    private const string ReportUpdate = """
+        {"update_id":20,"message":{"message_id":8,"date":1700000001,
+        "chat":{"id":-100,"type":"supergroup","title":"Test"},
+        "from":{"id":99,"is_bot":false,"first_name":"Reporter"},"text":"/report",
+        "reply_to_message":{"message_id":7,"date":1700000000,
+        "chat":{"id":-100,"type":"supergroup"},
+        "from":{"id":42,"is_bot":false,"first_name":"Alice"},"text":"Hi"}}}
+        """;
+
+    [Theory]
+    [InlineData("/report")]
+    [InlineData("/REPORT")]
+    [InlineData("/report@TestBot")]
+    public async Task TrustedReportRechecksShortMessageAndEstablishedSenderWithoutCache(string command)
+    {
+        using var fixture = new Fixture(reportCommands: true)
+        {
+            TargetMessageCount = 150,
+            Shortcut = ShortcutCheckResult.NotSpam
+        };
+
+        var response = await fixture.Webhook.Run(fixture.Request(ReportUpdate.Replace("/report", command)));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal("Hi", fixture.Detector.ClassifiedPayload!.UserMessage);
+        Assert.True(fixture.Detector.IsReported);
+        Assert.Equal(150, fixture.Detector.UserMessageCount);
+        Assert.Equal(0, fixture.HashChecks);
+        Assert.Equal(0, fixture.CounterIncreases);
+        Assert.Empty(fixture.History);
+        Assert.Equal("/report", fixture.PreviewCall!.Value.Command);
+        Assert.Equal(7, fixture.SavedMessage!.MessageId);
+        Assert.Equal(42, fixture.SavedMessage.UserId);
+        var restriction = Assert.Single(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
+        Assert.Equal(42, restriction.Body.GetProperty("user_id").GetInt64());
+        Assert.Equal(1, fixture.SpamStatsUpdates);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(30)]
+    public async Task ReportRequiresMoreThanThirtyMessages(int count)
+    {
+        using var fixture = new Fixture(reportCommands: true) { ReporterMessageCount = count };
+
+        await fixture.Webhook.Run(fixture.Request(ReportUpdate));
+
+        Assert.Null(fixture.Detector.ClassifiedPayload);
+        Assert.Null(fixture.SavedMessage);
+        Assert.Empty(fixture.History);
+        Assert.Equal(0, fixture.CounterIncreases);
+        Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
+    }
+
+    [Fact]
+    public async Task NonSpamReportDoesNotRewriteHistoryCountersOrHashDecisions()
+    {
+        using var fixture = new Fixture(reportCommands: true);
+        fixture.Detector.Result = new(ResultType.Evaluated, 90);
+
+        await fixture.Webhook.Run(fixture.Request(ReportUpdate));
+
+        Assert.True(fixture.Detector.IsReported);
+        Assert.Null(fixture.SavedMessage);
+        Assert.Empty(fixture.History);
+        Assert.Empty(fixture.HashDecisions);
+        Assert.Equal(0, fixture.CounterIncreases);
+        Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
+    }
+
+    [Fact]
+    public async Task ReportWithoutReplyDoesNotCheckSpam()
+    {
+        using var fixture = new Fixture(reportCommands: true);
+        var update = JsonNode.Parse(ReportUpdate)!;
+        update["message"]!.AsObject().Remove("reply_to_message");
+
+        await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        Assert.Null(fixture.Detector.ClassifiedPayload);
+        Assert.Empty(fixture.History);
+    }
+
+    [Theory]
+    [InlineData("anonymous-reporter")]
+    [InlineData("anonymous-target")]
+    [InlineData("other-chat")]
+    public async Task InvalidReportAuthorsOrChatDoNotCheckSpam(string invalidCase)
+    {
+        using var fixture = new Fixture(reportCommands: true);
+        var update = JsonNode.Parse(ReportUpdate)!;
+        var message = update["message"]!;
+        var target = message["reply_to_message"]!;
+        if (invalidCase == "other-chat")
+            target["chat"]!["id"] = -200;
+        else
+            (invalidCase == "anonymous-reporter" ? message : target)["sender_chat"] =
+                JsonNode.Parse("{\"id\":-100,\"type\":\"supergroup\",\"title\":\"Test\"}");
+
+        await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        Assert.Null(fixture.Detector.ClassifiedPayload);
+        Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
+        Assert.Empty(fixture.History);
+    }
+
+    [Fact]
+    public async Task ReportReanalyzesReplyPhotoWithoutCaption()
+    {
+        using var fixture = new Fixture(reportCommands: true);
+        var update = JsonNode.Parse(ReportUpdate)!;
+        var target = update["message"]!["reply_to_message"]!.AsObject();
+        target.Remove("text");
+        target["photo"] = JsonNode.Parse("[{\"file_id\":\"photo\",\"file_unique_id\":\"unique\",\"width\":100,\"height\":100}]");
+
+        await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        Assert.True(fixture.Detector.IsReported);
+        Assert.Equal(fixture.Detector.ImageContent, fixture.Detector.ClassifiedPayload!.ImageText);
+        Assert.Null(fixture.Detector.ClassifiedPayload.UserMessage);
+        Assert.Equal(7, fixture.SavedMessage!.MessageId);
+        Assert.Empty(fixture.History);
+        Assert.Equal(0, fixture.CounterIncreases);
+    }
+
+    [Fact]
+    public async Task ReportRespectsSharedCommandCooldown()
+    {
+        using var fixture = new Fixture(reportCommands: true) { AllowCommandCall = false };
+
+        await fixture.Webhook.Run(fixture.Request(ReportUpdate));
+
+        Assert.Null(fixture.Detector.ClassifiedPayload);
+        Assert.Equal("/report", fixture.PreviewCall!.Value.Command);
+        Assert.Equal(TimeSpan.FromMinutes(5), fixture.PreviewCall.Value.Cooldown);
+        Assert.Empty(fixture.History);
+    }
+
+    [Fact]
+    public async Task ReportAiFailureDoesNotModerateTarget()
+    {
+        using var fixture = new Fixture(reportCommands: true);
+        fixture.Detector.Result = new(ResultType.Error);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Webhook.Run(fixture.Request(ReportUpdate)));
+
+        Assert.Null(fixture.SavedMessage);
+        Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
+        Assert.Empty(fixture.History);
+    }
+
     [Fact]
     public async Task ChroniclePreviewDoesNotRecordCallsOrPostToTelegram()
     {
@@ -936,8 +1088,12 @@ public class ReviewFunctionsTests
         public bool ChatSaveFails { get; set; }
         public (int PageSize, string? Token)? ChatQuery { get; private set; }
         public int SpamStatsUpdates { get; private set; }
+        public int ReporterMessageCount { get; set; } = 31;
+        public int TargetMessageCount { get; set; }
+        public int CounterIncreases { get; private set; }
+        public int HashChecks { get; private set; }
 
-        public Fixture(TimeSpan? spamRestrictionTimeout = null, TimeSpan? commandCooldown = null)
+        public Fixture(TimeSpan? spamRestrictionTimeout = null, TimeSpan? commandCooldown = null, bool reportCommands = false)
         {
             object? HandleRepositoryCall(MethodInfo method, object?[] arguments)
             {
@@ -972,13 +1128,15 @@ public class ReviewFunctionsTests
                         ChatQuery = ((int)arguments[0]!, (string?)arguments[1]);
                         return Task.FromResult(new ReviewChatPage([new ReviewChat(-100, "Test", DateTimeOffset.UtcNow)], "next-chat"));
                     case nameof(IMessageCountRepository.GetUserMessageCount):
-                        return Task.FromResult(0);
+                        return Task.FromResult((long)arguments[1]! == 99 ? ReporterMessageCount : TargetMessageCount);
                     case nameof(IMessageCountRepository.IncreaseMessageCount):
+                        CounterIncreases++;
                         return Task.CompletedTask;
                     case nameof(ISpamStatsRepository.UpdateChannelSpamStats):
                         SpamStatsUpdates++;
                         return Task.CompletedTask;
                     case nameof(ISpamHashRepository.IsSpam):
+                        HashChecks++;
                         SpamChecked.TrySetResult();
                         return Task.FromResult(Shortcut);
                     case nameof(IProbablySpamRepository.SaveReviewMessageAsync):
@@ -1028,10 +1186,16 @@ public class ReviewFunctionsTests
             Functions = new ReviewFunctions(chatsRepository, probablySpamRepository, spamHashRepository, bot, botConfig);
             HistoryFunctions = new HistoryReviewFunctions(HistoryRepository, CreateRepository<ICommandCallsRepository>(),
                 CreateRepository<IChronicleService>(), NullLogger<HistoryReviewFunctions>.Instance);
+            var processor = new SpamMessageProcessor(NullLogger<SpamMessageProcessor>.Instance,
+                Detector, HistoryRepository, probablySpamRepository, messageCountRepository, spamHashRepository,
+                spamStatsRepository, bot, new TelegramImageUrlResolver(token), botConfig);
+            ICommandProcessor commands = reportCommands
+                ? new CommandProcessor([new TelegramAntiSpamBot.Commands.Commands.ReportCommand(messageCountRepository,
+                    processor, NullLogger<TelegramAntiSpamBot.Commands.Commands.ReportCommand>.Instance)],
+                    botConfig.Value, bot, CreateRepository<ICommandCallsRepository>(), NullLogger<CommandProcessor>.Instance)
+                : Commands;
             Webhook = new AntiSpamBotWebHook(NullLogger<AntiSpamBotWebHook>.Instance,
-                Detector, chatsRepository, HistoryRepository, probablySpamRepository, messageCountRepository, spamHashRepository,
-                spamStatsRepository, bot, new TelegramImageUrlResolver(token), Commands,
-                botConfig);
+                chatsRepository, processor, commands, botConfig);
         }
 
         public HttpRequestData Request(string body = "", string query = "") =>
@@ -1099,8 +1263,13 @@ public class ReviewFunctionsTests
         public string ImageDescription { get; set; } = string.Empty;
         public Task<ImageAnalysisResult> ExtractImageText(string imageUrl) =>
             Task.FromResult(new ImageAnalysisResult { TextOnImage = ImageContent, ImageDescription = ImageDescription });
-        public Task<SpamRequestResult> IsSpamAsync(MessagePayload userMessage, int userMessagesCount, bool explainDecision = false)
+        public bool IsReported { get; private set; }
+        public int UserMessageCount { get; private set; }
+        public Task<SpamRequestResult> IsSpamAsync(MessagePayload userMessage, int userMessagesCount, bool explainDecision = false,
+            bool isReported = false)
         {
+            IsReported = isReported;
+            UserMessageCount = userMessagesCount;
             ClassifiedPayload = userMessage;
             ClassificationStarted.TrySetResult();
             return ClassificationGate?.Task ?? Task.FromResult(Result);

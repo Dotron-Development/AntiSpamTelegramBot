@@ -29,11 +29,12 @@ namespace TelegramAntiSpamBot.OpenAI
         public async Task<SpamRequestResult> IsSpamAsync(
             MessagePayload userMessage,
             int userMessagesCount,
-            bool explainDecision = false)
+            bool explainDecision = false,
+            bool isReported = false)
         {
             try
             {
-                var requestJson = JsonSerializer.Serialize(new SpamDetectionRequest(userMessage, userMessagesCount));
+                var requestJson = JsonSerializer.Serialize(new SpamDetectionRequest(userMessage, userMessagesCount, isReported));
 
                 LogDebugSpamDetectionAiRequest(logger, requestJson);
 

@@ -20,7 +20,7 @@
                 CreateChatClient(provider, config => config.ChronicleDeployment));
 
             serviceCollection.AddKeyedScoped("Mention", (provider, _) =>
-                CreateChatClient(provider, config => config.MentionDeployment));
+                CreateChatClient(provider, config => config.MentionDeployment, CreateMentionClientOptions()));
 
             serviceCollection.AddSingleton<SpamDetectionInstructions>();
             serviceCollection.AddScoped<ISpamDetectionService, SpamDetectionService>();
@@ -29,7 +29,13 @@
             return serviceCollection;
         }
 
-        private static ChatClient CreateChatClient(IServiceProvider provider, Func<OpenAiServicesConfiguration, string> deploymentSelector)
+        internal static AzureOpenAIClientOptions CreateMentionClientOptions() => new()
+        {
+            RetryPolicy = new System.ClientModel.Primitives.ClientRetryPolicy(5)
+        };
+
+        private static ChatClient CreateChatClient(IServiceProvider provider, Func<OpenAiServicesConfiguration, string> deploymentSelector,
+            AzureOpenAIClientOptions? options = null)
         {
             var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>();
             AzureOpenAIClient client;
@@ -37,7 +43,7 @@
             if (!string.IsNullOrEmpty(config.Value.ApiKey))
             {
                 client = new AzureOpenAIClient(
-                  new Uri(config.Value.ServiceUrl), new ApiKeyCredential(config.Value.ApiKey));
+                  new Uri(config.Value.ServiceUrl), new ApiKeyCredential(config.Value.ApiKey), options);
             }
             else
             {
@@ -48,7 +54,7 @@
                         {
                             ManagedIdentityClientId = config.Value.OpenAiIdentityClientId
                         })
-                        : new DefaultAzureCredential());
+                        : new DefaultAzureCredential(), options);
             }
 
             return client.GetChatClient(deploymentSelector(config.Value));

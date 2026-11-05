@@ -3,6 +3,46 @@ namespace TelegramAntiSpamBot.IntegrationTests;
 public class MentionCommandTests
 {
     [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    public async Task MentionRetriesRateLimitAndReturnsAnswer(int failures)
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.RateLimitResponses = failures;
+
+        var answer = await fixture.Service.GenerateAsync(new MentionRequest("Question", null, null));
+
+        Assert.Equal("Answer", answer);
+        Assert.Equal(failures + 1, fixture.Ai.Requests);
+    }
+
+    [Fact]
+    public async Task MentionStopsAfterFiveRetries()
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.RateLimitResponses = 10;
+
+        var exception = await Assert.ThrowsAsync<System.ClientModel.ClientResultException>(() =>
+            fixture.Service.GenerateAsync(new MentionRequest("Question", null, null)));
+
+        Assert.Equal(429, exception.Status);
+        Assert.Equal(6, fixture.Ai.Requests);
+    }
+
+    [Fact]
+    public async Task MentionDoesNotRetryBadRequest()
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.Fail = true;
+
+        var exception = await Assert.ThrowsAsync<System.ClientModel.ClientResultException>(() =>
+            fixture.Service.GenerateAsync(new MentionRequest("Question", null, null)));
+
+        Assert.Equal(400, exception.Status);
+        Assert.Equal(1, fixture.Ai.Requests);
+    }
+
+    [Theory]
     [InlineData("@TestBot")]
     [InlineData("@testbot какая погода?")]
     [InlineData("@TESTBOT\nWhat is this?")]
@@ -320,7 +360,8 @@ public class MentionCommandTests
             aiHttp = new HttpClient(Ai);
             var client = new ChatClient("mention", new ApiKeyCredential("test-only"), new OpenAIClientOptions
             {
-                Endpoint = new Uri("https://mention.example.test"), Transport = new HttpClientPipelineTransport(aiHttp)
+                Endpoint = new Uri("https://mention.example.test"), Transport = new HttpClientPipelineTransport(aiHttp),
+                RetryPolicy = TelegramAntiSpamBot.OpenAI.DependencyInjection.CreateMentionClientOptions().RetryPolicy
             });
             var collection = new ServiceCollection().AddLogging().AddOpenAiService().AddCommands()
                 .AddSingleton<ITelegramBotClient>(new TelegramBotClient("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk", telegramHttp))
@@ -371,6 +412,7 @@ public class MentionCommandTests
         public string Prompt { get; private set; } = "";
         public string Answer { get; set; } = "Answer";
         public bool Fail { get; set; }
+        public int RateLimitResponses { get; set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests++;
@@ -384,6 +426,16 @@ public class MentionCommandTests
             var messages = document.RootElement.GetProperty("messages");
             Prompt = Text(messages[0]);
             Input = JsonSerializer.Deserialize<MentionRequest>(Text(messages[1]));
+            if (Requests <= RateLimitResponses)
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                {
+                    Content = new StringContent("{\"error\":{\"message\":\"Token rate limit exceeded\",\"type\":\"rate_limit_exceeded\"}}",
+                        Encoding.UTF8, "application/json")
+                };
+                response.Headers.Add("retry-after-ms", "1");
+                return response;
+            }
             var json = Fail ? "{\"error\":{\"message\":\"AI unavailable\",\"type\":\"invalid_request_error\"}}" : JsonSerializer.Serialize(new
             {
                 id = "chatcmpl-test", @object = "chat.completion", created = 0, model = "mention",

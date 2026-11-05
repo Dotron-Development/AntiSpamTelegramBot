@@ -23,5 +23,10 @@ chronicle = {
   version  = "2026-10-26"
   capacity = 100
 }
+mention = {
+  name     = "gpt-6.1-terra"
+  version  = "2026-10-26"
+  capacity = 100
+}
 forwardSpamToChatId = "-1002395980780"
 debug_ai_response   = true

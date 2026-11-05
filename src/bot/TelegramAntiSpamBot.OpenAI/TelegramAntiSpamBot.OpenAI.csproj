@@ -1,6 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <InternalsVisibleTo Include="TelegramAntiSpamBot.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Remove="Instructions\ImageAnalysis.md" />
     <None Remove="Instructions\SpamDetectionInstructions.md" />
     <None Remove="Instructions\ChronicleInstructions.md" />
