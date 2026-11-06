@@ -158,7 +158,7 @@ The application binds the following configuration sections. Use double underscor
 | `TelegramBotConfiguration__SecretHeader` | Shared webhook secret passed to Telegram when registering the webhook. Required. |
 | `TelegramBotConfiguration__BotName` | Bot username including `@`, used for command suffix matching. Required. |
 | `TelegramBotConfiguration__ForwardSpamToChatId` | Optional moderation archive chat ID. |
-| `TelegramBotConfiguration__DebugAiResponse` | Enables AI explanations; defaults to `false`. |
+| `TelegramBotConfiguration__DebugAiResponse` | Legacy setting, ignored. Spam classification always requests and returns an explanation using a strict JSON schema. |
 | `TelegramBotConfiguration__CommandCooldown` | Per-chat, per-command cooldown for all Telegram commands in .NET TimeSpan format; default `00:05:00`. Does not apply to UI Chronicle previews. |
 | `OpenAiServicesConfiguration__ServiceUrl` | Azure AI service endpoint. Required. |
 | `OpenAiServicesConfiguration__SpamRecognitionDeployment` | Spam-classification deployment name. Required; Terraform sets `antispam`. |

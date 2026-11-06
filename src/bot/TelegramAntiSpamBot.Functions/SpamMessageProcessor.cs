@@ -115,7 +115,7 @@ namespace TelegramAntiSpamBot.Functions
                         // Step 3.2.
                         // Check message for spam with Open AI
                         var spamDetectionResult = await detectionService.IsSpamAsync(messageContent, userMessageCount,
-                            botConfig.Value.DebugAiResponse, isReported);
+                            isReported: isReported);
 
                         logger.LogInformation("SPAM DETECTION RESULT: {probability}. EXPLANATION: {explanation}",
                             spamDetectionResult.Probability, spamDetectionResult.Explanation);

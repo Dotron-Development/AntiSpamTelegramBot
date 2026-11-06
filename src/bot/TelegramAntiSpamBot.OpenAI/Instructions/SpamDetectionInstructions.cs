@@ -4,18 +4,7 @@
     {
         private static readonly Assembly Assembly = typeof(SpamDetectionInstructions).Assembly;
 
-        public async Task<string> GetSpamDetectionInstructions(bool explainDecision)
-        {
-            var instructions = await FindResource("SpamDetectionInstructions.md");
-
-            if (explainDecision)
-            {
-                instructions += "\n\r- Add step-by-step explanation of the results after output in the following format to the output json with probability. E.g. 1. Character manipulation: х0чешb денег?. 2. Offers to buy a training course: купи мой курс" +
-                                " \"Explanation\": <explanation>";
-            }
-
-            return instructions;
-        }
+        public Task<string> GetSpamDetectionInstructions() => FindResource("SpamDetectionInstructions.md");
 
         public async Task<string> GetImageAnalyzerInstructions()
         {

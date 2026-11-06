@@ -51,13 +51,37 @@ public class ImageAnalysisTests
     [Fact]
     public async Task SpamDetectionSendsTypedPayloadWithoutFlattening()
     {
-        using var fixture = new Fixture("{\"Probability\":10}");
+        using var fixture = new Fixture("{\"Probability\":10,\"Explanation\":\"No severe indicators.\"}");
         var payload = new MessagePayload("A poster", "Full text\nSecond line", "Caption");
 
         var result = await fixture.Detector.IsSpamAsync(payload, 7);
 
         Assert.Equal(ResultType.Evaluated, result.ResultType);
+        Assert.Equal(10, result.Probability);
+        Assert.Equal("No severe indicators.", result.Explanation);
         var request = fixture.Handler.Request!.Value;
+        var format = request.GetProperty("response_format");
+        Assert.Equal("json_schema", format.GetProperty("type").GetString());
+        var jsonSchema = format.GetProperty("json_schema");
+        Assert.Equal("spam_detection", jsonSchema.GetProperty("name").GetString());
+        Assert.True(jsonSchema.GetProperty("strict").GetBoolean());
+        var schema = jsonSchema.GetProperty("schema");
+        Assert.Equal("object", schema.GetProperty("type").GetString());
+        Assert.False(schema.GetProperty("additionalProperties").GetBoolean());
+        Assert.Equal(new[] { "Probability", "Explanation" },
+            schema.GetProperty("required").EnumerateArray().Select(field => field.GetString()));
+        var properties = schema.GetProperty("properties");
+        Assert.Equal(2, properties.EnumerateObject().Count());
+        var probability = properties.GetProperty("Probability");
+        Assert.Equal(new[] { "integer", "null" },
+            probability.GetProperty("type").EnumerateArray().Select(type => type.GetString()));
+        Assert.Equal(0, probability.GetProperty("minimum").GetInt32());
+        Assert.Equal(100, probability.GetProperty("maximum").GetInt32());
+        Assert.Equal("string", properties.GetProperty("Explanation").GetProperty("type").GetString());
+        var systemContent = request.GetProperty("messages")[0].GetProperty("content");
+        var prompt = systemContent.ValueKind == JsonValueKind.String
+            ? systemContent.GetString()! : systemContent[0].GetProperty("text").GetString()!;
+        Assert.Contains("Always include both Probability and a non-empty Explanation", prompt);
         var content = request.GetProperty("messages")[1].GetProperty("content");
         var json = content.ValueKind == JsonValueKind.String
             ? content.GetString()! : content[0].GetProperty("text").GetString()!;
@@ -73,7 +97,7 @@ public class ImageAnalysisTests
     [Fact]
     public async Task ReportedSpamDetectionSendsFlagAndSuspiciousPriorInstructions()
     {
-        using var fixture = new Fixture("{\"Probability\":100}");
+        using var fixture = new Fixture("{\"Probability\":100,\"Explanation\":\"Reported message with spam indicators.\"}");
 
         var result = await fixture.Detector.IsSpamAsync(new MessagePayload(UserMessage: "Reported text"), 150,
             isReported: true);
@@ -101,7 +125,7 @@ public class ImageAnalysisTests
     [Fact]
     public async Task SpamDetectionOmitsMissingOptionalPayloadFields()
     {
-        using var fixture = new Fixture("{\"Probability\":10}");
+        using var fixture = new Fixture("{\"Probability\":10,\"Explanation\":\"No severe indicators.\"}");
         await fixture.Detector.IsSpamAsync(new MessagePayload(UserMessage: "Text only"), 7);
 
         var content = fixture.Handler.Request!.Value.GetProperty("messages")[1].GetProperty("content");
@@ -112,6 +136,83 @@ public class ImageAnalysisTests
         Assert.Equal("Text only", message.GetProperty("UserMessage").GetString());
         Assert.False(message.TryGetProperty("ImageText", out _));
         Assert.False(message.TryGetProperty("ImageDescription", out _));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    public async Task SpamDetectionReturnsExplanationAtScoreBoundaries(int probability)
+    {
+        using var fixture = new Fixture(JsonSerializer.Serialize(new { Probability = probability, Explanation = "Score justification." }));
+
+        var result = await fixture.Detector.IsSpamAsync(new MessagePayload(UserMessage: "Text"), 7);
+
+        Assert.Equal(ResultType.Evaluated, result.ResultType);
+        Assert.Equal(probability, result.Probability);
+        Assert.Equal("Score justification.", result.Explanation);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not JSON")]
+    [InlineData("null")]
+    [InlineData("{\"Probability\":10}")]
+    [InlineData("{\"Probability\":10,\"Explanation\":null}")]
+    [InlineData("{\"Probability\":10,\"Explanation\":\"\"}")]
+    [InlineData("{\"Probability\":10,\"Explanation\":\"   \"}")]
+    [InlineData("{\"Explanation\":\"Missing score\"}")]
+    [InlineData("{\"Probability\":null,\"Explanation\":\"Unable to analyze the content\"}")]
+    [InlineData("{\"Probability\":-1,\"Explanation\":\"Invalid score\"}")]
+    [InlineData("{\"Probability\":101,\"Explanation\":\"Invalid score\"}")]
+    [InlineData("{\"Probability\":10,\"Explanation\":123}")]
+    [InlineData("{\"Probability\":10,\"Explanation\":\"Partial response\"}", "length")]
+    [InlineData(null, "content_filter")]
+    public async Task UnusableSpamResponsesReturnError(string? payload, string finishReason = "stop")
+    {
+        using var fixture = new Fixture(payload, finishReason);
+
+        var result = await fixture.Detector.IsSpamAsync(new MessagePayload(UserMessage: "Text"), 7);
+
+        Assert.Equal(ResultType.Error, result.ResultType);
+        Assert.Null(result.Probability);
+        Assert.NotNull(fixture.Handler.Request);
+    }
+
+    [Fact]
+    public async Task ConcurrentSpamDetectionRequestsUseIndependentOptions()
+    {
+        using var fixture = new Fixture("{\"Probability\":10,\"Explanation\":\"No severe indicators.\"}");
+        var detector = fixture.Detector;
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 32).Select(index =>
+            detector.IsSpamAsync(new MessagePayload(UserMessage: $"Message {index}"), index)));
+
+        Assert.All(results, result =>
+        {
+            Assert.Equal(ResultType.Evaluated, result.ResultType);
+            Assert.Equal("No severe indicators.", result.Explanation);
+        });
+        Assert.Equal(32, fixture.Client.Options.Count);
+        Assert.Equal(32, fixture.Client.Options.Distinct(ReferenceEqualityComparer.Instance).Count());
+        Assert.Equal(32, fixture.Client.Options.Select(options => options.ResponseFormat)
+            .Distinct(ReferenceEqualityComparer.Instance).Count());
+    }
+
+    [Fact]
+    public async Task ConcurrentImageAnalysisRequestsUseIndependentOptions()
+    {
+        using var fixture = new Fixture("{\"TextOnImage\":\"Text\",\"ImageDescription\":\"A poster\"}");
+        var detector = fixture.Detector;
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 32).Select(index =>
+            detector.ExtractImageText($"https://images.example.test/photo-{index}.jpg")));
+
+        Assert.All(results, result => Assert.Equal("A poster\nText", result.ToMessageContent()));
+        Assert.Equal(32, fixture.Client.Options.Count);
+        Assert.Equal(32, fixture.Client.Options.Distinct(ReferenceEqualityComparer.Instance).Count());
+        Assert.Equal(32, fixture.Client.Options.Select(options => options.ResponseFormat)
+            .Distinct(ReferenceEqualityComparer.Instance).Count());
     }
 
     [Theory]
@@ -168,26 +269,42 @@ public class ImageAnalysisTests
         private readonly HttpClient http;
         private readonly ServiceProvider services;
         public AnalyzerHandler Handler { get; }
+        public RecordingChatClient Client { get; }
         public ISpamDetectionService Detector => services.GetRequiredService<ISpamDetectionService>();
 
         public Fixture(string? payload, string finishReason = "stop", HttpStatusCode statusCode = HttpStatusCode.OK)
         {
             Handler = new AnalyzerHandler(payload, finishReason, statusCode);
             http = new HttpClient(Handler);
-            var client = new ChatClient("image-analyzer", new ApiKeyCredential("test-only"), new OpenAIClientOptions
+            Client = new RecordingChatClient(new OpenAIClientOptions
             {
                 Endpoint = new Uri("https://analyzer.example.test"),
                 Transport = new HttpClientPipelineTransport(http)
             });
             services = new ServiceCollection().AddLogging().AddOpenAiService()
-                .AddKeyedSingleton<ChatClient>("ImageAnalyzer", client)
-                .AddKeyedSingleton<ChatClient>("SpamDetector", client).BuildServiceProvider();
+                .AddKeyedSingleton<ChatClient>("ImageAnalyzer", Client)
+                .AddKeyedSingleton<ChatClient>("SpamDetector", Client).BuildServiceProvider();
         }
 
         public void Dispose()
         {
             services.Dispose();
             http.Dispose();
+        }
+    }
+
+    private sealed class RecordingChatClient(OpenAIClientOptions clientOptions)
+        : ChatClient("image-analyzer", new ApiKeyCredential("test-only"), clientOptions)
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<ChatCompletionOptions> Options { get; } = new();
+
+        public override async Task<ClientResult<ChatCompletion>> CompleteChatAsync(
+            IEnumerable<ChatMessage> messages, ChatCompletionOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            Options.Enqueue(options!);
+            await Task.Yield();
+            return await base.CompleteChatAsync(messages, options, cancellationToken);
         }
     }
 

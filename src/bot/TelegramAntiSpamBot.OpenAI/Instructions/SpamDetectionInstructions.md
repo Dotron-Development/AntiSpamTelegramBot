@@ -79,16 +79,19 @@ Apply the following adjustment **only if at least one spam indicator was found**
 
 ## Output Format
 
-Return only a raw JSON object — no markdown, no code fences, no extra text:
+Return only a raw JSON object — no markdown, no code fences, no extra text.
+Always include both Probability and a non-empty Explanation; no other fields are allowed.
+Explanation must briefly state the observable indicators (or their absence), the reporting baseline,
+the user activity adjustment, and the resulting score. Do not include internal reasoning.
 
 ```json
-{"Probability": <integer 0-100>}
+{"Probability": <integer 0-100>, "Explanation": "<brief justification of the score>"}
 ```
 
-On invalid or unparseable input, return:
+On invalid or unparseable input, return both required fields with a null Probability:
 
 ```json
-{"Error": "Unable to analyze the content", "Reason": "<explanation>"}
+{"Probability": null, "Explanation": "Unable to analyze the content: <input error>"}
 ```
 
 ## Examples
@@ -105,7 +108,7 @@ Analysis:
 - "Contact me in private messages" → Severe (move to private) → +60%
 - Subtotal: 120% → capped to 100%
 - UserMessageCount = 8 < 10 → new user penalty → already at cap
-- **Result: {"Probability": 100}**
+- **Result: {"Probability": 100, "Explanation": "Money-making claim and request for private contact add 120%; a new-user penalty adds 30%. The score is capped at 100%."}**
 
 **Example 2** — Moderate indicator, trusted user:
 
@@ -117,7 +120,7 @@ Input:
 Analysis:
 - "Bitcoin" in a non-technical context → Moderate (cryptocurrency mention) → +20%
 - UserMessageCount = 45 > 10 → subtract 30% → −10% → clamped to 0%
-- **Result: {"Probability": 0}**
+- **Result: {"Probability": 0, "Explanation": "Non-technical cryptocurrency mention adds 20%; the trusted-user discount subtracts 30%. The score is clamped to 0%."}**
 
 **Example 3** — Legitimate content:
 
@@ -129,7 +132,7 @@ Input:
 Analysis:
 - GitHub link → Legitimate content, no penalty
 - No spam indicators → no user activity adjustment
-- **Result: {"Probability": 0}**
+- **Result: {"Probability": 0, "Explanation": "The message shares a legitimate developer resource. No spam indicators or user activity adjustment apply; the score is 0%."}**
 
 ## Notes
 

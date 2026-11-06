@@ -7,8 +7,26 @@ namespace TelegramAntiSpamBot.OpenAI
         SpamDetectionInstructions instructions,
         ILogger<SpamDetectionService> logger) : ISpamDetectionService
     {
-        private static readonly ChatCompletionOptions ChatCompletionOptions = new() { };
-        private static readonly ChatCompletionOptions ImageAnalysisOptions = new()
+        // The SDK mutates options during request preparation, so each call needs its own instance.
+        private static ChatCompletionOptions CreateSpamDetectionOptions() => new()
+        {
+            ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+                jsonSchemaFormatName: "spam_detection",
+                jsonSchema: BinaryData.FromString("""
+                    {
+                      "type": "object",
+                      "properties": {
+                        "Probability": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+                        "Explanation": { "type": "string" }
+                      },
+                      "required": ["Probability", "Explanation"],
+                      "additionalProperties": false
+                    }
+                    """),
+                jsonSchemaIsStrict: true)
+        };
+
+        private static ChatCompletionOptions CreateImageAnalysisOptions() => new()
         {
             ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                 jsonSchemaFormatName: "image_analysis",
@@ -29,7 +47,6 @@ namespace TelegramAntiSpamBot.OpenAI
         public async Task<SpamRequestResult> IsSpamAsync(
             MessagePayload userMessage,
             int userMessagesCount,
-            bool explainDecision = false,
             bool isReported = false)
         {
             try
@@ -38,29 +55,31 @@ namespace TelegramAntiSpamBot.OpenAI
 
                 LogDebugSpamDetectionAiRequest(logger, requestJson);
 
-                var instr = await instructions.GetSpamDetectionInstructions(explainDecision);
+                var instr = await instructions.GetSpamDetectionInstructions();
                 ChatCompletion completion = await spamDetector.CompleteChatAsync(
                 [
                     new SystemChatMessage(instr),
                     new UserChatMessage(requestJson)
 
-                ], ChatCompletionOptions);
+                ], CreateSpamDetectionOptions());
 
-                var responseText = completion.Content[0].Text;
+                if (completion.FinishReason != ChatFinishReason.Stop || completion.Content.Count == 0)
+                {
+                    logger.LogWarning("Spam detection returned no usable completion. Finish reason: {finishReason}", completion.FinishReason);
+                    return new SpamRequestResult(ResultType.Error);
+                }
+
+                var responseText = string.Concat(completion.Content.Select(part => part.Text));
                 LogDebugSpamDetectionAiResponse(logger, responseText);
 
                 var result = JsonSerializer.Deserialize<SpamDetectionResult>(responseText);
 
-                if (result?.Probability is { } number)
+                if (result?.Probability is >= 0 and <= 100 && !string.IsNullOrWhiteSpace(result.Explanation))
                 {
-                    if (!explainDecision) return new SpamRequestResult(ResultType.Evaluated, number);
-
-                    var explanationResult = JsonSerializer.Deserialize<SpamExplanationResult>(responseText);
-
-                    return new SpamRequestResult(ResultType.Evaluated, number, explanationResult?.Explanation);
+                    return new SpamRequestResult(ResultType.Evaluated, result.Probability, result.Explanation);
                 }
 
-                logger.LogWarning("Unexpected answer from AI: {content}", completion.Content[0].Text);
+                logger.LogWarning("Unexpected answer from AI: {content}", responseText);
                 return new SpamRequestResult(ResultType.Error);
             }
             catch (ClientResultException e) when (e.Status == 400)
@@ -92,7 +111,7 @@ namespace TelegramAntiSpamBot.OpenAI
                     new UserChatMessage(
                         ChatMessageContentPart.CreateImagePart(uriResult))
 
-                ], ImageAnalysisOptions);
+                ], CreateImageAnalysisOptions());
 
                 if (completion.FinishReason != ChatFinishReason.Stop || completion.Content.Count == 0)
                 {

@@ -1404,8 +1404,7 @@ public class ReviewFunctionsTests
             Task.FromResult(new ImageAnalysisResult { TextOnImage = ImageContent, ImageDescription = ImageDescription });
         public bool IsReported { get; private set; }
         public int UserMessageCount { get; private set; }
-        public Task<SpamRequestResult> IsSpamAsync(MessagePayload userMessage, int userMessagesCount, bool explainDecision = false,
-            bool isReported = false)
+        public Task<SpamRequestResult> IsSpamAsync(MessagePayload userMessage, int userMessagesCount, bool isReported = false)
         {
             IsReported = isReported;
             UserMessageCount = userMessagesCount;

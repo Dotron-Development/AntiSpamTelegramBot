@@ -1,4 +1,4 @@
 ﻿namespace TelegramAntiSpamBot.OpenAI
 {
-    internal sealed record SpamDetectionResult(int? Probability);
+    internal sealed record SpamDetectionResult(int? Probability, string? Explanation);
 }
