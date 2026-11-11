@@ -3,6 +3,88 @@ namespace TelegramAntiSpamBot.IntegrationTests;
 
 public class MessageHistoryRepositoryTests
 {
+    [Theory]
+    [InlineData(32767)]
+    [InlineData(32768)]
+    [InlineData(32769)]
+    public async Task SaveEnforcesLimitOnSerializedContent(int serializedLength)
+    {
+        var table = new HistoryTable { Paging = true };
+        using var services = CreateServices(table);
+        var repository = services.GetRequiredService<IMessageHistoryRepository>();
+        var emptyContent = new HistoryMessageContent(null, null, "");
+        var overhead = JsonSerializer.Serialize(emptyContent).Length;
+        var message = new HistoryMessage(-100, 7, DateTime.UtcNow.Ticks,
+            new(null, null, new string('a', serializedLength - overhead)));
+
+        await repository.SaveAsync(message);
+
+        var row = Assert.Single(table.Rows);
+        var storedJson = row.GetString("Content");
+        Assert.Equal(Math.Min(serializedLength, 32768), storedJson.Length);
+        Assert.InRange(Encoding.Unicode.GetByteCount(storedJson), 0, 65536);
+        Assert.Equal(serializedLength > 32768, row.ContainsKey("ContentTruncated"));
+        var stored = Assert.Single((await repository.GetPageAsync(-100, 25, null)).Messages);
+        Assert.StartsWith(stored.Content.Text, message.Content.Text);
+        Assert.Equal(message.Content.Text.Length - Math.Max(0, serializedLength - 32768), stored.Content.Text.Length);
+    }
+
+    [Theory]
+    [InlineData("a")]
+    [InlineData("\u0416")]
+    [InlineData("\U0001F600")]
+    [InlineData("\"\\\n\t")]
+    public async Task OversizedImageAnalysisAndReplyRemainValidAndReadable(string unit)
+    {
+        var table = new HistoryTable { Paging = true };
+        using var services = CreateServices(table);
+        var repository = services.GetRequiredService<IMessageHistoryRepository>();
+        var text = string.Concat(Enumerable.Repeat(unit, 40000));
+        var content = new HistoryMessageContent(new(42, "Alice", "alice"),
+            new(6, new(43, "Bob", null), text), new MessagePayload(text, text, "Caption"));
+        var message = new HistoryMessage(-100, 7, DateTime.UtcNow.Ticks, content, HistoryUpdateType.EditedMessage, 101);
+
+        await repository.SaveAsync(message);
+
+        var row = Assert.Single(table.Rows);
+        Assert.InRange(Encoding.Unicode.GetByteCount(row.GetString("Content")), 0, 65536);
+        Assert.True(row.GetBoolean("ContentTruncated"));
+        var stored = Assert.Single((await repository.GetPageAsync(-100, 25, null)).Messages);
+        Assert.Equal(message with { Content = stored.Content }, stored);
+        Assert.Equal(content.From, stored.Content.From);
+        Assert.Equal(content.ReplyTo!.From, stored.Content.ReplyTo!.From);
+        Assert.Equal(6, stored.Content.ReplyTo.MessageId);
+        Assert.Equal("Caption", stored.Content.Payload.UserMessage);
+        foreach (var value in new[] { stored.Content.Payload.ImageText!, stored.Content.Payload.ImageDescription!, stored.Content.ReplyTo.Text })
+        {
+            Assert.NotEmpty(value);
+            Assert.True(value.Length < text.Length);
+            Assert.StartsWith(value, text);
+            Assert.False(char.IsHighSurrogate(value[^1]));
+        }
+        var range = new List<HistoryMessage>();
+        await foreach (var entry in repository.GetAsync(-100, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddHours(1)))
+            range.Add(entry);
+        Assert.Equal(stored, Assert.Single(range));
+        Assert.Equal(text, message.Content.Payload.ImageText);
+    }
+
+    [Fact]
+    public async Task ShortEditReplacesTruncatedContentAndRemovesTruncationFlag()
+    {
+        var table = new HistoryTable { Paging = true };
+        using var services = CreateServices(table);
+        var repository = services.GetRequiredService<IMessageHistoryRepository>();
+        var message = new HistoryMessage(-100, 7, DateTime.UtcNow.Ticks, new(null, null, new string('a', 40000)));
+        await repository.SaveAsync(message);
+        var edited = message with { Content = new(null, null, "Short edit"), UpdateType = HistoryUpdateType.EditedMessage };
+
+        await repository.SaveAsync(edited);
+
+        Assert.False(Assert.Single(table.Rows).ContainsKey("ContentTruncated"));
+        Assert.Equal(edited, Assert.Single((await repository.GetPageAsync(-100, 25, null)).Messages));
+    }
+
     [Fact]
     public async Task SavePreservesContentAndOrdersOldestFirstWithoutTimestampCollisions()
     {
@@ -194,6 +276,7 @@ public class MessageHistoryRepositoryTests
     }
 
     private static ServiceProvider CreateServices(HistoryTable table) => new ServiceCollection()
+        .AddLogging()
         .AddPersistence()
         .AddKeyedSingleton<TableClient>("MessageHistory", table)
         .BuildServiceProvider();
@@ -215,6 +298,7 @@ public class MessageHistoryRepositoryTests
         {
             Assert.Equal(TableUpdateMode.Replace, mode);
             var row = (TableEntity)(object)entity;
+            Assert.All(row.Select(property => property.Value).OfType<string>(), value => Assert.InRange(Encoding.Unicode.GetByteCount(value), 0, 65536));
             Saved.Add(row);
             Rows.RemoveAll(existing => existing.PartitionKey == row.PartitionKey && existing.RowKey == row.RowKey);
             Rows.Add(row);

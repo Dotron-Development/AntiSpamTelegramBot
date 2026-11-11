@@ -15,6 +15,13 @@ variable "location" {
   type = string
 }
 
+variable "function_alert_email" {
+  description = "Email recipient for failed function execution alerts."
+  type        = string
+  default     = "serii_trofimov@epam.com"
+  nullable    = false
+}
+
 variable "keyvault_administrator_object_id" {
   description = "The id of the KV administrator."
   type        = string
