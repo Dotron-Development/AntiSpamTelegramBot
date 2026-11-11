@@ -3,10 +3,14 @@ resource "azurerm_monitor_action_group" "function_failures" {
   resource_group_name = azurerm_resource_group.rg.name
   short_name          = "fn-failures"
 
-  email_receiver {
-    name                    = "function-failures-email"
-    email_address           = var.function_alert_email
-    use_common_alert_schema = true
+  dynamic "email_receiver" {
+    for_each = toset(var.function_alert_emails)
+
+    content {
+      name                    = email_receiver.value
+      email_address           = email_receiver.value
+      use_common_alert_schema = true
+    }
   }
 
   tags = local.tags

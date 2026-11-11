@@ -15,11 +15,16 @@ variable "location" {
   type = string
 }
 
-variable "function_alert_email" {
-  description = "Email recipient for failed function execution alerts."
-  type        = string
-  default     = "serii_trofimov@epam.com"
+variable "function_alert_emails" {
+  description = "Email recipients for failed function execution alerts."
+  type        = list(string)
+  default     = ["serii_trofimov@epam.com"]
   nullable    = false
+
+  validation {
+    condition     = length(var.function_alert_emails) > 0
+    error_message = "Supply at least one email recipient for function failure alerts."
+  }
 }
 
 variable "keyvault_administrator_object_id" {

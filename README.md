@@ -270,7 +270,7 @@ The Terraform configuration requires version `>= 1.17.0, < 2.0`; workflows insta
 
 [alerts.tf](src/infrastructure/alerts.tf) creates an Azure Monitor log alert scoped to the Function App's Application Insights and an email Action Group in each environment. It checks every minute for any failed request (`requests | where success == false`) in the previous five minutes, with severity 2. The stateful alert notifies when it fires and resolves automatically after the failure condition clears, rather than sending a new email on every evaluation while active.
 
-Notifications go to `serii_trofimov@epam.com` by default; override Terraform variable `function_alert_email` in an environment's `.tfvars` file to change the recipient. The resources are created on the next infrastructure plan/apply. Use the Action Group's **Test** action in Azure Portal after deployment to verify email delivery. Telemetry ingestion can delay detection; caught exceptions that still result in successful executions, and outages that produce no request telemetry, do not trigger this rule.
+Notifications go to `serii_trofimov@epam.com` by default; override Terraform variable `function_alert_emails` in an environment's `.tfvars` file with a non-empty list of recipients, e.g. `function_alert_emails = ["serii_trofimov@epam.com", "oncall@example.com"]`. Duplicate addresses create only one receiver. The resources are created on the next infrastructure plan/apply. Use the Action Group's **Test** action in Azure Portal after deployment to verify email delivery. Telemetry ingestion can delay detection; caught exceptions that still result in successful executions, and outages that produce no request telemetry, do not trigger this rule.
 
 ### Backend and runner prerequisites
 
