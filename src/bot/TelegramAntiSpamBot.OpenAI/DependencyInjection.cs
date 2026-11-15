@@ -1,6 +1,3 @@
-﻿using OpenAI.Responses;
-using System.ClientModel.Primitives;
-
 #pragma warning disable OPENAI001
 
 namespace TelegramAntiSpamBot.OpenAI

@@ -12,3 +12,4 @@ global using System.Globalization;
 global using System.Runtime.CompilerServices;
 global using System.Text;
 global using System.Text.Json.Serialization;
+global using Microsoft.Extensions.Logging;
