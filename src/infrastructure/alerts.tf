@@ -25,7 +25,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "function_failures" {
 
   scopes                  = [azurerm_application_insights.appinsights.id]
   severity                = 2
-  evaluation_frequency    = "PT1M"
+  evaluation_frequency    = "PT5M"
   window_duration         = "PT5M"
   enabled                 = true
   auto_mitigation_enabled = true

@@ -76,6 +76,12 @@ are disabled. Wildcards are rejected. The host must accept preflight requests
 and allow Authorization and Content-Type headers. Review the full plan before
 apply, including changes to SPA hosting resources and the allowed origin.
 
+Keep the deployed origin and additional origins in a concatenated list without
+`distinct()`: AzureRM's `allowed_origins` set already removes duplicates. During
+Static Web App creation its hostname is unknown; applying `distinct()` makes
+the whole list unknown and can cause AzureRM to suppress the CORS block, then
+fail apply with "block count changed from 0 to 1".
+
 ### SPA Hosting and Build
 
 [staticwebapp.tf](../src/infrastructure/staticwebapp.tf) creates an Azure Static
