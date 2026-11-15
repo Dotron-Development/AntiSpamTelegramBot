@@ -27,12 +27,15 @@ on:
         description: "Public SPA build settings as JSON, excluding the tenant supplied in the build job"
         value: ${{ jobs.main-infrastructure.outputs.review_spa_build_settings }}
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
-  # service principal credentials
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  ARM_USE_OIDC: "true"
 
 jobs:
   setup-vm-runner-connectivity:
@@ -73,6 +76,13 @@ jobs:
             echo "Invalid environment: ${{ inputs.environment }}. Allowed values are: ${allowed_environments[@]}"
             exit 1
           fi
+
+      - name: Azure login
+        uses: azure/login@v3.1.0
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4.0.1
@@ -142,7 +152,9 @@ jobs:
       - name: Azure login
         uses: azure/login@v3.1.0
         with:
-          creds: '{"clientId":"${{ secrets.ARM_CLIENT_ID }}","clientSecret":"${{ secrets.ARM_CLIENT_SECRET }}","subscriptionId":"${{ secrets.ARM_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.ARM_TENANT_ID }}"}'
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
 
       - name: Configure Key Vault reference identity
         shell: bash

@@ -38,10 +38,6 @@ resource "null_resource" "data_storage_tables" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      az login --service-principal \
-        -u $ARM_CLIENT_ID \
-        -p $ARM_CLIENT_SECRET \
-        --tenant $ARM_TENANT_ID && \
       az storage table create \
         --name ${each.key} \
         --account-name ${azurerm_storage_account.data_storage.name} \

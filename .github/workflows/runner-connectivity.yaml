@@ -10,11 +10,15 @@ on:
         required: true
         type: boolean
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  ARM_USE_OIDC: "true"
   TF_VAR_keyvault_administrator_object_id: ${{ secrets.AZ_OWNER_OBJECT_ID }}
   TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
   TF_VAR_telegram_bot_secret_header: ${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}
@@ -44,6 +48,13 @@ jobs:
             dev|prod|ppr) ;;
             *) echo "Invalid environment: $DEPLOY_ENVIRONMENT"; exit 1 ;;
           esac
+
+      - name: Azure login
+        uses: azure/login@v3.1.0
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4.0.1

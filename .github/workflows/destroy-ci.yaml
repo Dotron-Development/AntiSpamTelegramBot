@@ -16,6 +16,10 @@ concurrency:
   group: infrastructure-${{ github.event.inputs.environment }}
   cancel-in-progress: false
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   destroy-infrastructure:
     uses: ./.github/workflows/destroy-infrastructure.yaml

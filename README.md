@@ -310,7 +310,6 @@ Configure the following GitHub secrets at repository or environment scope:
 | `ARM_TENANT_ID` | Azure tenant ID. |
 | `ARM_SUBSCRIPTION_ID` | Target Azure subscription. |
 | `ARM_CLIENT_ID` | Deployment service principal application ID. |
-| `ARM_CLIENT_SECRET` | Deployment service principal credential. |
 | `AZ_OWNER_OBJECT_ID` | Object ID granted Key Vault administrator access. |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token for the selected environment. |
 | `TELEGRAM_BOT_SECRET_HEADER` | Telegram webhook secret for the selected environment. |
@@ -318,6 +317,47 @@ Configure the following GitHub secrets at repository or environment scope:
 Configure the GitHub variables `AZ_TERRAFORM_BACKEND_STORAGEACCOUNT` and `AZ_TERRAFORM_BACKEND_RESOURCEGROUP` for the existing backend. Create the appropriate environment containers and configure the `dev`, `ppr`, and `prod` GitHub environments before deployment.
 
 The deployment identity needs permission to manage the Azure resources, create role assignments, access Terraform state, and provision Key Vault secrets and storage tables. The application publish job runs on `ubuntu-latest`; infrastructure jobs use the self-hosted runner.
+
+### Azure login with OIDC
+
+Workflows use the existing deployment applications and their Azure roles, but no
+longer use `ARM_CLIENT_SECRET`. The IDs remain in the existing GitHub environment
+secrets. Each Azure job requests a GitHub OIDC token with `id-token: write` and
+signs in through `azure/login`. Terraform uses `ARM_USE_OIDC=true` for both the
+AzureRM provider and state backend. Table provisioning reuses the job's Azure CLI
+login; local Terraform runs that create tables require an existing `az login`.
+
+Before deploying these workflow changes, configure trust outside the bot's
+Terraform state so that destroying dev does not remove its deployment access:
+
+1. In Entra ID > App registrations, open the deployment application matching
+   `ARM_CLIENT_ID` for the environment, not the review SPA registration.
+2. Under Certificates & secrets > Federated credentials, add a GitHub Actions
+   credential for organization `Dotron-Development`, repository
+   `AntiSpamTelegramBot`, entity type **Environment**, and environment `dev` or
+   `prod`. Use issuer `https://token.actions.githubusercontent.com` and audience
+   `api://AzureADTokenExchange`. If the form requires IDs, use organization ID
+   `215062107` and repository ID `903421504`.
+3. The repository uses immutable OIDC subjects. The exact subjects are
+   `repo:Dotron-Development@215062107/AntiSpamTelegramBot@903421504:environment:dev` and
+   `repo:Dotron-Development@215062107/AntiSpamTelegramBot@903421504:environment:prod`. If both
+   environments use the same deployment application, add both credentials there;
+   otherwise add each to its environment's application. Add a separate `ppr`
+   credential only if that environment is used again.
+4. Keep existing Azure role assignments and Terraform backend access unchanged.
+   Protect the GitHub `prod` environment with deployment branch restrictions and
+   approval rules as appropriate: the environment subject alone does not enforce
+   a particular branch. `id-token: write` permits token issuance, not Azure access.
+5. Verify a dev release and its cleanup; verify dev destroy only when its data
+   can be removed. Then verify prod deployment. Remove the old GitHub
+   `ARM_CLIENT_SECRET` secrets and revoke the old Entra client credentials only
+   after successful OIDC validation and checking that no other automation uses
+   them.
+
+The Static Web Apps deployment token remains separate: its job retrieves the
+current token through Azure CLI after OIDC login. Bot runtime managed identities,
+MSAL, Functions Easy Auth and Telegram secrets are unchanged. A local shell
+cannot verify the GitHub-issued token exchange; that requires an Actions run.
 
 ## Tests and validation
 
