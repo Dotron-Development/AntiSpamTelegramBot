@@ -26,10 +26,10 @@ internal sealed class MentionCommand(
                 ? new HistoryMessageReply(reply.MessageId, GetAuthor(reply), reply.Text ?? reply.Caption ?? string.Empty)
                 : null, await GetContextAsync(message));
 
-        string answer;
+        MentionResponse response;
         try
         {
-            answer = await mentionService.GenerateAsync(request);
+            response = await mentionService.GenerateAsync(request);
         }
         catch (Exception exception)
         {
@@ -37,7 +37,7 @@ internal sealed class MentionCommand(
             return;
         }
 
-        await bot.SendMessage(message.Chat.Id, TelegramMarkdownFormatter.Format(answer),
+        await bot.SendMessage(message.Chat.Id, TelegramMarkdownFormatter.Format(response.Answer),
             parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
             replyParameters: new ReplyParameters { MessageId = message.MessageId, AllowSendingWithoutReply = true });
     }

@@ -3,6 +3,20 @@ namespace TelegramAntiSpamBot.IntegrationTests;
 public sealed class MentionReviewFunctionsTests
 {
     [Fact]
+    public async Task PreviewPreservesInlineCitationsWithoutAppendingDuplicateSourceList()
+    {
+        using var fixture = new Fixture();
+        fixture.Service.Generate = _ => Task.FromResult(new MentionResponse("Answer [Source](https://example.com/source)", ["https://example.com/source"]));
+
+        var response = await fixture.Functions.PreviewMention(fixture.Request("{\"question\":\"Hi\"}"));
+
+        response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(response.Body);
+        Assert.Equal("Answer [Source](https://example.com/source)", document.RootElement.GetProperty("answer").GetString());
+        Assert.Single(document.RootElement.EnumerateObject());
+    }
+
+    [Fact]
     public async Task PreviewPassesContextAndCancellationAndReturnsCamelCaseAnswer()
     {
         using var fixture = new Fixture();
@@ -155,7 +169,7 @@ public sealed class MentionReviewFunctionsTests
         fixture.Service.Generate = token =>
         {
             cancellation.Cancel();
-            return Task.FromCanceled<string>(token);
+            return Task.FromCanceled<MentionResponse>(token);
         };
         var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             fixture.Functions.PreviewMention(fixture.Request("{\"question\":\"Hi\"}"), cancellation.Token));
@@ -201,8 +215,8 @@ public sealed class MentionReviewFunctionsTests
     {
         public List<MentionRequest> Requests { get; } = [];
         public CancellationToken CancellationToken { get; private set; }
-        public Func<CancellationToken, Task<string>> Generate { get; set; } = _ => Task.FromResult("Preview answer");
-        public Task<string> GenerateAsync(MentionRequest request, CancellationToken cancellationToken = default)
+        public Func<CancellationToken, Task<MentionResponse>> Generate { get; set; } = _ => Task.FromResult(new MentionResponse("Preview answer", []));
+        public Task<MentionResponse> GenerateAsync(MentionRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
             CancellationToken = cancellationToken;

@@ -1,7 +1,164 @@
+using OpenAI.Responses;
+
+#pragma warning disable OPENAI001
+
 namespace TelegramAntiSpamBot.IntegrationTests;
 
 public class MentionCommandTests
 {
+    [Theory]
+    [InlineData("Answer")]
+    [InlineData("!")]
+    public async Task SearchSendsExactlyOneAnswerWithInlineSources(string answer)
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.Search = true;
+        fixture.Ai.Answer = answer == "!" ? new string('!', 5000) : answer;
+
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        var texts = fixture.Telegram.Sent.Select(sent => sent.GetProperty("text").GetString()!).ToArray();
+        Assert.Single(texts);
+        Assert.All(texts, part => Assert.InRange(part.Length, 1, 4096));
+        Assert.Equal(TelegramMarkdownFormatter.Format(fixture.Ai.Answer.Insert(6, " [Official source](https://example.com/source)")), texts[0]);
+        Assert.Contains("[Official source](https://example.com/source)", texts[0]);
+        Assert.Equal(1000, fixture.Telegram.Sent[0].GetProperty("reply_parameters").GetProperty("message_id").GetInt32());
+        Assert.Equal(1, fixture.Ai.Requests);
+    }
+
+    [Fact]
+    public async Task UnexpectedSourceOverflowStillSendsOneBoundedMessageWithoutSourceLengthError()
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.Search = true;
+        fixture.Ai.SourceUrls = Enumerable.Range(0, 100)
+            .Select(index => $"https://example.com/source/{index}?q={new string('a', 50)}").ToArray();
+
+        var answer = await fixture.Service.GenerateAsync(new("Question", null, null));
+        Assert.Equal("Answer " + string.Join(" ", fixture.Ai.SourceUrls.Select(url => $"[Official source]({url})")), answer.Answer);
+        Assert.Equal(fixture.Ai.SourceUrls, answer.Sources);
+
+        await fixture.Processor.ProcessCommand(fixture.Update);
+        Assert.Single(fixture.Telegram.Sent);
+        var texts = fixture.Telegram.Sent.Select(sent => sent.GetProperty("text").GetString()!).ToArray();
+        Assert.All(texts, part => Assert.InRange(part.Length, 1, 4096));
+        Assert.Contains($"[Official source]({fixture.Ai.SourceUrls[0]})", texts[0]);
+        Assert.EndsWith(")", texts[0].TrimEnd());
+    }
+
+    [Fact]
+    public async Task ThreeSourcesAreInlineInOneMessageAndPromptRequestsSynthesis()
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.Search = true;
+        fixture.Ai.SourceUrls = ["https://example.com/one", "https://example.com/two", "https://example.com/three"];
+
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Single(fixture.Telegram.Sent);
+        Assert.Equal("Answer [Official source](https://example.com/one) [Official source](https://example.com/two) [Official source](https://example.com/three)",
+            fixture.Telegram.Sent[0].GetProperty("text").GetString());
+        Assert.Contains("at most three sources", fixture.Ai.Prompt);
+        Assert.Contains("Synthesize their relevant evidence", fixture.Ai.Prompt);
+    }
+
+    [Fact]
+    public async Task ProviderCitationMarkersBecomeTitledLinksInTextOrderAndPreserveSourceUrls()
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.Search = true;
+        var first = "\uE200cite\uE202turn0search0\uE201";
+        var second = "\uE200cite\uE202turn0search1\uE201";
+        var third = "\uE200cite\uE202turn0search2\uE201";
+        fixture.Ai.Answer = $"First. {first} Second. {second} Again. {third}";
+        object Citation(string marker, string url)
+        {
+            var start = fixture.Ai.Answer.IndexOf(marker, StringComparison.Ordinal);
+            return new { type = "url_citation", start_index = start, end_index = start + marker.Length, title = "Source", url };
+        }
+        fixture.Ai.Annotations = [Citation(third, "https://example.com/one"),
+            Citation(first, "https://example.com/one"), Citation(second, "https://example.com/two")];
+
+        var response = await fixture.Service.GenerateAsync(new("Question", null, null));
+
+        Assert.Equal("First. [Source](https://example.com/one) Second. [Source](https://example.com/two) Again. [Source](https://example.com/one)", response.Answer);
+        Assert.Equal(new[] { "https://example.com/one", "https://example.com/two" }, response.Sources);
+    }
+
+    [Theory]
+    [InlineData("\ud83d\ude00 Fact.", "\ud83d\ude00 Fact. [Source](https://example.com/source)")]
+    [InlineData("Fact. [Source](https://example.com/source)", "Fact. [Source](https://example.com/source)")]
+    public async Task CitationPreservesProseAndUnicodeOrReplacesSourceLink(string text, string expected)
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.Search = true;
+        fixture.Ai.Answer = text;
+        var start = text.IndexOf("[Source]", StringComparison.Ordinal);
+        fixture.Ai.Annotations = [new { type = "url_citation", start_index = Math.Max(start, 0),
+            end_index = text.Length, title = "Source", url = "https://example.com/source" },
+            new { type = "url_citation", start_index = Math.Max(start, 0), end_index = text.Length,
+                title = "Duplicate", url = "https://example.com/source" }];
+
+        var response = await fixture.Service.GenerateAsync(new("Question", null, null));
+
+        Assert.Equal(expected, response.Answer);
+        Assert.Equal("https://example.com/source", Assert.Single(response.Sources));
+    }
+
+    [Theory]
+    [InlineData("Source [details] *title*", "[Source \\[details\\] *title*](https://example.com/source)")]
+    [InlineData(null, "[https://example.com/source](https://example.com/source)")]
+    public async Task CitationPreservesAndEscapesProvidedTitleOrUsesUrlWhenTitleIsAbsent(string? title, string link)
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.Search = true;
+        fixture.Ai.Annotations = [new { type = "url_citation", start_index = 0, end_index = 6, title,
+            url = "https://example.com/source" }];
+
+        var response = await fixture.Service.GenerateAsync(new("Question", null, null));
+
+        Assert.Equal("Answer " + link, response.Answer);
+    }
+
+    [Fact]
+    public async Task InvalidCitationRangeIsReportedInsteadOfCorruptingAnswer()
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.Search = true;
+        fixture.Ai.Annotations = [new { type = "url_citation", start_index = 0, end_index = 100,
+            title = "Source", url = "https://example.com/source" }];
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Service.GenerateAsync(new("Question", null, null)));
+    }
+
+    [Fact]
+    public async Task IncompleteAgentAnswerIsRejected()
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.Status = "incomplete";
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Service.GenerateAsync(new("Question", null, null)));
+    }
+
+    [Fact]
+    public async Task CancellationIsPropagatedToAgent()
+    {
+        using var fixture = new Fixture();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            fixture.Service.GenerateAsync(new("Question", null, null), cancellation.Token));
+        Assert.Equal(0, fixture.Ai.Requests);
+    }
+
+    [Fact]
+    public async Task AgentCallsDoNotShareConversationHistory()
+    {
+        using var fixture = new Fixture();
+        await fixture.Service.GenerateAsync(new("First", null, null));
+        await fixture.Service.GenerateAsync(new("Second", null, null));
+        Assert.Equal("Second", fixture.Ai.Input!.Question);
+        Assert.Equal(2, fixture.Ai.Requests);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(5)]
@@ -12,7 +169,7 @@ public class MentionCommandTests
 
         var answer = await fixture.Service.GenerateAsync(new MentionRequest("Question", null, null));
 
-        Assert.Equal("Answer", answer);
+        Assert.Equal("Answer", answer.Answer);
         Assert.Equal(failures + 1, fixture.Ai.Requests);
     }
 
@@ -180,31 +337,35 @@ public class MentionCommandTests
         using var fixture = new Fixture();
         fixture.Ai.Answer = "**" + new string('!', 3000) + "**";
         await fixture.Processor.ProcessCommand(fixture.Update);
-        var text = Assert.Single(fixture.Telegram.Sent).GetProperty("text").GetString()!;
-        Assert.InRange(text.Length, 1, 4096);
-        Assert.StartsWith("*", text);
-        Assert.EndsWith("\\!*", text);
+        var texts = fixture.Telegram.Sent.Select(sent => sent.GetProperty("text").GetString()!).ToArray();
+        Assert.Single(texts);
+        Assert.All(texts, text =>
+        {
+            Assert.InRange(text.Length, 1, 4096);
+            Assert.StartsWith("*", text);
+            Assert.EndsWith("\\!*", text);
+        });
+        Assert.Equal("*" + string.Concat(Enumerable.Repeat("\\!", 2047)) + "*", texts[0]);
     }
 
     [Theory]
     [InlineData(3996)]
     [InlineData(3997)]
-    public async Task SharedTruncationNeverSplitsSurrogatePairs(int prefixLength)
+    public async Task LongAgentAnswerIsNotTruncatedOrDamaged(int prefixLength)
     {
         using var fixture = new Fixture();
         fixture.Ai.Answer = new string('a', prefixLength) + char.ConvertFromUtf32(0x1F600) + new string('b', 200);
         var answer = await fixture.Service.GenerateAsync(new("Question", null, null));
-        Assert.InRange(answer.Length, 1, 4000);
-        Assert.EndsWith("...", answer);
-        Assert.DoesNotContain('\uFFFD', Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(answer)));
+        Assert.Equal(fixture.Ai.Answer, answer.Answer);
+        Assert.DoesNotContain('\uFFFD', Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(answer.Answer)));
     }
 
     [Fact]
-    public async Task SharedTruncationPreservesExactLimit()
+    public async Task AgentPreservesAnswerAtCharacterLimit()
     {
         using var fixture = new Fixture();
         fixture.Ai.Answer = new string('a', 4000);
-        Assert.Equal(fixture.Ai.Answer, await fixture.Service.GenerateAsync(new("Question", null, null)));
+        Assert.Equal(fixture.Ai.Answer, (await fixture.Service.GenerateAsync(new("Question", null, null))).Answer);
     }
 
     [Fact]
@@ -358,16 +519,21 @@ public class MentionCommandTests
         {
             telegramHttp = new HttpClient(Telegram);
             aiHttp = new HttpClient(Ai);
-            var client = new ChatClient("mention", new ApiKeyCredential("test-only"), new OpenAIClientOptions
+            var client = new ResponsesClient(new ApiKeyCredential("test-only"), new ResponsesClientOptions
             {
                 Endpoint = new Uri("https://mention.example.test"), Transport = new HttpClientPipelineTransport(aiHttp),
-                RetryPolicy = TelegramAntiSpamBot.OpenAI.DependencyInjection.CreateMentionClientOptions().RetryPolicy
+                RetryPolicy = TelegramAntiSpamBot.OpenAI.DependencyInjection.CreateMentionClientOptions(new Uri("https://mention.example.test")).RetryPolicy
             });
             var collection = new ServiceCollection().AddLogging().AddOpenAiService().AddCommands()
                 .AddSingleton<ITelegramBotClient>(new TelegramBotClient("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk", telegramHttp))
                 .AddSingleton<ICommandCallsRepository>(Calls)
                 .AddSingleton<IMessageHistoryRepository>(History)
-                .AddKeyedSingleton<ChatClient>("Mention", client);
+                .AddKeyedSingleton<ResponsesClient>("Mention", client);
+            collection.AddSingleton<IOptions<OpenAiServicesConfiguration>>(Options.Create(new OpenAiServicesConfiguration
+            {
+                ServiceUrl = "https://mention.example.test/", ImageRecognitionDeployment = "images",
+                SpamRecognitionDeployment = "antispam", MentionDeployment = "mention"
+            }));
             collection.AddSingleton<IOptions<TelegramBotConfiguration>>(Options.Create(new TelegramBotConfiguration
             {
                 Token = "test", SecretHeader = "test", BotName = "@TestBot", DebugAiResponse = false
@@ -413,19 +579,31 @@ public class MentionCommandTests
         public string Answer { get; set; } = "Answer";
         public bool Fail { get; set; }
         public int RateLimitResponses { get; set; }
+        public bool Search { get; set; }
+        public string[] SourceUrls { get; set; } = ["https://example.com/source"];
+        public object[]? Annotations { get; set; }
+        public string Status { get; set; } = "completed";
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests++;
-            Assert.Contains("mention", request.RequestUri!.AbsoluteUri);
+            Assert.EndsWith("/responses", request.RequestUri!.AbsolutePath);
             using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
             string Text(JsonElement message)
             {
                 var content = message.GetProperty("content");
                 return content.ValueKind == JsonValueKind.String ? content.GetString()! : content[0].GetProperty("text").GetString()!;
             }
-            var messages = document.RootElement.GetProperty("messages");
-            Prompt = Text(messages[0]);
-            Input = JsonSerializer.Deserialize<MentionRequest>(Text(messages[1]));
+            var root = document.RootElement;
+            Assert.Equal("mention", root.GetProperty("model").GetString());
+            Assert.False(root.GetProperty("store").GetBoolean());
+            Assert.Equal(3, root.GetProperty("max_tool_calls").GetInt32());
+            Assert.Equal(2000, root.GetProperty("max_output_tokens").GetInt32());
+            Assert.Equal("web_search", Assert.Single(root.GetProperty("tools").EnumerateArray()).GetProperty("type").GetString());
+            var messages = root.GetProperty("input");
+            Assert.Single(messages.EnumerateArray(), message => message.GetProperty("role").GetString() == "user");
+            Assert.False(root.TryGetProperty("previous_response_id", out _));
+            Prompt = root.TryGetProperty("instructions", out var instructions) ? instructions.GetString()! : Text(messages[0]);
+            Input = JsonSerializer.Deserialize<MentionRequest>(Text(messages.EnumerateArray().Last()));
             if (Requests <= RateLimitResponses)
             {
                 var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
@@ -436,10 +614,20 @@ public class MentionCommandTests
                 response.Headers.Add("retry-after-ms", "1");
                 return response;
             }
+            var output = new List<object>();
+            if (Search)
+                output.Add(new { type = "web_search_call", id = "ws-test", status = "completed",
+                    action = new { type = "search", query = "public question" } });
+            output.Add(new { type = "message", id = "msg-test", status = "completed", role = "assistant",
+                content = new[] { new { type = "output_text", text = Answer, annotations = Search
+                    ? Annotations ?? SourceUrls.Select(url => (object)new { type = "url_citation", start_index = 0, end_index = 6,
+                        title = "Official source", url }).ToArray()
+                    : Array.Empty<object>() } } });
             var json = Fail ? "{\"error\":{\"message\":\"AI unavailable\",\"type\":\"invalid_request_error\"}}" : JsonSerializer.Serialize(new
             {
-                id = "chatcmpl-test", @object = "chat.completion", created = 0, model = "mention",
-                choices = new[] { new { index = 0, message = new { role = "assistant", content = Answer }, finish_reason = "stop" } }
+                id = "resp-test", @object = "response", created_at = 0, model = "mention", status = Status,
+                incomplete_details = Status == "incomplete" ? new { reason = "max_output_tokens" } : null,
+                output
             });
             return new HttpResponseMessage(Fail ? HttpStatusCode.BadRequest : HttpStatusCode.OK)
             {

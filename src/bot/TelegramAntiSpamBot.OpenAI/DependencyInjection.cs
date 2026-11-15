@@ -1,4 +1,9 @@
-﻿namespace TelegramAntiSpamBot.OpenAI
+﻿using OpenAI.Responses;
+using System.ClientModel.Primitives;
+
+#pragma warning disable OPENAI001
+
+namespace TelegramAntiSpamBot.OpenAI
 {
     public static class DependencyInjection
     {
@@ -17,7 +22,7 @@
                 CreateChatClient(provider, config => config.ImageRecognitionDeployment));
 
             serviceCollection.AddKeyedScoped("Mention", (provider, _) =>
-                CreateChatClient(provider, config => config.MentionDeployment, CreateMentionClientOptions()));
+                CreateMentionClient(provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>().Value));
 
             serviceCollection.AddSingleton<SpamDetectionInstructions>();
             serviceCollection.AddScoped<ISpamDetectionService, SpamDetectionService>();
@@ -25,10 +30,24 @@
             return serviceCollection;
         }
 
-        internal static AzureOpenAIClientOptions CreateMentionClientOptions() => new()
+        internal static ResponsesClientOptions CreateMentionClientOptions(Uri endpoint) => new()
         {
+            Endpoint = endpoint,
             RetryPolicy = new System.ClientModel.Primitives.ClientRetryPolicy(5)
         };
+
+        internal static ResponsesClient CreateMentionClient(OpenAiServicesConfiguration config)
+        {
+            var endpoint = new Uri(new Uri(config.ServiceUrl.TrimEnd('/') + "/"), "openai/v1/");
+            var options = CreateMentionClientOptions(endpoint);
+            if (!string.IsNullOrEmpty(config.ApiKey))
+                return new ResponsesClient(new ApiKeyCredential(config.ApiKey), options);
+
+            var credential = config.OpenAiIdentityClientId is { } clientId
+                ? new DefaultAzureCredential(new DefaultAzureCredentialOptions { ManagedIdentityClientId = clientId })
+                : new DefaultAzureCredential();
+            return new ResponsesClient(new BearerTokenPolicy(credential, "https://ai.azure.com/.default"), options);
+        }
 
         private static ChatClient CreateChatClient(IServiceProvider provider, Func<OpenAiServicesConfiguration, string> deploymentSelector,
             AzureOpenAIClientOptions? options = null)
