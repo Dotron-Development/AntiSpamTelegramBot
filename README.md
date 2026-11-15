@@ -1,394 +1,197 @@
-# Telegram Anti-Spam Bot
+# Setup Guide
 
-[![release dev](https://github.com/Dotron-Development/AntiSpamTelegramBot/actions/workflows/release-dev.yaml/badge.svg)](https://github.com/Dotron-Development/AntiSpamTelegramBot/actions/workflows/release-dev.yaml)
-[![release prod](https://github.com/Dotron-Development/AntiSpamTelegramBot/actions/workflows/release-prod.yaml/badge.svg)](https://github.com/Dotron-Development/AntiSpamTelegramBot/actions/workflows/release-prod.yaml)
+## 1. Prerequisites
 
-An AI-assisted moderation bot for Telegram supergroups, built with C# and .NET 10. It runs as an Azure Functions v4 isolated worker, detects spam in message text and photos, caches classification results in Azure Table Storage, and automatically moderates messages classified as spam.
+- An Azure subscription and permission to manage resources and role assignments.
+- A GitHub account with administration access to this repository.
+- .NET 10 SDK, Node.js 24 LTS, Azure CLI and Azure Functions Core Tools v4 for local development.
+- Terraform 1.17.x for local infrastructure operations.
+- A separate Telegram bot for each environment, created through BotFather.
 
-Azure infrastructure and deployment are managed with Terraform and GitHub Actions. The repository contains the webhook application, AI integration, persistence layer, bot commands, webhook initializer, infrastructure definitions, and .NET tests.
+Use `dev` for testing and `prod` for production. Keep their Telegram bots, data and configuration separate.
 
-## Features
+## 2. Configure Telegram
 
-- Processes new and edited Telegram messages through an HTTPS webhook.
-- Validates Telegram's `X-Telegram-Bot-Api-Secret-Token` header before processing requests.
-- Uses separate Azure AI model deployments for spam classification and text extraction from photos.
-- Reuses cached spam and non-spam decisions using normalized message hashes.
-- Deletes detected spam and restricts the sender for three hours.
-- Queues new AI-detected spam for human review through function-key-protected APIs.
-- Optionally forwards removed messages and AI explanations to a moderation archive chat.
-- Tracks per-user message counts, daily and monthly deletion totals, and deletion latency.
-- Provides the `/stat` command for chat-level moderation statistics.
-- Provides `/chronicle` for an informal AI recap of the hour ending at the chat's latest stored message, capped at the latest 100 messages.
-- Answers `@YourBotName <question>` with AI, including the explicit Telegram reply's author and text/caption as context, using formatted text without deleting the invocation.
+1. Create the bots through BotFather and record their tokens and usernames.
+2. Add each bot to its target groups and grant permission to receive messages, delete messages and restrict members.
+3. Configure Telegram privacy mode as needed for the bot to receive group messages.
+4. If using a moderation archive chat, add the bot there and record its chat ID.
+5. Generate a separate webhook header value for each environment and store it as `TELEGRAM_BOT_SECRET_HEADER` in GitHub.
 
-## Architecture
+## 3. Prepare Azure and the Runner
 
-```mermaid
-flowchart LR
-    Telegram[Telegram updates] --> Webhook[Azure Functions webhook]
-    Webhook --> Commands[Bot commands]
-    Webhook --> Cache[Azure Table Storage]
-    Webhook --> AI[Azure AI Services]
-    AI --> Webhook
-    Webhook --> Moderation[Telegram moderation actions]
-    Vault[Azure Key Vault] --> Settings[Function App secret references]
-    Settings --> Webhook
-```
+Create these resources before running the deployment workflows:
 
-The Function App uses a user-assigned managed identity to read Key Vault secrets and access Table Storage. Terraform configures Key Vault references for the Telegram token, webhook secret, and AI service API key. The AI client also supports Azure identity authentication when no API key is configured.
+- A storage account for the Terraform backend, with `dev` and `prod` blob containers. Each environment uses `terraform.tfstate` in its own container.
+- The GitHub runner VNet and subnet referenced by the environment configuration.
+- A self-hosted Linux GitHub Actions runner with Bash, Azure CLI and access to the Terraform backend. Use runner version 2.327.1 or later.
+- A deployment App registration and service principal for each environment, or one shared deployment application with access to both.
 
-### Message processing
+Grant the deployment identities permission to manage the configured Azure resources, create role assignments, access Terraform state, manage Key Vault data and provision storage tables. Preserve the runner's network access to the backend and private resources. Restrict access to Terraform state and saved plans.
 
-1. Validate the webhook secret and handle recognized commands.
-2. Extract the new or edited message, excluding Telegram's channel-forwarding sender and the configured moderation archive chat.
-3. Read the sender's recorded message count for that chat and increment it.
-4. For a photo, resolve its Telegram file URL and obtain a typed image analysis (description and full transcription) using a strict JSON Schema response.
-5. Build a `MessagePayload` with optional `UserMessage`, `ImageText`, and `ImageDescription`. Classification runs when their combined length exceeds 20 characters or a photo is present, and the sender has fewer than 100 previously recorded messages in that chat.
-6. Normalize each payload field, serialize the typed payload, and check its SHA-256 hash in the classification cache.
-7. On a cache miss, ask the spam-classification deployment for a probability. A score of at least 95 triggers moderation; lower scores are cached as non-spam.
-8. For new AI-detected spam, save the original text/caption, image transcription, sender ID and display name, message ID, content hash, and original UTC message date as .NET ticks in `ProbablySpam` before moderation. Do not cache an AI-positive decision. Optionally forward the original message, delete it, restrict the sender for three hours, and update statistics. Cached human-confirmed spam triggers moderation without another review.
+Check Azure AI model availability and quota in the configured region before deployment.
 
-These thresholds are currently implemented in [AntiSpamBotWebHook.cs](src/bot/TelegramAntiSpamBot.Functions/AntiSpamBotWebHook.cs), rather than exposed as configuration settings. Classification errors are not treated as positive spam decisions.
+## 4. Configure GitHub Environments
 
-### Message normalization and caching
+In repository **Settings > Environments**, create `dev` and `prod`. For each environment, configure:
 
-AI receives `{ "Message": { "UserMessage"?: string, "ImageText"?: string, "ImageDescription"?: string }, "UserMessageCount": integer }`, not flattened text. History stores the same typed payload in `Content.Payload`, alongside `From` and `ReplyTo`; history does not store `UserMessageCount`. Hidden Telegram `text_link` URLs from `Entities` (text) and `CaptionEntities` (captions) are exposed inline as `label (URL)` before spam detection, including `/report` rechecks. AI input, cache hashes, stored history, review text and stored reply context retain these URLs; messages without hidden links are unchanged. Entity offsets are interpreted as UTF-16 indices, matching Telegram and .NET. Invalid ranges are ignored and duplicate entities are expanded only once. Links are not fetched.
+| Secret | Value |
+| --- | --- |
+| `ARM_TENANT_ID` | Deployment application's Directory (tenant) ID. |
+| `ARM_SUBSCRIPTION_ID` | Target Azure subscription ID. |
+| `ARM_CLIENT_ID` | Deployment application's Application (client) ID. |
+| `AZ_OWNER_OBJECT_ID` | Object ID to grant Key Vault administrator access. |
+| `TELEGRAM_BOT_TOKEN` | Environment's Telegram bot token. |
+| `TELEGRAM_BOT_SECRET_HEADER` | Environment's webhook header value. |
 
-The cache applies [MessageContentSanitizer.cs](src/bot/TelegramAntiSpamBot.Persistence/MessageContentSanitizer.cs) independently to each payload field; the review queue preserves the text with hidden URLs exposed:
+Configure these environment variables:
 
-- Apply Unicode NFKC normalization and invariant lowercase conversion.
-- Remove whitespace, supported emoji ranges, invisible formatting/control characters, and variation selectors.
-- Replace sequences of Unicode decimal digits with a single Cyrillic `х` marker, regardless of number length.
-- Preserve letters from different languages, diacritics, and other punctuation. Digit-to-letter substitutions are not normalized separately.
+| Variable | Value |
+| --- | --- |
+| `AZ_TERRAFORM_BACKEND_STORAGEACCOUNT` | Existing Terraform backend storage account name. |
+| `AZ_TERRAFORM_BACKEND_RESOURCEGROUP` | Backend storage account's resource group. |
+| `REVIEW_USER_OBJECT_IDS` | Non-empty JSON array of permitted moderators' Entra user Object IDs, for example `["<USER_OBJECT_ID>"]`. |
+| `REVIEW_FRONTEND_ORIGINS` | Optional JSON array of additional exact frontend origins. Defaults to `["http://localhost:5173"]`; use `[]` for only the deployed website. |
 
-For example, `Hello 1000 world` and `hello 🔥 10001 world` in the same payload field produce the same normalized content and hash. SHA-256 is calculated over UTF-16 encoded JSON of the normalized payload; field boundaries are preserved. Previous flattened-text cache keys are not migrated and will be re-evaluated on a cache miss.
+Protect `prod` with deployment branch restrictions and approval rules as appropriate.
 
-If all normalized payload fields are empty, classification and review bypass the hash cache so unrelated emoji-only messages do not share one decision. AI can cache only `false`; human review writes `true` or `false`. Cache entries use a stable partition (`1`) and the content hash as row key, so subsequent decisions replace the same entry. Existing records are not migrated.
+## 5. Configure OIDC Deployment Access
 
-### Stored data
+Keep deployment trust outside the bot's Terraform state so that destroying `dev` does not remove its deployment access.
 
-| Azure table | Purpose |
-|---|---|
-| `SpamHash` | AI-safe and human-reviewed decisions keyed by normalized content hash. |
-| `ProbablySpam` | Pending human review only; partition key is chat ID, row key is Telegram message ID. No probability or completed-review history is stored. |
-| `MessageCount` | Recorded message counts per chat and sender. |
-| `SpamStats` | Daily/monthly deletion totals and minimum, maximum, and average deletion latency. |
-| `Chats` | Chat catalog: partition `chats`, row key is chat ID, with `Name` and UTC `LastSeenUtc`. Updated on incoming and edited messages, including commands; the configured archive chat is excluded. |
-| `MessageHistory` | Non-spam messages and channel posts, with edits replacing the stored message. Partition is chat ID; row key is original send UTC ticks (`D19`) and message ID (`D10`). `DateTimeTicks` preserves send time; `UpdateType`, `UpdateId`, and JSON `Content` describe the last stored update, author, reply context, and typed payload. Commands are excluded. |
-| `CommandsCall` | Latest admitted command attempt: partition is chat ID, row key is the URI-escaped canonical command (e.g. `%2Fchronicle`), and `lastCall` is a UTC timestamp. The review API decodes the command for display. |
+1. In Entra ID **App registrations**, open the deployment application matching the environment's `ARM_CLIENT_ID`. This is not the review website's registration.
+2. In **Certificates & secrets > Federated credentials**, add a **GitHub Actions** credential with:
 
-The moderation tables and `MessageHistory` are provisioned by Terraform through Azure CLI using Azure identity authentication; shared-key access is disabled for the application data storage account. `Chats` and `MessageHistory` can also be created by the application on first write if missing. The application identity needs table-creation permissions as well as entity read/write permissions. An absent catalog table reads as an empty list.
+   | Field | Value |
+   | --- | --- |
+   | Organization | `Dotron-Development` |
+   | Organization ID | `215062107` |
+   | Repository | `AntiSpamTelegramBot` |
+   | Repository ID | `903421504` |
+   | Entity type | **Environment** |
+   | Environment | `dev` or `prod`, matching the GitHub environment exactly. |
+   | Issuer | `https://token.actions.githubusercontent.com` |
+   | Audience | `api://AzureADTokenExchange` |
 
-History is saved after a non-spam decision (including cache shortcuts), and chat registration starts alongside message processing. Both writes are awaited before the webhook returns. If history saving fails, the response is 500 so Telegram can retry. Chat registration remains best-effort. Only updates delivered after deployment are captured; old Telegram history is not backfilled. Original messages and edits use the same original send timestamp and message ID for their row key. Edits replace the existing row through upsert, keeping the message at its original position in history; an edit received without a captured original creates the row at its original send time. `UpdateType` identifies `Message`, `EditedMessage`, `ChannelPost`, or `EditedChannelPost`, and `UpdateId` remains a property rather than part of the key. Repeated deliveries use the same row; the last processed write wins. `/chronicle` receives the stored version rather than separate edit events. Existing rows using send/edit timestamps and update-ID suffixes are not automatically migrated or deduplicated. Legacy `Content.Text` records are read as `Payload.UserMessage`, with a default `Message` update type when missing. Photo binaries are not stored; descriptions and recognized image text are stored separately, even without a caption. Updates with no meaningful payload content are not saved.
+3. Configure these exact Subject identifiers:
 
-History `Content` is limited to 32,768 UTF-16 characters (Azure Table Storage's 64 KiB property limit), measured after JSON serialization, including escaping. Oversized records shorten only message text, image descriptions, OCR, and reply text, using the largest shared per-field character cap that fits; shorter fields are unchanged and surrogate pairs are not split. The JSON structure, message/author IDs, and all `From` metadata (including reply authors) are preserved unchanged. Such rows have `ContentTruncated: true`, and a warning logs the original field lengths and serialized sizes without logging the content. Moderation input and hashes are not truncated. A later short edit replaces the truncated content and removes the flag.
+   ```text
+   repo:Dotron-Development@215062107/AntiSpamTelegramBot@903421504:environment:dev
+   repo:Dotron-Development@215062107/AntiSpamTelegramBot@903421504:environment:prod
+   ```
 
-`CleanupMessageHistory` runs every hour at minute zero, UTC (`0 0 * * * *`). It scans keys in ascending order and deletes the oldest excess entries, leaving the latest 1000 messages **per chat**, with transactions of at most 100 deletes from one partition. Until the next sweep, a chat may temporarily exceed 1000 entries. Concurrent arrivals may require the next sweep to restore the limit. The cleanup scan uses only partition/row keys and retains at most 1000 candidates in memory per chat.
+   Add each credential to its environment's deployment application. If both environments use the same application, add both credentials there.
 
-`IMessageHistoryRepository.GetAsync(chatId, from, to)` streams the UTC interval `[from, to)` using a partition-and-row-key range query, not a filter on the unindexed `DateTimeTicks` property. Capture `to = DateTimeOffset.UtcNow` and use `from = to.AddHours(-1)` for the last hour. All messages sharing a timestamp remain distinct through their message ID suffix.
+4. Confirm that immutable OIDC subjects are enabled for the repository:
 
-The previous experimental reverse-ticks row keys are not compatible with this forward-key ordering. If those rows already exist in Azure, migrate their keys before deploying this change; no automatic migration or deletion of existing history is performed.
+   ```powershell
+   gh api repos/Dotron-Development/AntiSpamTelegramBot/actions/oidc/customization/sub
+   ```
 
-Persistence is split into table-specific repositories: `Chats`, `ProbablySpam`, `SpamHash`, `MessageCount`, and `SpamStats` each have their own interface and implementation. Consumers inject only the repositories they use; there is no shared all-table repository. Table schemas, partition/row keys, and existing records remain unchanged.
+   `use_immutable_subject` must be `true`. If enabling it for a new setup, prepare the matching Azure credentials first, then run:
 
-Chat registration is a best-effort upsert started alongside history saving and awaited after message processing, not a detached background task. Registration failures are logged separately and do not stop moderation. Names are refreshed on subsequent messages; existing chats are not backfilled without incoming traffic.
+   ```powershell
+   gh api --method PUT repos/Dotron-Development/AntiSpamTelegramBot/actions/oidc/customization/sub -F use_default=true -F use_immutable_subject=true
+   ```
 
-### Review API
+For a fork, replace the organization, repository and their numeric IDs. Retrieve the IDs with `gh api orgs/<organization> --jq .id` and `gh api repos/<owner>/<repository> --jq .id`.
 
-All review endpoints rely on Functions Easy Auth with Entra access tokens in `Authorization: Bearer ...`; no Function key or Telegram webhook secret is required. Their host authorization is Anonymous, so configure platform protection before deploying them. Local Functions hosts do not run Easy Auth and must remain bound to loopback. See [Functions Easy Auth](docs/functions-easy-auth.md).
+## 6. Configure Website Sign-In
 
-| Method and route | Input and behavior |
-|---|---|
-| `GET /api/review/chats` | Optional `pageSize` (1-1000, default 100) and opaque `continuationToken`. Returns `chats` (`chatId`, `name`, `lastSeenUtc`) and `continuationToken`. Follow tokens until null, including after an empty page. |
-| `GET /api/review/messages?pageSize=100` | Optional non-zero `chatId` filters one chat's partition; omit it to query all chats. Optional `pageSize` (1-1000, default 100) and opaque `continuationToken`. Returns `messages` and `continuationToken`; request subsequent pages until the token is null. Results follow Azure Table Storage partition/row-key order, not date order. No chronological sorting or full-table aggregation is performed. |
-| `GET /api/review/history` | Same optional `chatId`, `pageSize` and `continuationToken`. Returns camelCase `messages` with author, text/caption, reply context and original ticks, plus `continuationToken`. Read-only; ordering follows table keys, oldest first within each chat. A missing table returns an empty page. |
-| `GET /api/review/command-calls` | Same pagination and filter. Returns camelCase `calls` (`chatId`, `command`, `lastCall`) and `continuationToken`. Shows latest admitted attempts, not an event log; a missing table returns an empty page. |
-| `POST /api/review/chronicle/{chatId}` | No body. Previews Chronicle for the selected chat using the same history selection and AI service as Telegram, without cooldown. Returns camelCase `{chatId, summary, skipped}` with `skipped: false`; AI failures return 502. Does not record a command attempt or post to Telegram. |
-| `POST /api/review/mention` | UI-only mention preview. JSON `{question, fromName?, fromUsername?, replyTo?: {name?, username?, text}}`; question and reply text are at most 4096 characters, names 200 and usernames 64. Blank question tests a bare mention. Returns `{answer}` as Markdown source; invalid input is 400 and AI failures 502. Uses the same mention prompt/service without chat history, Telegram posting or cooldown. |
-| `POST /api/review/messages/{chatId}/{messageId}` | JSON body `{"isSpam":true}` or `{"isSpam":false}`. Updates `SpamHash` and removes the queued entry. For non-spam, first republishes the original text/caption and image transcription as plain text prefixed with `from: <name> @<nick>` when the Telegram username is available, otherwise `from: <name>`. `from` is stored as a JSON object with `name` and nullable `nick`. Original `replyTo` context is retained and the first restored part replies to that Telegram message when available; further chunks reply to the previous restored part. Long text is split across messages. No image is resent; no restrictions are lifted. Returns 204, or 404 if the entry is missing. |
-| `POST /api/review/restrictions/{chatId}/{userId}` | No body. Independently restores the chat's default member permissions for this user. Returns 204, or 409 when default permissions are unavailable. |
-
-Queue messages contain `chatId`, `messageId`, `userId`, `from` (`name` and nullable `nick`), `replyTo` (nullable message ID, sender, and text), `message` (original text/caption), `imageText`, `contentHash`, and `messageDateTicks` (the original UTC date in .NET ticks). The date does not change during review. Incoming message history is stored separately in `MessageHistory`; completed review decisions are not archived there. History is retained independently of removal from the review queue.
-
-Invalid inputs return 400. Review is not transactional across Table Storage and Telegram: failures can leave a queued entry after a cache update or partial publication. No deduplication, retry orchestration, or decision-locking mechanism is added; repeating a failed review can publish text again. Existing webhook error handling and Telegram redelivery behavior are unchanged.
-
-### Bot commands
-
-The shared command processor deletes recognized slash-command messages immediately, before invoking their handlers. It awaits deletion; if Telegram rejects it, the handler does not run. The `@YourBotName` mention command is never deleted, including during cooldown. Ordinary messages and commands addressed to another bot are not deleted. Slash commands also accept the configured bot-name suffix, such as `/stat@YourBotName`.
-
-Recognized commands are routed at the webhook entry point and are not saved to message history. After any required deletion, the processor atomically acquires a per-chat, per-command cooldown in `CommandsCall` for every command, including `/chronicle` and mentions. All mention questions share the configured bot-name key rather than separate keys for their question text. The default is five minutes, configured through `TelegramBotConfiguration__CommandCooldown` or Terraform `command_cooldown` in .NET TimeSpan format (e.g. `00:05:00`). Zero disables the interval; negative values are rejected. Conditional ETag updates and inserts prevent simultaneous attempts from both proceeding. Cooldown skips are logged without replying; admitted attempts are recorded before generation, so failed attempts also consume cooldown. UI Chronicle previews bypass cooldown and do not write to `CommandsCall`.
-
-`/report` (also `/report@YourBotName`) must reply to a message. Only non-anonymous users with **more than 30 messages in the same chat** can report. The command follows the shared deletion and per-chat command cooldown rules; invalid or untrusted reports produce no reply. It rechecks the reply target using the existing text/photo spam pipeline with `IsReported = true`, bypassing cached decisions, the short-text cutoff, and the sender's 100-message exemption. Reports do not increment message counters, rewrite history, or cache a non-spam decision. The prompt starts reported messages at 50% suspicion and disables the trusted-sender discount; a report alone is not enough for removal. Scores of at least 95% trigger moderation; review storage, deletion, and sender restriction remain unchanged. Anonymous/channel-authored reply targets are not moderated by this command.
-
-`@YourBotName <question>` is recognized at the start of a text message, case-insensitively, with whitespace separating the username and question. A bare mention also works. Mentions later in a message and usernames merely sharing the bot's prefix are not commands. The bot replies to the invocation with one text message in Telegram MarkdownV2. The prompt uses the question's language and a slang-rich, ironic chat-regular voice with proportionate, friendly ribbing, not personal abuse. It can comment on a quoted message without addressing that message's author. The AI receives `Question`, `From`, the explicit `ReplyTo` author and text/caption, and a chronological `Context` array from retained incoming history in the same chat. With a reply, context includes up to 10 retained messages before the reply target and up to 10 after it, independently capped (20 total maximum); without a reply, it includes the 10 latest retained messages before the question. The current question, the reply target itself and messages at or after the question are excluded. A reply target need not still be in history. Duplicate versions are merged using the latest stored version; entries without any payload content are omitted. Context entries are existing `HistoryMessage` objects sent directly, including `ChatId`, `MessageId`, `DateTimeTicks`, `Content` (`From`, `ReplyTo`, `Payload`) and update metadata. The full stored `Payload` can include `UserMessage`, `ImageDescription` and `ImageText`; context is limited by message count, not text length. No new image downloads or OCR are requested for mentions. Context may be partial or empty; history failures are logged and generation continues without it. The prompt prioritizes the current question and its explicit reply, uses additional history only when relevant to that topic, and treats all quoted/background content as untrusted data rather than instructions. UI mention previews still supply no history. Current weather and other live facts cannot be fetched by this text-only AI integration.
-
-Mention AI uses the separate `mention` deployment, configured independently through Terraform variable `mention` (`name`, `version`, `capacity`), defaulting to `gpt-6.1-terra`, `2026-10-26`, and capacity 10. `OpenAiServicesConfiguration__MentionDeployment` selects it and defaults to `mention`. Production sets mention capacity to 100, matching chronicle. The mention client uses the SDK's exponential-backoff retry policy with up to five retries after the initial request (six attempts total) for HTTP 429 and other transient failures. Server retry-delay headers are honored, and cancellation stops retries; non-transient errors such as HTTP 400 are not retried. [MentionInstructions.md](src/bot/TelegramAntiSpamBot.OpenAI/Instructions/MentionInstructions.md) is an embedded resource. The AI returns a limited Markdown subset (bold, italic, inline code and fenced code); the command converts it to Telegram MarkdownV2, escapes literal punctuation and caps the escaped output at 4096 characters without splitting Unicode pairs or generated formatting spans. The AI services share [TelegramTextUtils.cs](src/bot/TelegramAntiSpamBot.OpenAI/TelegramTextUtils.cs) for the initial 4000-character truncation. Empty responses and generation failures are logged without sending a message, and consume the same default five-minute cooldown as other commands. For group mentions to reach the webhook, the bot must be an administrator or have Privacy Mode disabled through BotFather.
-
-`/stat` displays the current chat's daily and monthly deletion totals and deletion-latency statistics. It deletes only its statistics response after approximately 15 seconds; command-message deletion is handled by the shared processor.
-
-`/chronicle` (or `/chronicle@YourBotName`) excludes stored messages whose text contains `/chronicle` (case-insensitive, including bot-name suffixes), collects only non-command messages from all history pages into a list using continuation tokens, and discards messages preceding `[latest non-command message time - 1 hour, latest non-command message time]`, including both boundaries, without a second history query. The window is independent of the current time, so inactive chats can still be summarized. If there are more than 100 messages, only the latest 100 are sent to AI and the response identifies that reduced scope. Otherwise all available messages from the hour are included. It does not reach further back to fill the selection to 100. Empty or missing history skips AI. The summary remains in the chat as one message; outputs beyond 4000 characters are truncated without splitting surrogate pairs. Generation failures are logged without sending anything to Telegram. UI preview failures still return a generic HTTP 502 response without exposing exception details.
-
-Chronicle makes one AI request, without intermediate summaries. Author, reply context, original timestamps, and text/captions are sent to the separate `chronicle` deployment; photos and OCR are not included. [ChronicleInstructions.md](src/bot/TelegramAntiSpamBot.OpenAI/Instructions/ChronicleInstructions.md) is embedded using the same resource loader as the anti-spam prompt. The prompt is written in English, but requires the recap, jokes, AI commentary, and coverage note to use the messages' language (the predominant discussion language in a multilingual chat). The prompt and its examples are entirely in English. It requests a noticeably playful, meme-fluent narrative with original topic-specific jokes and natural internet slang in most non-sensitive paragraphs, adapted to the conversation's language and online culture rather than a fixed slang list, while keeping reported facts separate from the narrator's opinions. Slang and joke structures should vary rather than become a repeated meme checklist. Friendly participant-directed teasing, light roasts, and playful "mogging" through better arguments or results are allowed when grounded in the discussion, but not attacks on personal worth, appearance, identity, or vulnerabilities, invented rivalries, humiliation, or pile-ons. Death, bereavement, suicide, self-harm, violence, abuse, serious illness, disasters, and genuine suffering must never be used for jokes, quoted jokes, or comic metaphors; substantive sensitive topics are still covered briefly and neutrally, without slang or sarcasm. The recap stays under 4000 characters in total so it fits one Telegram message; quieter chats get shorter recaps. The service enforces the character cap for both Telegram and UI previews. Coverage is limited to captured, retained history; Telegram history is not backfilled.
-
-Terraform creates a separate `chronicle` deployment using `gpt-6.1-terra`, version `2026-10-26`, `GlobalStandard`, capacity 10 by default, overridden to 100 for Chronicle in production. Production spam classification and image extraction capacities remain unchanged. Chronicle requests use the model's default reasoning without experimental SDK options; other deployments remain on `gpt-6-luna`. Override the `chronicle` object (`name`, `version`, `capacity`) in environment `.tfvars` files to configure it independently from spam classification and image extraction. Local validation does not provision the model or verify available Azure quota.
-
-## Repository layout
-
-| Path | Responsibility |
-|---|---|
-| [TelegramAntiSpamBot.Functions](src/bot/TelegramAntiSpamBot.Functions/) | Webhook endpoint, request authorization, message processing, and Telegram image URLs. |
-| [TelegramAntiSpamBot.OpenAI](src/bot/TelegramAntiSpamBot.OpenAI/) | Azure AI clients, classification, image-text extraction, and embedded prompt instructions. |
-| [TelegramAntiSpamBot.Persistence](src/bot/TelegramAntiSpamBot.Persistence/) | Table Storage repository, entities, statistics, and message normalization. |
-| [TelegramAntiSpamBot.Commands](src/bot/TelegramAntiSpamBot.Commands/) | Command routing, `/stat`, and `/chronicle`. |
-| [TelegramAntispamBot.Configuration](src/bot/TelegramAntispamBot.Configuration/) | Telegram bot configuration model. |
-| [TelegramAntiSpamBot.Initializer](src/bot/TelegramAntiSpamBot.Initializer/) | Console application that registers the Telegram webhook. |
-| [Review web app](src/web/) | Local React interface for the review queue and restriction removal. |
-| [Infrastructure](src/infrastructure/) | Azure resources, identities, networking, secrets, and environment variables. |
-| [.NET tests](tests/TelegramAntiSpamBot.IntegrationTests/) | Message-normalization tests and a live AI service smoke test. |
-| [Web tests](tests/TelegramAntiSpamBot.WebTests/) | Independent npm project with Playwright browser and CORS tests. |
-| [GitHub workflows](.github/workflows/) | Development release, production/pre-production release, connectivity setup, cleanup, and infrastructure destruction. |
-
-The shared target framework is defined in [Directory.Build.props](Directory.Build.props), and NuGet package versions are centralized in [Directory.Packages.props](Directory.Packages.props).
-
-## Configuration
-
-The application binds the following configuration sections. Use double underscores in environment variables to separate section and property names.
-
-| Setting | Purpose |
-|---|---|
-| `TelegramBotConfiguration__Token` | Telegram bot token. Required. |
-| `TelegramBotConfiguration__SecretHeader` | Shared webhook secret passed to Telegram when registering the webhook. Required. |
-| `TelegramBotConfiguration__BotName` | Bot username including `@`, used for command suffix matching. Required. |
-| `TelegramBotConfiguration__ForwardSpamToChatId` | Optional moderation archive chat ID. |
-| `TelegramBotConfiguration__DebugAiResponse` | Legacy setting, ignored. Spam classification always requests and returns an explanation using a strict JSON schema. |
-| `TelegramBotConfiguration__CommandCooldown` | Per-chat, per-command cooldown for all Telegram commands in .NET TimeSpan format; default `00:05:00`. Does not apply to UI Chronicle previews. |
-| `OpenAiServicesConfiguration__ServiceUrl` | Azure AI service endpoint. Required. |
-| `OpenAiServicesConfiguration__SpamRecognitionDeployment` | Spam-classification deployment name. Required; Terraform sets `antispam`. |
-| `OpenAiServicesConfiguration__ImageRecognitionDeployment` | Image-text extraction deployment name. Required; Terraform sets `images`. |
-| `OpenAiServicesConfiguration__ChronicleDeployment` | Separate chat-summary deployment name. Defaults to `chronicle`; set automatically by Terraform. |
-| `OpenAiServicesConfiguration__ApiKey` | Optional AI API key; Azure identity authentication is used when omitted. |
-| `OpenAiServicesConfiguration__OpenAiIdentityClientId` | Optional user-assigned identity client ID for AI access. |
-| `AzureTablesConfiguration__StorageAccountUrl` | Azure Table Storage endpoint. Required. |
-| `AzureTablesConfiguration__TableIdentityClientId` | Optional user-assigned identity client ID for Table Storage access. |
-
-For local development, omitting identity client IDs allows `DefaultAzureCredential` to use an available developer identity. That identity needs Table Storage data permissions and, if API-key authentication is not used, access to the AI service.
-
-## Local development
-
-### Prerequisites
-
-- .NET 10 SDK.
-- Azure Functions Core Tools v4 with support for the project's .NET runtime.
-- Azure CLI for developer authentication and infrastructure operations.
-- Accessible Azure AI deployments and the four provisioned storage tables.
-- A Telegram bot created through BotFather.
-- A publicly accessible HTTPS endpoint or tunnel for Telegram webhook delivery.
-- Local host storage, such as Azurite, when using `UseDevelopmentStorage=true`.
-
-### Build
-
-Run from the repository root:
-
-```powershell
-dotnet restore AntiSpamTelegramBot.sln
-dotnet build AntiSpamTelegramBot.sln --configuration Release
-```
-
-### Run the Functions host
-
-Configure [local.settings.json](src/bot/TelegramAntiSpamBot.Functions/local.settings.json) with your own values. The following is a placeholder example, not production configuration:
-
-```json
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "TelegramBotConfiguration__Token": "<telegram-bot-token>",
-    "TelegramBotConfiguration__SecretHeader": "<webhook-secret>",
-    "TelegramBotConfiguration__BotName": "@YourBotName",
-    "TelegramBotConfiguration__DebugAiResponse": "false",
-    "OpenAiServicesConfiguration__ServiceUrl": "https://<ai-service-endpoint>/",
-    "OpenAiServicesConfiguration__SpamRecognitionDeployment": "antispam",
-    "OpenAiServicesConfiguration__ImageRecognitionDeployment": "images",
-    "OpenAiServicesConfiguration__ApiKey": "<ai-api-key>",
-    "AzureTablesConfiguration__StorageAccountUrl": "https://<storage-account>.table.core.windows.net/"
-  }
-}
-```
-
-Do not commit real credentials. If using Azure identity authentication instead of an AI API key, omit the API-key setting and sign in with `az login`. For private Azure resources, the local machine must also have working network access and DNS resolution.
-
-```powershell
-Set-Location src\bot\TelegramAntiSpamBot.Functions
-func start
-```
-
-The webhook route is `/api/AntiSpamBotWebHook`. Telegram must reach it through HTTPS; a localhost URL cannot receive Telegram updates directly.
-
-### Run the review web app
-
-With Node.js 24 LTS installed, run from the repository root:
-
-```powershell
-npm --prefix src/web ci
-npm --prefix src/web run dev
-```
-
-Open the URL printed by Vite. The workspace automatically connects to the Function configured in `.env` and loads the chat catalog. Select a chat and load the queue. The English interface supports paginated review, original text and OCR, spam/not-spam decisions, and independent restriction removal.
-
-Set `API_URL` and optional `FUNCTION_KEY` in the web app's `.env`. Restart Vite and reload after changes. There are no manual connection or credential controls. Requests go directly to the Function, so allow the exact frontend origin in its CORS settings. The key is not stored in browser storage, but a configured key is embedded in the client bundle: do not publish or share a bundle containing a real key. No web hosting or infrastructure is provisioned. See [the web app README](src/web/README.md) for connection details and action side effects, and [the independent Playwright project](tests/TelegramAntiSpamBot.WebTests/README.md) for browser tests.
-
-### Register the webhook
-
-Run the initializer from the repository root using your bot token, public HTTPS webhook URL, and shared secret:
-
-```powershell
-dotnet run --project src\bot\TelegramAntiSpamBot.Initializer -- "<telegram-bot-token>" "https://<public-host>/api/AntiSpamBotWebHook" "<webhook-secret>"
-```
-
-The initializer subscribes to new and edited message updates. Webhook registration replaces the bot's current webhook, so use a separate bot for development. Grant the bot permission to receive group messages, delete messages, and restrict members; disable Telegram privacy mode if needed for message delivery in your setup. The optional archive chat must also be accessible to the bot.
-
-## Azure infrastructure
-
-Terraform provisions:
-
-- A resource group, virtual network, Functions subnet, and optional private-endpoint subnet.
-- A Flex Consumption Function App, service plan, application storage, and Application Insights resource.
-- Azure AI Services, separate `antispam`, `images`, and `chronicle` deployments, and a content-filter policy. Deployment names are stable; the `name` and `version` fields in the environment `.tfvars` configuration select the underlying models. Renaming existing deployments replaces them on apply; Function App settings reference the new names automatically.
-- An application data storage account and four tables.
-- An RBAC-enabled Key Vault containing `telegram-bot-token`, `telegram-bot-secret-header`, and `ai-services-api-key`.
-- A user-assigned Function App identity and required role assignments.
-- Permanent private endpoints for Key Vault and Table Storage when public access is disabled.
-- Private DNS zones, VNet links, and temporary private endpoints for the self-hosted runner.
-
-Environment settings are stored in [dev.tfvars](src/infrastructure/environments/dev.tfvars), [ppr.tfvars](src/infrastructure/environments/ppr.tfvars), and [prod.tfvars](src/infrastructure/environments/prod.tfvars). These configure resource naming, region, network ranges, model deployments, bot settings, and public-access behavior.
-
-The Terraform configuration requires version `>= 1.17.0, < 2.0`; workflows install `1.17.0`. Provider constraints are defined in [versions.tf](src/infrastructure/versions.tf).
-
-### Function failure alerts
-
-[alerts.tf](src/infrastructure/alerts.tf) creates an Azure Monitor log alert scoped to the Function App's Application Insights and an email Action Group in each environment. It checks every minute for any failed request (`requests | where success == false`) in the previous five minutes, with severity 2. The stateful alert notifies when it fires and resolves automatically after the failure condition clears, rather than sending a new email on every evaluation while active.
-
-Notifications go to `serii_trofimov@epam.com` by default; override Terraform variable `function_alert_emails` in an environment's `.tfvars` file with a non-empty list of recipients, e.g. `function_alert_emails = ["serii_trofimov@epam.com", "oncall@example.com"]`. Duplicate addresses create only one receiver. The resources are created on the next infrastructure plan/apply. Use the Action Group's **Test** action in Azure Portal after deployment to verify email delivery. Telemetry ingestion can delay detection; caught exceptions that still result in successful executions, and outages that produce no request telemetry, do not trigger this rule.
-
-### Backend and runner prerequisites
-
-The Azure Storage backend and GitHub runner VNet/subnet must already exist. Infrastructure jobs run on a self-hosted runner with Bash and Azure CLI available and access to the backend storage account. The Actions Runner must be version `2.327.1` or later for the Node.js 24 actions used by these workflows. Model deployments must be supported in the selected region and have sufficient quota.
-
-All setup, deployment, cleanup, and destroy stages use the same state blob, `terraform.tfstate`, in the selected environment's backend container. `AZ_MAIN_STATE_FILE_KEY` is the name of that blob, not a separate state store. Terraform may store secret values in state even when variables are marked sensitive; restrict access to the backend and saved plans.
-
-### Runner connectivity lifecycle
-
-1. **Setup:** `setup-vm-runner-connectivity` sets `enable_runner_endpoints=true` and applies the targeted network dependencies, including DNS propagation waits. This bootstrap plan uses `-refresh=false`: the targets also include their Key Vault dependency, whose refresh reads certificate contacts through the data plane and can time out while runner connectivity is still disabled. Setup uses the saved state to restore connectivity before the main plan refreshes the Vault and its secrets.
-2. **Deployment:** the main infrastructure job performs a full plan/apply. A separate job configures and refreshes Key Vault references using the Function App's user-assigned identity, followed by Function App publication and Telegram webhook registration.
-3. **Cleanup:** a full, ordinary plan/apply with `enable_runner_endpoints=false` removes temporary runner endpoints and DNS waits. DNS records retain the permanent endpoint addresses.
-
-The resource-targeting warning during setup is expected. Only this bootstrap plan disables refresh; the main deployment and cleanup retain normal refresh and full planning. Bootstrap relies on an accurate existing state and is not a substitute for reconciling external resource drift or making unrelated Key Vault changes.
-
-Secrets, the Function App, and table provisioning do not depend on temporary runner endpoints. Cleanup does not use `terraform destroy -target` or manually remove Azure resources. Infrastructure-destroy workflows restore runner connectivity before planning a full destroy.
-
-The default value of `enable_runner_endpoints` is `true`. CI, release, and destroy workflows use environment-specific concurrency groups to avoid overlapping operations on the same environment.
-
-## GitHub Actions deployment
-
-| Workflow | Trigger and purpose |
-|---|---|
-| [release dev](.github/workflows/release-dev.yaml) | Pushes to `main` or manual runs; deploys the `dev` environment. |
-| [release prod](.github/workflows/release-prod.yaml) | Manual deployment to `ppr` or `prod`; `ppr` is the default selection. |
-| [main-infrastructure](.github/workflows/main-infrastructure.yaml) | Reusable infrastructure workflow, including separate runner-connectivity setup and post-apply Key Vault reference configuration jobs. |
-| [vm-runner-connectivity](.github/workflows/runner-connectivity.yaml) | Reusable setup/cleanup plan and apply controlled by `enable_runner_endpoints`. |
-| [deploy](.github/workflows/functionapp.yaml) | Publishes the Linux Function App package, deploys it, and registers the webhook. |
-| [cleanup-runner-endpoints](.github/workflows/cleanup-runner-endpoints.yaml) | Invokes connectivity cleanup after application deployment. |
-| [destroy-ci](.github/workflows/destroy-ci.yaml) | Manual full infrastructure destruction for `dev`, `ppr`, or `prod`. |
-| [destroy-infrastructure](.github/workflows/destroy-infrastructure.yaml) | Reusable connectivity setup followed by a full Terraform destroy plan/apply. |
-
-Configure the following GitHub secrets at repository or environment scope:
-
-| Secret | Purpose |
-|---|---|
-| `ARM_TENANT_ID` | Azure tenant ID. |
-| `ARM_SUBSCRIPTION_ID` | Target Azure subscription. |
-| `ARM_CLIENT_ID` | Deployment service principal application ID. |
-| `AZ_OWNER_OBJECT_ID` | Object ID granted Key Vault administrator access. |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token for the selected environment. |
-| `TELEGRAM_BOT_SECRET_HEADER` | Telegram webhook secret for the selected environment. |
-
-Configure the GitHub variables `AZ_TERRAFORM_BACKEND_STORAGEACCOUNT` and `AZ_TERRAFORM_BACKEND_RESOURCEGROUP` for the existing backend. Create the appropriate environment containers and configure the `dev`, `ppr`, and `prod` GitHub environments before deployment.
-
-The deployment identity needs permission to manage the Azure resources, create role assignments, access Terraform state, and provision Key Vault secrets and storage tables. The application publish job runs on `ubuntu-latest`; infrastructure jobs use the self-hosted runner.
-
-### Azure login with OIDC
-
-Workflows use the existing deployment applications and their Azure roles, but no
-longer use `ARM_CLIENT_SECRET`. The IDs remain in the existing GitHub environment
-secrets. Each Azure job requests a GitHub OIDC token with `id-token: write` and
-signs in through `azure/login`. Terraform uses `ARM_USE_OIDC=true` for both the
-AzureRM provider and state backend. Table provisioning reuses the job's Azure CLI
-login; local Terraform runs that create tables require an existing `az login`.
-
-Before deploying these workflow changes, configure trust outside the bot's
-Terraform state so that destroying dev does not remove its deployment access:
-
-1. In Entra ID > App registrations, open the deployment application matching
-   `ARM_CLIENT_ID` for the environment, not the review SPA registration.
-2. Under Certificates & secrets > Federated credentials, add a GitHub Actions
-   credential for organization `Dotron-Development`, repository
-   `AntiSpamTelegramBot`, entity type **Environment**, and environment `dev` or
-   `prod`. Use issuer `https://token.actions.githubusercontent.com` and audience
-   `api://AzureADTokenExchange`. If the form requires IDs, use organization ID
-   `215062107` and repository ID `903421504`.
-3. The repository uses immutable OIDC subjects. The exact subjects are
-   `repo:Dotron-Development@215062107/AntiSpamTelegramBot@903421504:environment:dev` and
-   `repo:Dotron-Development@215062107/AntiSpamTelegramBot@903421504:environment:prod`. If both
-   environments use the same deployment application, add both credentials there;
-   otherwise add each to its environment's application. Add a separate `ppr`
-   credential only if that environment is used again.
-4. Keep existing Azure role assignments and Terraform backend access unchanged.
-   Protect the GitHub `prod` environment with deployment branch restrictions and
-   approval rules as appropriate: the environment subject alone does not enforce
-   a particular branch. `id-token: write` permits token issuance, not Azure access.
-5. Verify a dev release and its cleanup; verify dev destroy only when its data
-   can be removed. Then verify prod deployment. Remove the old GitHub
-   `ARM_CLIENT_SECRET` secrets and revoke the old Entra client credentials only
-   after successful OIDC validation and checking that no other automation uses
-   them.
-
-The Static Web Apps deployment token remains separate: its job retrieves the
-current token through Azure CLI after OIDC login. Bot runtime managed identities,
-MSAL, Functions Easy Auth and Telegram secrets are unchanged. A local shell
-cannot verify the GitHub-issued token exchange; that requires an Actions run.
-
-## Tests and validation
-
-Run the deterministic normalization tests without contacting Azure:
-
-```powershell
-dotnet test tests\TelegramAntiSpamBot.IntegrationTests\TelegramAntiSpamBot.IntegrationTests.csproj --filter "FullyQualifiedName~MessageContentSanitizerTests"
-```
-
-The same test project contains a live AI smoke test. To run it, provide the required `appsettings.Test.json` in the test project directory with the `OpenAiServicesConfiguration` section and suitable authentication. The test loads .NET user secrets first and the JSON file afterward, so JSON values override matching user-secret keys. Keep credentials outside version control. Live AI calls require network access and may incur charges.
-
-To run the entire .NET test project after configuring the live service:
-
-```powershell
-dotnet test tests\TelegramAntiSpamBot.IntegrationTests\TelegramAntiSpamBot.IntegrationTests.csproj
-```
-
-For static Terraform validation with the required providers installed:
-
-```powershell
-Set-Location src\infrastructure
-terraform fmt -check
-terraform validate
-```
-
-## Operational notes
-
-- Telegram moderation requires suitable bot permissions in each supergroup. AI decisions can be incorrect; use the archive chat to review moderation results.
-- Photo processing uses the largest available Telegram photo. Classification receives separate user text/caption, recognized photo text, and image description fields. Documents and other media are not analyzed.
-- Senders with at least 100 recorded messages bypass classification, although photo text extraction happens before that check.
-- Logs can contain message content, AI explanations, and, at debug level, image URLs. Review log retention and access permissions before production use. Message text and photos are sent to the configured AI service.
-- Cached decisions persist in Table Storage; changing model prompts or normalization does not automatically invalidate existing cache entries.
-- Connectivity setup restores private access before refresh. If a previous deployment removed secrets or the Function App, rerun the corrected release workflow to recreate infrastructure and publish the application.
-- The full destroy workflow removes persistent application infrastructure and data; it is not a substitute for runner-endpoint cleanup.
+Use a separate single-tenant Entra App registration for the review website and API. Its tenant must match the deployment tenant.
+
+1. Add the **Single-page application** redirect URI `http://localhost:5173` for local development.
+2. Create the `Moderator` app role for Users/Groups and assign the permitted moderators in the Enterprise application.
+3. Set the API's `requestedAccessTokenVersion` to `2`.
+4. Under **Expose an API**, set `api://<CLIENT_ID>` and create the delegated `Review.Access` scope. Arrange the required administrator consent.
+5. Record each moderator's user Object ID in `REVIEW_USER_OBJECT_IDS`.
+
+Follow the detailed [Entra registration guide](docs/entra-id-setup.md) and [Functions Easy Auth guide](docs/functions-easy-auth.md). The frontend role check does not replace the API's user allowlist. Keep the Telegram webhook excluded from Easy Auth; its own header validation remains enabled.
+
+## 7. Configure Environment Parameters
+
+Edit [dev.tfvars](src/infrastructure/environments/dev.tfvars) and [prod.tfvars](src/infrastructure/environments/prod.tfvars):
+
+- `location`, environment names and prefixes.
+- Non-overlapping `vnet_address_prefix` values.
+- Existing GitHub runner VNet, resource group and subnet names.
+- `bot_name`, including `@`, and `forwardSpamToChatId`.
+- `review_client_id`, using the review website/API registration from step 6, not the deployment application.
+- AI model names, versions and capacities for `spam_recognition`, `image_text_extractor`, `chronicle` and `mention`.
+- `disable_public_access`, according to the environment's network requirements.
+- Optional `function_alert_emails`, `command_cooldown` and `spam_restriction_timeout`.
+
+## 8. Deploy and Verify
+
+1. Run [release dev](.github/workflows/release-dev.yaml) manually from GitHub Actions, or push to `main` to deploy `dev` automatically.
+2. Verify OIDC login, infrastructure deployment, Functions deployment, website deployment and runner-endpoint cleanup.
+3. Obtain the `review_static_web_app_url` Terraform output and add it as a **Single-page application** redirect URI in the review registration.
+4. Open that URL, sign in as an assigned moderator and verify API access. Check that unauthenticated review API requests are rejected.
+5. Send a message to the development Telegram group and verify webhook delivery.
+6. Run [release prod](.github/workflows/release-prod.yaml) manually, explicitly selecting `prod`. Repeat the sign-in and webhook checks for production.
+
+The website deploys to Azure Static Web Apps Free. Its build settings are supplied by Terraform and the build job; changing them requires another deployment. Function CORS includes the deployed website origin automatically.
+
+After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) with environment `dev` to remove its infrastructure and data. Do not select `prod` for routine cleanup.
+
+## 9. Run Locally
+
+1. Sign in with `az login`. Ensure your account can access the AI deployments and application Table Storage. For private resources, configure working network access and DNS.
+2. Configure the ignored [local.settings.json](src/bot/TelegramAntiSpamBot.Functions/local.settings.json) with the Telegram bot token, webhook header, bot username, Azure AI endpoint and deployment names, and Table Storage URL. Use Azurite if `AzureWebJobsStorage` is `UseDevelopmentStorage=true`. Keep real credentials outside version control.
+
+   ```json
+   {
+     "IsEncrypted": false,
+     "Values": {
+       "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+       "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+       "TelegramBotConfiguration__Token": "<dev-bot-token>",
+       "TelegramBotConfiguration__SecretHeader": "<webhook-header>",
+       "TelegramBotConfiguration__BotName": "@YourDevBotName",
+       "OpenAiServicesConfiguration__ServiceUrl": "https://<ai-service-endpoint>/",
+       "OpenAiServicesConfiguration__SpamRecognitionDeployment": "antispam",
+       "OpenAiServicesConfiguration__ImageRecognitionDeployment": "images",
+       "AzureTablesConfiguration__StorageAccountUrl": "https://<storage-account>.table.core.windows.net/"
+     }
+   }
+   ```
+
+3. Build and start Functions:
+
+   ```powershell
+   dotnet build AntiSpamTelegramBot.sln --configuration Release
+   Set-Location src\bot\TelegramAntiSpamBot.Functions
+   func start --cors http://localhost:5173
+   ```
+
+   Keep the local Functions host bound to loopback: Easy Auth runs only in Azure.
+
+4. Create `src/web/.env` with the public configuration:
+
+   ```dotenv
+   API_URL=http://localhost:7071
+   TENANT_ID=<Directory tenant ID>
+   CLIENT_ID=<Review registration Application client ID>
+   API_SCOPE=api://<Review registration Application client ID>/Review.Access
+   REDIRECT_URI=http://localhost:5173
+   ```
+
+5. In another terminal, from the repository root:
+
+   ```powershell
+   Set-Location src\web
+   npm ci
+   npm run dev
+   ```
+
+   Open `http://localhost:5173`. Restart Vite after changing `.env`. To verify platform authentication, set `API_URL` to the deployed Function App's HTTPS origin.
+
+6. For local Telegram delivery, expose the development webhook through a public HTTPS tunnel and register it from the repository root:
+
+   ```powershell
+   dotnet run --project src\bot\TelegramAntiSpamBot.Initializer -- "<dev-bot-token>" "https://<public-host>/api/AntiSpamBotWebHook" "<webhook-header>"
+   ```
+
+   Registration replaces the bot's current webhook; use only the development bot. Deployment workflows register the Azure webhook automatically.
+
+See [the web setup guide](src/web/README.md) for additional frontend configuration.
