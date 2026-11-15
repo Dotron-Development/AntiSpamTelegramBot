@@ -1,5 +1,6 @@
 ﻿namespace TelegramAntiSpamBot.IntegrationTests
 {
+    [Trait("Category", "External")]
     public class SpamDetectorServiceTests
     {
         private readonly ServiceProvider _serviceProvider;
