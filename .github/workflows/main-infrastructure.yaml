@@ -24,7 +24,7 @@ on:
         description: "The review SPA URL and Entra SPA redirect URI"
         value: ${{ jobs.main-infrastructure.outputs.review_static_web_app_url }}
       review_spa_build_settings:
-        description: "Public SPA build settings as JSON"
+        description: "Public SPA build settings as JSON, excluding the tenant supplied in the build job"
         value: ${{ jobs.main-infrastructure.outputs.review_spa_build_settings }}
 
 env:

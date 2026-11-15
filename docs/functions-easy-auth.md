@@ -85,13 +85,13 @@ distributed. No separate paid App Service plan or Node.js server is needed.
 [staticwebapp.config.json](../src/web/public/staticwebapp.config.json) supplies
 SPA navigation fallback and is copied into `dist` by Vite.
 
-Terraform exports these public build settings as the JSON string
-`review_spa_build_settings`; the release workflows pass it to the SPA build:
+Terraform exports the public `review_spa_build_settings` JSON without `TENANT_ID`.
+The SPA build job adds the tenant directly from the existing GitHub secret:
 
 | Setting | Source |
 | --- | --- |
 | `API_URL` | Function App's actual default hostname, over HTTPS |
-| `TENANT_ID` | Existing Azure deployment tenant |
+| `TENANT_ID` | Existing `ARM_TENANT_ID` secret, supplied within the SPA build job |
 | `CLIENT_ID` | `review_client_id` |
 | `API_SCOPE` | `api://<CLIENT_ID>/Review.Access` |
 | `REDIRECT_URI` | Static Web App's generated HTTPS origin |
@@ -107,6 +107,11 @@ No deployment token, Function key or client secret is embedded in the bundle or
 exported by Terraform. Vite uses build-time settings: changes require another
 SPA build/deployment. Static Web Apps application settings are not used for the
 frontend build.
+
+The tenant is deliberately excluded from workflow outputs: GitHub drops outputs
+containing values that match secrets, including the public tenant GUID stored as
+`ARM_TENANT_ID`. It stays within the SPA job's environment. No additional Azure
+configuration queries or encoding to bypass secret masking are needed.
 
 After infrastructure deployment, obtain `review_static_web_app_url` from Terraform
 outputs and add that exact URL as a **Single-page application** redirect URI

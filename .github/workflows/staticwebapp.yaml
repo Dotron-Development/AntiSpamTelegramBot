@@ -27,6 +27,7 @@ jobs:
       RESOURCE_GROUP_NAME: ${{ inputs.resource_group_name }}
       STATIC_WEB_APP_NAME: ${{ inputs.static_web_app_name }}
       SPA_BUILD_SETTINGS: ${{ inputs.build_settings }}
+      TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
 
     steps:
       - name: Checkout
@@ -51,7 +52,13 @@ jobs:
           node --input-type=module <<'NODE'
           import { appendFileSync } from 'node:fs';
 
-          const settings = JSON.parse(process.env.SPA_BUILD_SETTINGS);
+          if (!process.env.SPA_BUILD_SETTINGS?.trim()) {
+            throw new Error('Missing SPA build settings from the infrastructure workflow');
+          }
+          const settings = {
+            ...JSON.parse(process.env.SPA_BUILD_SETTINGS),
+            TENANT_ID: process.env.TENANT_ID,
+          };
           const names = ['API_URL', 'TENANT_ID', 'CLIENT_ID', 'API_SCOPE', 'REDIRECT_URI'];
           for (const name of names) {
             if (typeof settings[name] !== 'string' || !settings[name].trim() || /[\r\n]/.test(settings[name])) {
