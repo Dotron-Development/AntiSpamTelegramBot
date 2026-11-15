@@ -2,6 +2,85 @@ namespace TelegramAntiSpamBot.IntegrationTests;
 
 public class TelegramMarkdownFormatterTests
 {
+    [Fact]
+    public void MarkdownLinkPreservesUrlAndEscapesItsClosingParenthesis()
+    {
+        Assert.Equal("Fact\\. [Source](https://example.com/a_b_c?q=(one\\))",
+            TelegramMarkdownFormatter.Format("Fact. [Source](https://example.com/a_b_c?q=(one))"));
+    }
+
+    [Theory]
+    [InlineData("[Source](https://example.com/a\\(b\\))", "[Source](https://example.com/a(b\\))")]
+    [InlineData("[A \\[B\\] *C*](https://example.com/)", "[A \\[B\\] \\*C\\*](https://example.com/)")]
+    [InlineData("[Source](ftp://example.com/file)", "\\[Source\\]\\(ftp://example\\.com/file\\)")]
+    [InlineData("[Source](https://example.com/unclosed", "\\[Source\\]\\(https://example\\.com/unclosed")]
+    [InlineData("`[Source](https://example.com/)`", "`[Source](https://example.com/)`")]
+    public void MarkdownLinksEscapeLabelsAndTargetsAndKeepUnsupportedOrCodeLinksLiteral(string input, string expected)
+    {
+        Assert.Equal(expected, TelegramMarkdownFormatter.Format(input));
+    }
+
+    [Fact]
+    public void SingleMessageDoesNotCutAnInlineCitationAtLimit()
+    {
+        var prefix = new string('a', 4080) + " ";
+        Assert.Equal(prefix, TelegramMarkdownFormatter.Format(prefix + "[Source](https://example.com/source)"));
+    }
+
+    [Fact]
+    public void MultipartEscapingPreservesAllTextAndUnicode()
+    {
+        var text = new string('!', 2047) + "😀" + new string('!', 3000);
+        var parts = TelegramMarkdownFormatter.FormatParts(text);
+        Assert.True(parts.Count > 1);
+        Assert.All(parts, part =>
+        {
+            Assert.InRange(part.Length, 1, 4096);
+            Assert.DoesNotContain('\uFFFD', Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(part)));
+        });
+        Assert.Equal(text.Replace("!", "\\!"), string.Concat(parts));
+    }
+
+    [Theory]
+    [InlineData("**", "*", "*")]
+    [InlineData("_", "_", "_")]
+    [InlineData("*", "_", "_")]
+    [InlineData("`", "`", "`")]
+    [InlineData("```cs\n", "```cs\n", "```")]
+    public void MultipartFormattingReopensAndClosesEntities(string opening, string prefix, string closing)
+    {
+        var content = new string('a', 10000);
+        var marker = opening.StartsWith("```") ? "```" : opening;
+        var parts = TelegramMarkdownFormatter.FormatParts(opening + content + marker);
+        Assert.Equal(3, parts.Count);
+        Assert.All(parts, part =>
+        {
+            Assert.InRange(part.Length, 1, 4096);
+            Assert.StartsWith(prefix, part);
+            Assert.EndsWith(closing, part);
+        });
+        Assert.Equal(content, string.Concat(parts.Select(part => part[prefix.Length..^closing.Length])));
+    }
+
+    [Fact]
+    public void MultipartMovesWholeUrlToNextMessage()
+    {
+        const string url = "https://example.com/a_b?q=one-two";
+        var text = new string('a', 4080) + "\n" + url + "\ntail";
+        var parts = TelegramMarkdownFormatter.FormatParts(text);
+        Assert.Equal(2, parts.Count);
+        Assert.StartsWith(TelegramMarkdownFormatter.Format(url), parts[1]);
+        Assert.Equal(new string('a', 4080) + "\n" + TelegramMarkdownFormatter.Format(url) + "\ntail", string.Concat(parts));
+    }
+
+    [Fact]
+    public void MultipartNearFullMessagePreservesFollowingEntityAndUnclosedMarkers()
+    {
+        var prefix = new string('a', 4095);
+        var parts = TelegramMarkdownFormatter.FormatParts(prefix + "**😀**tail `unclosed!");
+        Assert.Equal(new[] { prefix, "*😀*tail \\`unclosed\\!" }, parts);
+    }
+
     [Theory]
     [InlineData("", "")]
     [InlineData("Обычный текст\nSecond line", "Обычный текст\nSecond line")]

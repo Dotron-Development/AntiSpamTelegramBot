@@ -35,10 +35,10 @@ public sealed class MentionReviewFunctions(
             input.ReplyTo is { } replyTo
                 ? new HistoryMessageReply(0, Author(replyTo.Name, replyTo.Username), replyTo.Text!)
                 : null);
-        string answer;
+        MentionResponse generated;
         try
         {
-            answer = await mentionService.GenerateAsync(mentionRequest, cancellationToken);
+            generated = await mentionService.GenerateAsync(mentionRequest, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -51,6 +51,7 @@ public sealed class MentionReviewFunctions(
         }
 
         var response = request.CreateResponse(HttpStatusCode.OK);
+        var answer = generated.Answer;
         await response.WriteAsJsonAsync(new { answer }, Serializer, cancellationToken);
         return response;
     }

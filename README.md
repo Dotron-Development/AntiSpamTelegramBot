@@ -199,3 +199,27 @@ After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) wit
    Registration replaces the bot's current webhook; use only the development bot. Deployment workflows register the Azure webhook automatically.
 
 See [the web setup guide](src/web/README.md) for additional frontend configuration.
+
+## 10. Mention Agent and Web Search
+
+Messages starting with `@BotName` invoke a Microsoft Agent Framework agent backed by Azure OpenAI Responses. Existing slash commands, spam detection, reply context, Telegram Markdown formatting and the chat-level command cooldown are unchanged. A new agent run is created for each mention; conversations are not shared between chats or requests, and Responses storage is disabled (`store: false`).
+
+The agent has exactly one hosted tool: web search backed by Bing. It decides whether to search; ordinary questions can be answered without tools. Search results are untrusted evidence, and source URLs from response annotations are included in Telegram answers. The instructions prohibit sending private chat history, identities or secrets in search queries; this is a model instruction, not a deterministic data-loss-prevention filter.
+
+Use the existing `OpenAiServicesConfiguration__ServiceUrl` as the Azure account's base URL (without `/openai/v1`), and `OpenAiServicesConfiguration__MentionDeployment` for a deployment supporting Responses and hosted web search (default: `mention`). Mention requests append `/openai/v1/responses` to that base URL. Authentication uses the existing optional API key or Azure credential/managed identity; no separate Bing API key is required. Entra authentication requests the `https://ai.azure.com/.default` scope and requires inference access to the resource.
+
+Each mention has a 90-second deadline, a hard 2000-output-token generation limit and a provider-side limit of three hosted tool calls. Output tokens include reasoning tokens for reasoning models; this limit is separate from Telegram's character limit. The tool-call limit is not a strict cap on billable Bing requests; Azure reports those separately in `tool_usage.web_search.num_requests`. Existing retry behavior is retained (up to five retries for transient failures). Incomplete and empty responses are rejected and errors are logged by the mention command.
+
+The prompt asks the agent to synthesize concise prose under 2000 characters using at most three sources, without inventing reference numbers or appending a bibliography. This source limit is a model instruction, not a guaranteed restriction on provider annotations or URL length. The application renders citation annotations inline as `Fact. [Source title](https://example.com/source)`, preserving the provider's title and original URL. If no title is provided, the URL is used as the link label. Provider citation markers are replaced; annotated factual prose is preserved. Telegram MarkdownV2 renders the title as a clickable link and escapes reserved characters in labels and link targets without changing the destination.
+
+Telegram sends exactly one successful answer message, with inline references, replying to the mention. There is no separate sources message. If necessary, the formatted answer is truncated to 4096 characters after MarkdownV2 escaping, keeping formatted spans closed and Unicode pairs intact. Inline references that fit in a single message are kept whole rather than cut at the truncation boundary. Unexpectedly long responses can therefore lose trailing content; reducing the generation-token budget alone cannot guarantee Telegram's character limit. The web preview preserves its existing `{answer}` JSON shape and displays the full answer with inline references, without Telegram-specific truncation or a duplicate source list.
+
+Web search is billed separately from model tokens. Review [Bing Grounding pricing](https://www.microsoft.com/en-us/bing/apis) and [Azure OpenAI pricing](https://azure.microsoft.com/en-us/pricing/details/azure-openai/). Bing grounding data flows outside Azure's compliance and geographic boundary; the Microsoft Data Protection Addendum does not apply to that data. See [Azure web search documentation](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/web-search) for terms and availability. The .NET Responses API currently carries the `OPENAI001` experimental diagnostic, suppressed only in the files that use it.
+
+Review the [Bing use and display requirements](https://www.microsoft.com/en-us/bing/apis/grounding-legal-enterprise), which require retaining references and attribution. Clickable titles preserve the supplied title and destination, but Markdown formatting alone does not certify full compliance; truncation can still omit trailing references.
+
+Focused offline validation (mocked Azure and Telegram HTTP responses; no paid requests):
+
+```powershell
+dotnet test tests\TelegramAntiSpamBot.IntegrationTests\TelegramAntiSpamBot.IntegrationTests.csproj --filter FullyQualifiedName~MentionCommandTests
+```
