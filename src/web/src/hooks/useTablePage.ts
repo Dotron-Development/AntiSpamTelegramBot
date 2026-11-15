@@ -52,5 +52,13 @@ export function useTablePage<T>(connection: Connection, notify: Notify,
         if (query && continuationToken && !loading) void load(query, true)
     }
 
-    return { rows, query, continuationToken, loading, hasLoaded, load, loadMore }
+    function reset() {
+        pending.current?.abort()
+        setRows([])
+        setContinuationToken(null)
+        setLoading(false)
+        setHasLoaded(false)
+    }
+
+    return { rows, query, continuationToken, loading, hasLoaded, load, loadMore, reset }
 }

@@ -83,9 +83,9 @@ public sealed class ReviewFunctions(
                 .Where(text => !string.IsNullOrEmpty(text)));
             if (!string.IsNullOrEmpty(content))
             {
-                var sender = string.IsNullOrEmpty(message.From.Nick)
+                var sender = string.IsNullOrEmpty(message.From.Username)
                     ? message.From.Name
-                    : $"{message.From.Name} @{message.From.Nick}";
+                    : $"{message.From.Name} @{message.From.Username}";
                 var text = $"from: {sender}\n{content}";
                 var offset = 0;
                 Message? previousPart = null;

@@ -6,6 +6,19 @@ public sealed class HistoryReviewFunctions(
     ICommandCallsRepository commandCallsRepository)
 {
     private static readonly JsonObjectSerializer Serializer = new(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+    [Function("ClearChatHistory")]
+    public async Task<HttpResponseData> ClearHistory(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "review/history/{chatId:long}")] HttpRequestData request,
+        long chatId, CancellationToken cancellationToken = default)
+    {
+        if (chatId == 0)
+            return await Error(request, HttpStatusCode.BadRequest, "A non-zero chatId is required.");
+
+        await historyRepository.ClearChatAsync(chatId, cancellationToken);
+        return request.CreateResponse(HttpStatusCode.NoContent);
+    }
+
     [Function("GetReviewHistory")]
     public async Task<HttpResponseData> GetHistory(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "review/history")] HttpRequestData request,

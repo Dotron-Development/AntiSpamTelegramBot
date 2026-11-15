@@ -31,6 +31,7 @@ namespace TelegramAntiSpamBot.Commands
                             message.Id, message.Chat.Id);
                     }
                 }
+
                 if (!await calls.TryAcquireAsync(message.Chat.Id, command.Command, DateTimeOffset.UtcNow,
                     configuration.CommandCooldown))
                 {

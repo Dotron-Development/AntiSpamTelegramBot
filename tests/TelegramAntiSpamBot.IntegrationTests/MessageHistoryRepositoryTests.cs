@@ -336,6 +336,55 @@ public class MessageHistoryRepositoryTests
         .AddKeyedSingleton<TableClient>("MessageHistory", table)
         .BuildServiceProvider();
 
+    [Fact]
+    public async Task ClearChatDeletesAllItsRowsInBatchesAndPreservesOtherChats()
+    {
+        var table = new HistoryTable();
+        for (var index = 0; index < 205; index++)
+            table.Rows.Add(new TableEntity("-100", index.ToString("D19")));
+        table.Rows.Add(new TableEntity("-200", "other-message"));
+        using var services = CreateServices(table);
+        using var cancellation = new CancellationTokenSource();
+
+        var deleted = await services.GetRequiredService<IMessageHistoryRepository>().ClearChatAsync(-100, cancellation.Token);
+
+        Assert.Equal(205, deleted);
+        Assert.Equal("PartitionKey eq '-100'", table.Filter);
+        Assert.Equal(cancellation.Token, table.QueryCancellationToken);
+        Assert.Equal(cancellation.Token, table.TransactionCancellationToken);
+        Assert.Equal(new[] { 100, 100, 5 }, table.Batches.Select(batch => batch.Length));
+        var actions = table.Batches.SelectMany(batch => batch).ToArray();
+        Assert.Equal(205, actions.Select(action => action.Entity.RowKey).Distinct().Count());
+        Assert.All(actions, action =>
+        {
+            Assert.Equal("-100", action.Entity.PartitionKey);
+            Assert.Equal(TableTransactionActionType.Delete, action.ActionType);
+            Assert.Equal(ETag.All, action.ETag);
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ClearEmptyOrMissingHistoryDoesNotSubmitDeletes(bool missing)
+    {
+        var table = new HistoryTable { Missing = missing };
+        using var services = CreateServices(table);
+        Assert.Equal(0, await services.GetRequiredService<IMessageHistoryRepository>().ClearChatAsync(-100));
+        Assert.Empty(table.Batches);
+    }
+
+    [Theory]
+    [InlineData(404)]
+    [InlineData(503)]
+    public async Task ClearChatPropagatesTransactionFailures(int status)
+    {
+        var table = new HistoryTable { TransactionError = status };
+        table.Rows.Add(new TableEntity("-100", "message"));
+        using var services = CreateServices(table);
+        await Assert.ThrowsAsync<RequestFailedException>(() => services.GetRequiredService<IMessageHistoryRepository>().ClearChatAsync(-100));
+    }
+
     private sealed class HistoryTable : TableClient
     {
         public List<TableEntity> Saved { get; } = [];
@@ -350,6 +399,8 @@ public class MessageHistoryRepositoryTests
         public int? MaxPerPage { get; private set; }
         public int RangePagesRead { get; private set; }
         public CancellationToken QueryCancellationToken { get; private set; }
+        public CancellationToken TransactionCancellationToken { get; private set; }
+        public int? TransactionError { get; init; }
 
         public override Task<Response> UpsertEntityAsync<T>(T entity,
             TableUpdateMode mode = TableUpdateMode.Merge, CancellationToken cancellationToken = default)
@@ -387,17 +438,24 @@ public class MessageHistoryRepositoryTests
                     RangePagesRead++;
                 });
             }
-            if (filter is null && !Paging)
+            if ((filter is null && !Paging) || select is not null)
                 Assert.Equal(new[] { "PartitionKey", "RowKey" }, select);
             else
                 Assert.Null(select);
-            return new TestPageable<T>(Page<T>.FromValues(Rows.Cast<T>().ToArray(), ResultToken, null!),
+            var partitionFilter = filter is null ? null : System.Text.RegularExpressions.Regex.Match(filter, "^PartitionKey eq '([^']+)'$");
+            var selectedRows = partitionFilter is { Success: true }
+                ? Rows.Where(row => row.PartitionKey == partitionFilter.Groups[1].Value)
+                : Rows;
+            return new TestPageable<T>(Page<T>.FromValues(selectedRows.Cast<T>().ToArray(), ResultToken, null!),
                 (token, size) => { RequestedToken = token; RequestedPageSize = size; });
         }
 
         public override Task<Response<IReadOnlyList<Response>>> SubmitTransactionAsync(
             IEnumerable<TableTransactionAction> transactionActions, CancellationToken cancellationToken = default)
         {
+            TransactionCancellationToken = cancellationToken;
+            if (TransactionError is { } status)
+                throw new RequestFailedException(status, "Transaction failed");
             Batches.Add(transactionActions.ToArray());
             return Task.FromResult<Response<IReadOnlyList<Response>>>(null!);
         }

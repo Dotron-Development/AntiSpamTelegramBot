@@ -16,8 +16,8 @@ export interface ReviewMessageResponse {
   ChatId: LosslessNumber
   MessageId: LosslessNumber
   UserId: LosslessNumber
-  From: { Name: string; Nick: string | null }
-  ReplyTo: { MessageId: LosslessNumber; From: { Name: string; Nick: string | null } | null; Text: string } | null
+  From: { Id: LosslessNumber; Name: string; Username: string | null }
+  ReplyTo: { MessageId: LosslessNumber; From: { Id: LosslessNumber; Name: string; Username: string | null } | null; Text: string } | null
   Message: string
   ImageText: string
   ContentHash: string
@@ -48,14 +48,15 @@ export interface ReviewChatPage {
   continuationToken: string | null
 }
 
-export interface ReviewMessageFrom {
+export interface MessageFrom {
+  id: string
   name: string
-  nick: string | null
+  username: string | null
 }
 
 export interface ReviewMessageReplyTo {
   messageId: string
-  from: ReviewMessageFrom | null
+  from: MessageFrom | null
   text: string
 }
 
@@ -63,7 +64,7 @@ export interface ReviewMessage {
   chatId: string
   messageId: string
   userId: string
-  from: ReviewMessageFrom
+  from: MessageFrom
   replyTo: ReviewMessageReplyTo | null
   message: string
   imageText: string
@@ -81,12 +82,6 @@ export interface CommandCall {
   lastCall: string
 }
 
-export interface HistoryAuthor {
-  id: string
-  name: string
-  username: string | null
-}
-
 export interface HistoryPayload {
   userMessage?: string | null
   imageText?: string | null
@@ -101,9 +96,9 @@ export interface HistoryMessage {
   dateTimeTicks: string
   updateType: HistoryUpdateType
   content: {
-    from: HistoryAuthor | null
+    from: MessageFrom | null
     payload: HistoryPayload
-    replyTo: { messageId: string; from: HistoryAuthor | null; text: string } | null
+    replyTo: { messageId: string; from: MessageFrom | null; text: string } | null
   }
 }
 
@@ -130,7 +125,7 @@ export function parseMentionPreview(text: string): MentionPreview {
   return data
 }
 
-interface HistoryAuthorResponse {
+interface MessageFromResponse {
   id: LosslessNumber
   name: string
   username: string | null
@@ -142,10 +137,10 @@ interface HistoryMessageResponse {
   dateTimeTicks: LosslessNumber
   updateType?: unknown
   content: {
-    from: HistoryAuthorResponse | null
+    from: MessageFromResponse | null
     payload?: HistoryPayload | null
     text?: string | null
-    replyTo: { messageId: LosslessNumber; from: HistoryAuthorResponse | null; text: string } | null
+    replyTo: { messageId: LosslessNumber; from: MessageFromResponse | null; text: string } | null
   }
 }
 
@@ -161,7 +156,7 @@ function historyUpdateType(value: unknown): HistoryUpdateType {
   }
 }
 
-function historyAuthor(data: HistoryAuthorResponse | null): HistoryAuthor | null {
+function messageFrom(data: MessageFromResponse | null): MessageFrom | null {
   return data ? { id: data.id.toString(), name: data.name, username: data.username } : null
 }
 
@@ -180,10 +175,10 @@ export function parseHistoryPage(text: string): TablePage<HistoryMessage> {
       chatId: message.chatId.toString(), messageId: message.messageId.toString(), dateTimeTicks: message.dateTimeTicks.toString(),
       updateType: historyUpdateType(message.updateType),
       content: {
-        from: historyAuthor(message.content.from),
+        from: messageFrom(message.content.from),
         payload: message.content.payload ?? { userMessage: message.content.text ?? null },
         replyTo: message.content.replyTo ? {
-          messageId: message.content.replyTo.messageId.toString(), from: historyAuthor(message.content.replyTo.from),
+          messageId: message.content.replyTo.messageId.toString(), from: messageFrom(message.content.replyTo.from),
           text: message.content.replyTo.text,
         } : null,
       },
@@ -213,10 +208,12 @@ export function parseReviewMessage(data: ReviewMessageResponse): ReviewMessage {
     chatId: data.ChatId.toString(),
     messageId: data.MessageId.toString(),
     userId: data.UserId.toString(),
-    from: { name: data.From.Name, nick: data.From.Nick },
+    from: { id: data.From.Id.toString(), name: data.From.Name, username: data.From.Username },
     replyTo: data.ReplyTo ? {
       messageId: data.ReplyTo.MessageId.toString(),
-      from: data.ReplyTo.From ? { name: data.ReplyTo.From.Name, nick: data.ReplyTo.From.Nick } : null,
+      from: data.ReplyTo.From ? {
+        id: data.ReplyTo.From.Id.toString(), name: data.ReplyTo.From.Name, username: data.ReplyTo.From.Username,
+      } : null,
       text: data.ReplyTo.Text,
     } : null,
     message: data.Message,

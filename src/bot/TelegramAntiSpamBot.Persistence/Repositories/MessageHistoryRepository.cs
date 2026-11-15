@@ -215,4 +215,45 @@ internal sealed class MessageHistoryRepository(
         await FlushAsync();
         return deleted;
     }
+
+    public async Task<int> ClearChatAsync(long chatId, CancellationToken cancellationToken = default)
+    {
+        if (chatId == 0)
+            throw new ArgumentOutOfRangeException(nameof(chatId), "Chat ID must not be zero.");
+
+        var partition = chatId.ToString(CultureInfo.InvariantCulture);
+        var filter = TableClient.CreateQueryFilter($"PartitionKey eq {partition}");
+        var batch = new List<TableTransactionAction>(100);
+        var deleted = 0;
+        var hasRows = false;
+
+        async Task FlushAsync()
+        {
+            if (batch.Count == 0)
+                return;
+            await historyTable.SubmitTransactionAsync(batch, cancellationToken);
+            deleted += batch.Count;
+            batch.Clear();
+        }
+
+        try
+        {
+            await foreach (var entry in historyTable.QueryAsync<TableEntity>(filter: filter,
+                select: ["PartitionKey", "RowKey"], cancellationToken: cancellationToken))
+            {
+                hasRows = true;
+                batch.Add(new TableTransactionAction(TableTransactionActionType.Delete, entry, ETag.All));
+                if (batch.Count == 100)
+                    await FlushAsync();
+            }
+        }
+        catch (RequestFailedException exception) when (exception.Status == 404 && !hasRows)
+        {
+            return 0;
+        }
+
+        await FlushAsync();
+        logger.LogInformation("Cleared {count} history messages for chat {chatId}", deleted, chatId);
+        return deleted;
+    }
 }

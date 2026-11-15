@@ -8,6 +8,7 @@ public interface IMessageHistoryRepository
     Task<DTO.HistoryMessagePage> GetRangePageAsync(long chatId, DateTimeOffset from, DateTimeOffset to,
         string? continuationToken = null, CancellationToken cancellationToken = default);
     Task<int> TrimAsync(CancellationToken cancellationToken = default);
+    Task<int> ClearChatAsync(long chatId, CancellationToken cancellationToken = default);
     Task<DTO.HistoryMessagePage> GetPageAsync(long? chatId, int pageSize, string? continuationToken,
         CancellationToken cancellationToken = default);
 }

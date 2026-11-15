@@ -41,13 +41,13 @@ internal sealed class MentionCommand(
             replyParameters: new ReplyParameters { MessageId = message.MessageId, AllowSendingWithoutReply = true });
     }
 
-    private static HistoryMessageAuthor? GetAuthor(Message message)
+    private static MessageFrom? GetAuthor(Message message)
     {
         if (message.SenderChat is { } chat)
-            return new HistoryMessageAuthor(chat.Id, chat.Title ?? string.Empty, chat.Username);
+            return new MessageFrom(chat.Id, chat.Title ?? string.Empty, chat.Username);
 
         if (message.From is { } user)
-            return new HistoryMessageAuthor(user.Id,
+            return new MessageFrom(user.Id,
                 string.Join(" ", new[] { user.FirstName, user.LastName }.Where(part => !string.IsNullOrWhiteSpace(part))),
                 user.Username);
         return null;

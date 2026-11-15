@@ -74,14 +74,14 @@ namespace TelegramAntiSpamBot.Persistence.Repositories
             return null;
         }
 
-        private static ReviewMessageFrom DeserializeFrom(ProbablySpamEntry entry)
+        private static MessageFrom DeserializeFrom(ProbablySpamEntry entry)
         {
             var json = entry.From;
             if (!string.IsNullOrWhiteSpace(json))
             {
                 try
                 {
-                    if (JsonSerializer.Deserialize<ReviewMessageFrom>(json, JsonOptions) is { Name: not null } from)
+                    if (JsonSerializer.Deserialize<MessageFrom>(json, JsonOptions) is { Name: not null } from)
                         return from;
                 }
                 catch (JsonException)
@@ -89,7 +89,8 @@ namespace TelegramAntiSpamBot.Persistence.Repositories
                 }
             }
 
-            return new ReviewMessageFrom(string.Empty, null);
+            return new MessageFrom(entry.UserId, string.Empty, null);
         }
+
     }
 }

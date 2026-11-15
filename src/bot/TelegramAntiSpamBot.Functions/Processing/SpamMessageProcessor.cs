@@ -24,9 +24,9 @@ namespace TelegramAntiSpamBot.Functions
                 await messageHistoryRepository.SaveAsync(new HistoryMessage(
                     message.Chat.Id, message.MessageId,
                     message.Date.ToUniversalTime().Ticks,
-                    new HistoryMessageContent(GetHistoryAuthor(message),
+                    new HistoryMessageContent(GetMessageFrom(message),
                         message.ReplyToMessage is { } reply
-                            ? new HistoryMessageReply(reply.MessageId, GetHistoryAuthor(reply),
+                            ? new HistoryMessageReply(reply.MessageId, GetMessageFrom(reply),
                                 GetMessageText(reply))
                             : null,
                         payload), updateType switch
@@ -206,10 +206,9 @@ namespace TelegramAntiSpamBot.Functions
         {
             var chatId = message.Chat.Id;
             var user = message.From!;
-            var from = new ReviewMessageFrom(string.Join(" ", new[] { user.FirstName, user.LastName }
-                .Where(part => !string.IsNullOrWhiteSpace(part))), user.Username);
+            var from = GetMessageFrom(message)!;
             var replyTo = message.ReplyToMessage is { } reply
-                ? new ReviewMessageReplyTo(reply.MessageId, GetReviewFrom(reply), GetMessageText(reply))
+                ? new ReviewMessageReplyTo(reply.MessageId, GetMessageFrom(reply), GetMessageText(reply))
                 : null;
 
             await probablySpamRepository.SaveReviewMessageAsync(new ReviewMessage(chatId, message.MessageId,
@@ -258,24 +257,14 @@ namespace TelegramAntiSpamBot.Functions
                 : null;
         }
 
-        private static ReviewMessageFrom? GetReviewFrom(Message message)
+        private static MessageFrom? GetMessageFrom(Message message)
         {
             if (message.From is { } user)
-                return new ReviewMessageFrom(string.Join(" ", new[] { user.FirstName, user.LastName }
-                    .Where(part => !string.IsNullOrWhiteSpace(part))), user.Username);
-            if (message.SenderChat is { } chat)
-                return new ReviewMessageFrom(chat.Title ?? string.Empty, chat.Username);
-            return null;
-        }
-
-        private static HistoryMessageAuthor? GetHistoryAuthor(Message message)
-        {
-            if (message.From is { } user)
-                return new HistoryMessageAuthor(user.Id,
+                return new MessageFrom(user.Id,
                     string.Join(" ", new[] { user.FirstName, user.LastName }.Where(part => !string.IsNullOrWhiteSpace(part))),
                     user.Username);
             if (message.SenderChat is { } chat)
-                return new HistoryMessageAuthor(chat.Id, chat.Title ?? string.Empty, chat.Username);
+                return new MessageFrom(chat.Id, chat.Title ?? string.Empty, chat.Username);
             return null;
         }
 

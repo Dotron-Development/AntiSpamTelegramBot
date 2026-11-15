@@ -1,24 +1,28 @@
 import { useRef, useState } from 'react'
-import { ApiError, removeRestrictions, reviewMessage } from '../api/client'
+import { ApiError, getMessages, removeRestrictions, reviewMessage } from '../api/client'
 import type { Connection, ReviewMessage } from '../api/client'
-import { errorText } from '../lib/workspace'
-import type { Decision, Notify, RestrictionValues } from '../lib/workspace'
+import { errorText, messageKey } from '../lib/workspace'
+import type { Decision, Notify, QueueQuery, RestrictionValues } from '../lib/workspace'
 
 type ModerationDialog =
     | { kind: 'decision'; decision: Decision }
     | { kind: 'restrictions'; values: RestrictionValues }
+    | { kind: 'batch'; query: QueueQuery }
 
-export function useModeration(connection: Connection, notify: Notify, remove: (message: ReviewMessage) => void) {
+export function useModeration(connection: Connection, notify: Notify, remove: (message: ReviewMessage) => void,
+    completeBatch: () => void) {
     const [dialog, setDialog] = useState<ModerationDialog | null>(null)
     const [working, setWorking] = useState(false)
     const [error, setError] = useState('')
     const [lastReview, setLastReview] = useState<Decision | null>(null)
     const [restoredUsers, setRestoredUsers] = useState<string[]>([])
+    const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null)
     const pending = useRef(false)
 
     function open(next: ModerationDialog) {
         if (pending.current) return
         setError('')
+        setBatchProgress(null)
         setDialog(next)
     }
 
@@ -67,11 +71,54 @@ export function useModeration(connection: Connection, notify: Notify, remove: (m
         })
     }
 
+    async function confirmBatch() {
+        if (dialog?.kind !== 'batch' || error || batchProgress) return
+        const { query } = dialog
+        await run(async () => {
+            let completed = 0
+            let total = 0
+            let prepared = false
+            try {
+                const messages = new Map<string, ReviewMessage>()
+                const tokens = new Set<string>()
+                let token: string | null = null
+                do {
+                    const page = await getMessages(connection, query.chatId, query.pageSize, token)
+                    for (const message of page.messages)
+                        messages.set(messageKey(message), message)
+                    token = page.continuationToken
+                    if (token) {
+                        if (tokens.has(token)) throw new Error('The queue returned a repeated continuation token.')
+                        tokens.add(token)
+                    }
+                } while (token)
+
+                total = messages.size
+                prepared = true
+                setBatchProgress({ completed, total })
+                setLastReview(null)
+                for (const message of messages.values()) {
+                    await reviewMessage(connection, message, true)
+                    remove(message)
+                    completed++
+                    setBatchProgress({ completed, total })
+                }
+                completeBatch()
+                notify({ error: false, text: `Marked ${completed} messages as spam.` })
+            } catch (error) {
+                setError(prepared
+                    ? `${errorText(error)} Batch stopped at ${completed}/${total}. The failed message may already have been marked as spam. Close this dialog and refresh before trying again.`
+                    : `${errorText(error)} Could not load the whole queue. No spam decisions were sent.`)
+            }
+        })
+    }
+
     return {
-        dialog, working, error, lastReview,
+        dialog, working, error, lastReview, batchProgress,
         openDecision: (message: ReviewMessage, isSpam: boolean) => open({ kind: 'decision', decision: { message, isSpam } }),
         openRestrictions: (values: RestrictionValues) => open({ kind: 'restrictions', values }),
-        close, confirm, restore, clearLastReview: () => setLastReview(null),
+        openBatch: (query: QueueQuery) => open({ kind: 'batch', query: { ...query } }),
+        close, confirm, confirmBatch, restore, clearLastReview: () => setLastReview(null),
         isRestored: (message: ReviewMessage) => restoredUsers.includes(`${message.chatId}:${message.userId}`),
     }
 }
