@@ -132,6 +132,10 @@ Edit [dev.tfvars](src/infrastructure/environments/dev.tfvars) and [prod.tfvars](
 
 The website deploys to Azure Static Web Apps Free. Its build settings are supplied by Terraform and the build job; changing them requires another deployment. Function CORS includes the deployed website origin automatically.
 
+Entra redirect URIs are configured manually; the deployment workflows do not register them. The generated `azurestaticapps.net` address stays unchanged during normal deployments, but deleting and recreating the Static Web App can change it. After recreation, register the new `review_static_web_app_url` in the matching environment's review application before signing in.
+
+If sign-in fails with **AADSTS50011**, open **Microsoft Entra ID > App registrations**, find the application by the client ID shown in the error (matching `review_client_id`), then open **Authentication**. Add the exact redirect URI from the error under **Single-page application**, not **Web**, and save. Preserve other required redirect URIs, including `http://localhost:5173` for local development. Allow a few minutes for the change to propagate, then retry sign-in. A custom domain is not required.
+
 After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) with environment `dev` to remove its infrastructure and data. Do not select `prod` for routine cleanup.
 
 ## 9. Run Locally
