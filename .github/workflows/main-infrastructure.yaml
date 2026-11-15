@@ -17,12 +17,15 @@ on:
       function_app_identity_name:
         description: "The function app identity name for the Key Vault reference"
         value: ${{ jobs.main-infrastructure.outputs.function_app_identity_name }}
-      review_web_app_name:
-        description: "The review SPA Web App name"
-        value: ${{ jobs.main-infrastructure.outputs.review_web_app_name }}
-      review_web_app_url:
+      review_static_web_app_name:
+        description: "The review SPA Static Web App name"
+        value: ${{ jobs.main-infrastructure.outputs.review_static_web_app_name }}
+      review_static_web_app_url:
         description: "The review SPA URL and Entra SPA redirect URI"
-        value: ${{ jobs.main-infrastructure.outputs.review_web_app_url }}
+        value: ${{ jobs.main-infrastructure.outputs.review_static_web_app_url }}
+      review_spa_build_settings:
+        description: "Public SPA build settings as JSON"
+        value: ${{ jobs.main-infrastructure.outputs.review_spa_build_settings }}
 
 env:
   # service principal credentials
@@ -51,8 +54,9 @@ jobs:
       resource_group_name: ${{ steps.generate-outputs.outputs.resource_group_name }}
       functionapp_name: ${{ steps.generate-outputs.outputs.functionapp_name }}
       function_app_identity_name: ${{ steps.generate-outputs.outputs.function_app_identity_name }}
-      review_web_app_name: ${{ steps.generate-outputs.outputs.review_web_app_name }}
-      review_web_app_url: ${{ steps.generate-outputs.outputs.review_web_app_url }}
+      review_static_web_app_name: ${{ steps.generate-outputs.outputs.review_static_web_app_name }}
+      review_static_web_app_url: ${{ steps.generate-outputs.outputs.review_static_web_app_url }}
+      review_spa_build_settings: ${{ steps.generate-outputs.outputs.review_spa_build_settings }}
 
     defaults:
       run:
@@ -111,8 +115,9 @@ jobs:
           RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name)
           FUNCTION_APP_NAME=$(terraform output -raw functionapp_name)
           FUNCTION_APP_IDENTITY_NAME=$(terraform output -raw function_app_identity_name)
-          REVIEW_WEB_APP_NAME=$(terraform output -raw review_web_app_name)
-          REVIEW_WEB_APP_URL=$(terraform output -raw review_web_app_url)
+          REVIEW_STATIC_WEB_APP_NAME=$(terraform output -raw review_static_web_app_name)
+          REVIEW_STATIC_WEB_APP_URL=$(terraform output -raw review_static_web_app_url)
+          REVIEW_SPA_BUILD_SETTINGS=$(terraform output -raw review_spa_build_settings)
           if [ -z "$RESOURCE_GROUP_NAME" ] || [ -z "$FUNCTION_APP_NAME" ] || [ -z "$FUNCTION_APP_IDENTITY_NAME" ]; then
             echo "Error: RESOURCE_GROUP_NAME or FUNCTION_APP_NAME or FUNCTION_APP_IDENTITY_NAME is empty."
             exit 1
@@ -120,12 +125,13 @@ jobs:
           echo "resource_group_name=$RESOURCE_GROUP_NAME" >> $GITHUB_OUTPUT
           echo "functionapp_name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
           echo "function_app_identity_name=$FUNCTION_APP_IDENTITY_NAME" >> $GITHUB_OUTPUT
-          if [ -z "$REVIEW_WEB_APP_NAME" ] || [ -z "$REVIEW_WEB_APP_URL" ]; then
-            echo "Error: Review Web App outputs are empty."
+          if [ -z "$REVIEW_STATIC_WEB_APP_NAME" ] || [ -z "$REVIEW_STATIC_WEB_APP_URL" ] || [ -z "$REVIEW_SPA_BUILD_SETTINGS" ]; then
+            echo "Error: Review Static Web App outputs are empty."
             exit 1
           fi
-          echo "review_web_app_name=$REVIEW_WEB_APP_NAME" >> $GITHUB_OUTPUT
-          echo "review_web_app_url=$REVIEW_WEB_APP_URL" >> $GITHUB_OUTPUT
+          echo "review_static_web_app_name=$REVIEW_STATIC_WEB_APP_NAME" >> $GITHUB_OUTPUT
+          echo "review_static_web_app_url=$REVIEW_STATIC_WEB_APP_URL" >> $GITHUB_OUTPUT
+          echo "review_spa_build_settings=$REVIEW_SPA_BUILD_SETTINGS" >> $GITHUB_OUTPUT
 
   configure-key-vault-references:
     needs: main-infrastructure

@@ -77,11 +77,13 @@ Each API request obtains an access token through MSAL and sends it in `Authoriza
 
 ## Azure Hosting
 
-Terraform creates a Linux Web App with a separate paid App Service plan (default `B1`) and Node.js 24. The startup command serves the deployed static bundle with SPA fallback. Both release workflows invoke [webapp.yaml](../../.github/workflows/webapp.yaml) after deploying infrastructure and Functions.
+Terraform creates an Azure Static Web App on the `Free` plan for each environment, in West Europe. Static assets are globally distributed; there is no paid SPA App Service plan or Node.js server. Both release workflows invoke [staticwebapp.yaml](../../.github/workflows/staticwebapp.yaml) after deploying infrastructure and Functions. Node.js 24 is used only to build the frontend. [staticwebapp.config.json](public/staticwebapp.config.json) is copied into `dist` and provides SPA navigation fallback.
 
-All five public frontend settings (`API_URL`, `TENANT_ID`, `CLIENT_ID`, `API_SCOPE`, `REDIRECT_URI`) are configured on the Web App by Terraform. The build job reads and validates them before lint/build, then uploads and deploys `dist`. The tenant comes from the existing Azure provider, not an additional setting. Changing these settings requires rebuilding the SPA; static JavaScript does not read server environment variables at runtime.
+All five public frontend settings (`API_URL`, `TENANT_ID`, `CLIENT_ID`, `API_SCOPE`, `REDIRECT_URI`) come from Terraform's `review_spa_build_settings` JSON output. The release workflow passes it to the build job, which validates the settings before lint/build, then uploads and deploys `dist`. The tenant comes from the existing Azure provider. The deployment token is retrieved through Azure login and masked; it is never included in the bundle or Terraform outputs. Changing the build settings requires rebuilding the SPA; Static Web Apps application settings do not configure static JavaScript at runtime.
 
-Before the first sign-in, add the Terraform output `review_web_app_url` to the existing registration's SPA redirect URIs. See the [hosting and Easy Auth configuration](../../docs/functions-easy-auth.md) for environment variables and the required platform-protection checks before Functions deployment. No Function key or client secret belongs in the SPA.
+Before the first sign-in, add the Terraform output `review_static_web_app_url` to the existing registration's SPA redirect URIs. MSAL and Functions Easy Auth remain unchanged: the browser calls the separate Function API directly, with its new SPA origin automatically allowed by CORS. No Static Web Apps built-in authentication or linked backend is required. Static assets remain public; the API is protected by Functions. Free has quotas and no SLA; Functions costs are separate.
+
+The next Terraform apply replaces the old Linux Web App and its dedicated `B1` plan. Review the plan; the panel will be unavailable until the static bundle is deployed and the new Entra redirect URI is registered. After verifying sign-in and API access, remove the old SPA redirect URI. See the [hosting and Easy Auth configuration](../../docs/functions-easy-auth.md) for deployment permissions and migration checks. No Function key or client secret belongs in the SPA.
 
 ## Source structure
 

@@ -9,7 +9,10 @@ on:
       resource_group_name:
         required: true
         type: string
-      web_app_name:
+      static_web_app_name:
+        required: true
+        type: string
+      build_settings:
         required: true
         type: string
 
@@ -22,7 +25,8 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       RESOURCE_GROUP_NAME: ${{ inputs.resource_group_name }}
-      WEB_APP_NAME: ${{ inputs.web_app_name }}
+      STATIC_WEB_APP_NAME: ${{ inputs.static_web_app_name }}
+      SPA_BUILD_SETTINGS: ${{ inputs.build_settings }}
 
     steps:
       - name: Checkout
@@ -44,21 +48,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          az webapp config appsettings list \
-            --resource-group "$RESOURCE_GROUP_NAME" \
-            --name "$WEB_APP_NAME" \
-            --output json > "$RUNNER_TEMP/review-spa-settings.json"
           node --input-type=module <<'NODE'
-          import { appendFileSync, readFileSync } from 'node:fs';
-          import { join } from 'node:path';
+          import { appendFileSync } from 'node:fs';
 
-          const settings = Object.fromEntries(JSON.parse(readFileSync(
-            join(process.env.RUNNER_TEMP, 'review-spa-settings.json'), 'utf8'
-          )).map(({ name, value }) => [name, value]));
+          const settings = JSON.parse(process.env.SPA_BUILD_SETTINGS);
           const names = ['API_URL', 'TENANT_ID', 'CLIENT_ID', 'API_SCOPE', 'REDIRECT_URI'];
           for (const name of names) {
             if (typeof settings[name] !== 'string' || !settings[name].trim() || /[\r\n]/.test(settings[name])) {
-              throw new Error(`Missing or invalid Web App setting: ${name}`);
+              throw new Error(`Missing or invalid SPA build setting: ${name}`);
             }
           }
           const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -95,17 +92,30 @@ jobs:
           path: src/web/dist
           if-no-files-found: error
 
-      - name: Deploy SPA to Azure Web App
-        working-directory: src/web/dist
+      - name: Read Static Web Apps deployment token
+        id: deployment-token
         shell: bash
         run: |
           set -euo pipefail
-          zip -qr "$RUNNER_TEMP/review-spa.zip" .
-          az webapp deploy \
+          token=$(az staticwebapp secrets list \
             --resource-group "$RESOURCE_GROUP_NAME" \
-            --name "$WEB_APP_NAME" \
-            --src-path "$RUNNER_TEMP/review-spa.zip" \
-            --type zip \
-            --clean true \
-            --restart true \
-            --track-status true
+            --name "$STATIC_WEB_APP_NAME" \
+            --query properties.apiKey --output tsv)
+          if [[ -z "$token" || "$token" == "null" || "$token" == *$'\n'* || "$token" == *$'\r'* ]]; then
+            echo "Error: Static Web Apps deployment token is missing or invalid."
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy SPA to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.deployment-token.outputs.token }}
+          action: upload
+          app_location: src/web/dist
+          api_location: ""
+          output_location: ""
+          skip_app_build: true
+          skip_api_build: true
+          production_branch: ${{ github.ref_name }}

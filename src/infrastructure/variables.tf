@@ -180,7 +180,7 @@ variable "review_user_object_ids" {
 }
 
 variable "review_frontend_origins" {
-  description = "Additional exact SPA origins allowed by Function App CORS; the deployed Web App is always included."
+  description = "Additional exact SPA origins allowed by Function App CORS; the deployed Static Web App is always included."
   type        = list(string)
   default     = ["http://localhost:5173"]
   nullable    = false
@@ -194,11 +194,4 @@ variable "review_frontend_origins" {
     ])
     error_message = "Supply exact HTTPS origins, or HTTP loopback origins, without paths, trailing slashes or wildcards."
   }
-}
-
-variable "review_web_app_sku" {
-  description = "Paid App Service plan SKU for the review SPA; separate from the Flex Consumption plan."
-  type        = string
-  default     = "B1"
-  nullable    = false
 }

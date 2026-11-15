@@ -32,11 +32,12 @@ jobs:
 
   deploy-review-spa-to-dev:
     needs: [deploy-main-infrastructure-to-dev, deploy-functionapp-to-dev]
-    uses: ./.github/workflows/webapp.yaml
+    uses: ./.github/workflows/staticwebapp.yaml
     with:
       environment: dev
       resource_group_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.resource_group_name }}
-      web_app_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.review_web_app_name }}
+      static_web_app_name: ${{ needs.deploy-main-infrastructure-to-dev.outputs.review_static_web_app_name }}
+      build_settings: ${{ needs.deploy-main-infrastructure-to-dev.outputs.review_spa_build_settings }}
     secrets: inherit
 
   cleanup-runner-endpoints:

@@ -51,7 +51,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     application_insights_key               = azurerm_application_insights.appinsights.instrumentation_key
 
     cors {
-      allowed_origins     = distinct(concat([local.review_web_app_origin], var.review_frontend_origins))
+      allowed_origins     = distinct(concat([local.review_static_web_app_origin], var.review_frontend_origins))
       support_credentials = false
     }
   }

@@ -74,17 +74,19 @@ Function CORS is managed alongside authentication. The deployed SPA origin is
 always included, in addition to `review_frontend_origins`; cookie credentials
 are disabled. Wildcards are rejected. The host must accept preflight requests
 and allow Authorization and Content-Type headers. Review the full plan before
-apply, including the new paid SPA hosting resources.
+apply, including changes to SPA hosting resources and the allowed origin.
 
 ### SPA Hosting and Build
 
-[webapp.tf](../src/infrastructure/webapp.tf) creates a separate Linux App Service
-plan and Web App. The plan defaults to the paid `B1` SKU; change
-`review_web_app_sku` in the environment's Terraform variable file if needed.
-It cannot share the Function App's Flex Consumption plan. Node.js 24 runs PM2's
-static server with SPA fallback; the published package contains only `dist`.
+[staticwebapp.tf](../src/infrastructure/staticwebapp.tf) creates an Azure Static
+Web App on the `Free` plan for each environment. Its region is West Europe,
+independent of the existing Sweden Central resources; static assets are globally
+distributed. No separate paid App Service plan or Node.js server is needed.
+[staticwebapp.config.json](../src/web/public/staticwebapp.config.json) supplies
+SPA navigation fallback and is copied into `dist` by Vite.
 
-Terraform sets these public Web App application settings:
+Terraform exports these public build settings as the JSON string
+`review_spa_build_settings`; the release workflows pass it to the SPA build:
 
 | Setting | Source |
 | --- | --- |
@@ -92,21 +94,40 @@ Terraform sets these public Web App application settings:
 | `TENANT_ID` | Existing Azure deployment tenant |
 | `CLIENT_ID` | `review_client_id` |
 | `API_SCOPE` | `api://<CLIENT_ID>/Review.Access` |
-| `REDIRECT_URI` | Deployed SPA's HTTPS origin |
+| `REDIRECT_URI` | Static Web App's generated HTTPS origin |
 
-[webapp.yaml](../.github/workflows/webapp.yaml) runs after infrastructure and
-Functions deployment in both release workflows. It reads and validates only
-these five settings for the frontend build, runs `npm ci`, lint and build,
-uploads the static artifact, then deploys it to the Web App. No Function key or
-client secret is embedded. ZIP deployment uses the existing Azure login, not a
-publish profile or Basic authentication. Vite uses build-time settings: changing Web App
-settings requires another SPA build/deployment, not just a restart.
+[staticwebapp.yaml](../.github/workflows/staticwebapp.yaml) runs after infrastructure
+and Functions deployment in both release workflows. It validates these five
+settings, uses Node.js 24 to run `npm ci`, lint and build, and uploads the static
+artifact. It retrieves the Static Web Apps deployment token using the existing
+Azure login, masks it, then deploys `dist` with the Static Web Apps action,
+skipping both frontend and API builds. The Azure deployment identity needs
+`Microsoft.Web/staticSites/listSecrets/action` permission, included in Contributor.
+No deployment token, Function key or client secret is embedded in the bundle or
+exported by Terraform. Vite uses build-time settings: changes require another
+SPA build/deployment. Static Web Apps application settings are not used for the
+frontend build.
 
-After infrastructure deployment, obtain `review_web_app_url` from Terraform
+After infrastructure deployment, obtain `review_static_web_app_url` from Terraform
 outputs and add that exact URL as a **Single-page application** redirect URI
 in the existing Entra registration before signing in. Keep the local redirect
 URI if local development is still needed. No Graph registration changes are
 performed by Terraform.
+
+The browser still calls the existing Functions HTTPS endpoint directly with
+MSAL access tokens. Functions Easy Auth and the client/user allowlists remain
+unchanged; Function CORS automatically includes the Static Web App origin.
+No Static Web Apps built-in authentication, managed API or linked backend is
+configured, so the Free plan does not need custom-authentication or backend-linking
+features. Static assets remain public. Free has quotas and no SLA; Functions
+usage continues to be billed separately.
+
+When migrating an existing environment, the next Terraform apply removes the old
+Linux Web App and its dedicated `B1` plan and creates the Static Web App. Review
+the plan before applying. The SPA is unavailable until deployment completes and
+the new redirect URI is registered. After checking sign-in and API access, remove
+the obsolete `azurewebsites.net` SPA redirect URI from Entra (not the Function API
+URL) and any obsolete origins explicitly added to `review_frontend_origins`.
 
 ## Option B. Azure Portal and ARM Configuration
 

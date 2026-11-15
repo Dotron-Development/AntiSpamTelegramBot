@@ -39,11 +39,12 @@ jobs:
 
   deploy-review-spa:
     needs: [deploy-main-infrastructure, deploy-functionapp]
-    uses: ./.github/workflows/webapp.yaml
+    uses: ./.github/workflows/staticwebapp.yaml
     with:
       environment: ${{ github.event.inputs.environment }}
       resource_group_name: ${{ needs.deploy-main-infrastructure.outputs.resource_group_name }}
-      web_app_name: ${{ needs.deploy-main-infrastructure.outputs.review_web_app_name }}
+      static_web_app_name: ${{ needs.deploy-main-infrastructure.outputs.review_static_web_app_name }}
+      build_settings: ${{ needs.deploy-main-infrastructure.outputs.review_spa_build_settings }}
     secrets: inherit
 
   cleanup-runner-endpoints:
