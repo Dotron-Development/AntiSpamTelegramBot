@@ -369,49 +369,58 @@ public class MentionCommandTests
     }
 
     [Fact]
-    public async Task WithoutReplySendsTenLatestMessagesBeforeQuestionAcrossPages()
+    public async Task WithoutHistoryToolCallSendsOnlyMetadataAndDoesNotReadStorage()
     {
         using var fixture = new Fixture();
         fixture.History.Messages.AddRange(Enumerable.Range(980, 23).Select(History));
         fixture.History.Messages.Add(History(999) with { ChatId = -200 });
         await fixture.Processor.ProcessCommand(fixture.Update);
 
-        Assert.Equal(Enumerable.Range(990, 10), fixture.Ai.Input!.Context!.Select(item => item.MessageId));
-        Assert.True(fixture.History.PageCalls > 1);
+        Assert.Equal(new MentionConversation(-100, 1000, new DateTimeOffset(fixture.Update.Message!.Date), null),
+            fixture.Ai.Input!.Conversation);
+        Assert.Equal(0, fixture.History.PageCalls);
     }
 
     [Fact]
-    public async Task ReplySendsTenMessagesOnEachSideWithoutTargetQuestionOrFutureMessages()
+    public async Task ReplySendsTimestampAndExactReplyWithoutReadingStorage()
     {
         using var fixture = new Fixture();
-        fixture.Update.Message!.ReplyToMessage = new Message { Id = 980, Text = "Target" };
+        var date = new DateTime(2026, 1, 1, 0, 16, 20, DateTimeKind.Utc);
+        fixture.Update.Message!.ReplyToMessage = new Message { Id = 980, Text = "Target", Date = date };
         fixture.History.Messages.AddRange(Enumerable.Range(965, 40).Select(History));
         await fixture.Processor.ProcessCommand(fixture.Update);
 
-        Assert.Equal(Enumerable.Range(970, 10).Concat(Enumerable.Range(981, 10)),
-            fixture.Ai.Input!.Context!.Select(item => item.MessageId));
+        Assert.Equal(new DateTimeOffset(date), fixture.Ai.Input!.Conversation!.ReplyDate);
+        Assert.Equal(0, fixture.History.PageCalls);
         Assert.Equal("Target", fixture.Ai.Input.ReplyTo!.Text);
         Assert.Contains("Focus specifically on Question and its explicit ReplyTo", fixture.Ai.Prompt);
         Assert.Contains("Nearby messages may be entirely unrelated", fixture.Ai.Prompt);
     }
 
     [Fact]
-    public async Task ReplyUsesIndependentLimitsEvenWhenTargetIsMissingFromHistory()
+    public async Task AgentRetrievesRequestedHistoryAndContinuationOnlyThroughTool()
     {
         using var fixture = new Fixture();
-        fixture.Update.Message!.ReplyToMessage = new Message { Id = 997, Text = "Target" };
-        fixture.History.Messages.AddRange(Enumerable.Range(980, 17).Select(History));
-        fixture.History.Messages.AddRange(Enumerable.Range(998, 2).Select(History));
+        fixture.Ai.HistoryCalls = 2;
+        fixture.History.Messages.AddRange(Enumerable.Range(980, 10).Select(History));
         await fixture.Processor.ProcessCommand(fixture.Update);
 
-        Assert.Equal(Enumerable.Range(987, 10).Concat(Enumerable.Range(998, 2)),
-            fixture.Ai.Input!.Context!.Select(item => item.MessageId));
+        Assert.Equal(2, fixture.History.PageCalls);
+        Assert.Equal(new[] { 980, 981, 982, 983, 984, 985, 986 },
+            fixture.Ai.HistoryResults[0].GetProperty("Messages").EnumerateArray().Select(item => item.GetProperty("MessageId").GetInt32()));
+        Assert.Equal(new[] { 987, 988, 989 },
+            fixture.Ai.HistoryResults[1].GetProperty("Messages").EnumerateArray().Select(item => item.GetProperty("MessageId").GetInt32()));
+        Assert.Equal("7", fixture.Ai.HistoryResults[0].GetProperty("ContinuationToken").GetString());
+        Assert.Equal(JsonValueKind.Null, fixture.Ai.HistoryResults[1].GetProperty("ContinuationToken").ValueKind);
+        Assert.Equal(3, fixture.Ai.Requests);
+        Assert.Single(fixture.Telegram.Sent);
     }
 
     [Fact]
-    public async Task ContextUsesLatestHistoryMessagesAndPreservesPayloadAndMetadata()
+    public async Task HistoryToolPreservesPayloadAndMetadata()
     {
         using var fixture = new Fixture();
+        fixture.Ai.HistoryCalls = 1;
         var author = new HistoryMessageAuthor(2, "Boris", "boris");
         var reply = new HistoryMessageReply(40, author, "Nested reply");
         fixture.History.Messages.Add(History(998) with
@@ -419,31 +428,47 @@ public class MentionCommandTests
             UpdateId = 20, UpdateType = HistoryUpdateType.EditedMessage,
             Content = new(author, reply, "Updated caption")
         });
-        fixture.History.Messages.Add(History(998) with { UpdateId = 10 });
         fixture.History.Messages.Add(History(999) with
         {
             Content = new(null, null, new MessagePayload(ImageDescription: "Image only", ImageText: "Extracted text"))
         });
-        fixture.History.Messages.Add(History(997) with { Content = new(null, null, new MessagePayload()) });
         await fixture.Processor.ProcessCommand(fixture.Update);
 
-        var context = fixture.Ai.Input!.Context!;
-        Assert.Equal(new[] { 998, 999 }, context.Select(item => item.MessageId));
-        Assert.Equal(fixture.History.Messages[0], context[0]);
-        Assert.Equal(fixture.History.Messages[2], context[1]);
-        Assert.Equal(author, context[0].Content.From);
-        Assert.Equal(reply, context[0].Content.ReplyTo);
-        Assert.Equal("Updated caption", context[0].Content.Payload.UserMessage);
-        Assert.Equal(HistoryUpdateType.EditedMessage, context[0].UpdateType);
-        Assert.Equal(20, context[0].UpdateId);
-        Assert.Equal("Image only", context[1].Content.Payload.ImageDescription);
-        Assert.Equal("Extracted text", context[1].Content.Payload.ImageText);
+        var context = fixture.Ai.HistoryResults[0].GetProperty("Messages");
+        Assert.Equal(2, context.GetArrayLength());
+        Assert.Equal(fixture.History.Messages[0].Content,
+            context[0].GetProperty("Content").Deserialize<HistoryMessageContent>());
+        Assert.Equal(new DateTimeOffset(new DateTime(fixture.History.Messages[0].DateTimeTicks, DateTimeKind.Utc)),
+            context[0].GetProperty("Date").GetDateTimeOffset());
+        Assert.Equal("EditedMessage", context[0].GetProperty("UpdateType").GetString());
+        Assert.Equal(20, context[0].GetProperty("UpdateId").GetInt32());
+        Assert.Equal(fixture.History.Messages[1].Content,
+            context[1].GetProperty("Content").Deserialize<HistoryMessageContent>());
     }
 
     [Fact]
-    public async Task ContextPreservesFullTextAndNestedReply()
+    public async Task EmptyServerPageWithContinuationCanBeContinuedByAgent()
     {
         using var fixture = new Fixture();
+        fixture.Ai.HistoryCalls = 2;
+        fixture.History.EmptyFirstPage = true;
+        fixture.History.Messages.Add(History(999));
+
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Equal(2, fixture.History.PageCalls);
+        Assert.Empty(fixture.Ai.HistoryResults[0].GetProperty("Messages").EnumerateArray());
+        Assert.Equal("0", fixture.Ai.HistoryResults[0].GetProperty("ContinuationToken").GetString());
+        Assert.Equal(999, Assert.Single(fixture.Ai.HistoryResults[1].GetProperty("Messages").EnumerateArray())
+            .GetProperty("MessageId").GetInt32());
+        Assert.Equal(JsonValueKind.Null, fixture.Ai.HistoryResults[1].GetProperty("ContinuationToken").ValueKind);
+    }
+
+    [Fact]
+    public async Task HistoryToolPreservesFullTextAndNestedReply()
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.HistoryCalls = 1;
         var text = new string('a', 3996) + "😀" + new string('b', 100);
         var replyText = new string('a', 1996) + "😀" + new string('b', 100);
         fixture.History.Messages.Add(History(999) with
@@ -452,23 +477,74 @@ public class MentionCommandTests
         });
         await fixture.Processor.ProcessCommand(fixture.Update);
 
-        var context = Assert.Single(fixture.Ai.Input!.Context!);
-        Assert.Equal(text, context.Content.Payload.UserMessage);
-        Assert.Equal(replyText, context.Content.ReplyTo!.Text);
+        var context = Assert.Single(fixture.Ai.HistoryResults[0].GetProperty("Messages").EnumerateArray())
+            .GetProperty("Content").Deserialize<HistoryMessageContent>()!;
+        Assert.Equal(text, context.Payload.UserMessage);
+        Assert.Equal(replyText, context.ReplyTo!.Text);
     }
 
     [Fact]
-    public async Task HistoryFailureStillAnswersQuestionAndReplyWithoutContext()
+    public async Task UnusedHistoryFailureDoesNotAffectAnswer()
     {
         using var fixture = new Fixture();
         fixture.History.Fail = true;
         fixture.Update.Message!.ReplyToMessage = new Message { Id = 42, Text = "Target" };
         await fixture.Processor.ProcessCommand(fixture.Update);
 
-        Assert.Empty(fixture.Ai.Input!.Context!);
-        Assert.Equal("Question", fixture.Ai.Input.Question);
+        Assert.Equal(0, fixture.History.PageCalls);
+        Assert.Equal("Question", fixture.Ai.Input!.Question);
         Assert.Equal("Target", fixture.Ai.Input.ReplyTo!.Text);
         Assert.Single(fixture.Telegram.Sent);
+    }
+
+    [Theory]
+    [InlineData("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00")]
+    [InlineData("2026-01-01T01:00:00+00:00", "2026-01-01T00:00:00+00:00")]
+    [InlineData("2026-01-01T00:00:00+00:00", "2026-01-01T01:00:01+00:00")]
+    public async Task InvalidHistoryBoundsReturnToolErrorWithoutReadingStorage(string from, string to)
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.HistoryCalls = 1;
+        fixture.Ai.HistoryFrom = from;
+        fixture.Ai.HistoryTo = to;
+        fixture.Ai.ExpectHistoryError = true;
+
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Equal(0, fixture.History.PageCalls);
+        Assert.NotEmpty(Assert.Single(fixture.Ai.HistoryErrors));
+        Assert.Empty(fixture.Ai.HistoryResults);
+    }
+
+    [Fact]
+    public async Task HistoryStorageFailureReachesAgentAsToolErrorRatherThanEmptyPage()
+    {
+        using var fixture = new Fixture();
+        fixture.Ai.HistoryCalls = 1;
+        fixture.Ai.ExpectHistoryError = true;
+        fixture.History.Fail = true;
+
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Equal(1, fixture.History.PageCalls);
+        Assert.NotEmpty(Assert.Single(fixture.Ai.HistoryErrors));
+        Assert.Empty(fixture.Ai.HistoryResults);
+    }
+
+    [Fact]
+    public async Task CancellationDuringHistoryRetrievalStopsAgent()
+    {
+        using var fixture = new Fixture();
+        using var cancellation = new CancellationTokenSource();
+        fixture.Ai.HistoryCalls = 1;
+        fixture.History.OnQuery = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fixture.Service.GenerateAsync(
+            new("Question", null, null, new(-100, 1000, new DateTimeOffset(fixture.Update.Message!.Date), null)),
+            cancellation.Token));
+
+        Assert.Equal(1, fixture.History.PageCalls);
+        Assert.Equal(1, fixture.Ai.Requests);
     }
 
     private static HistoryMessage History(int id) => new(-100, id,
@@ -480,13 +556,25 @@ public class MentionCommandTests
         public List<HistoryMessage> Messages { get; } = [];
         public int PageCalls { get; private set; }
         public bool Fail { get; set; }
+        public Action? OnQuery { get; set; }
+        public bool EmptyFirstPage { get; set; }
         public Task<HistoryMessagePage> GetPageAsync(long? chatId, int pageSize, string? continuationToken,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException("Full-chat scans are not allowed.");
+        public Task<HistoryMessagePage> GetRangePageAsync(long chatId, DateTimeOffset from, DateTimeOffset to,
+            string? continuationToken = null,
             CancellationToken cancellationToken = default)
         {
             Assert.Equal(-100, chatId);
+            Assert.Equal(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), from);
+            Assert.Equal(from.AddHours(1), to);
+            Assert.True(cancellationToken.CanBeCanceled);
             PageCalls++;
+            OnQuery?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
             if (Fail)
                 throw new InvalidOperationException("History unavailable");
+            if (EmptyFirstPage && PageCalls == 1)
+                return Task.FromResult(new HistoryMessagePage([], "0"));
             var offset = continuationToken is null ? 0 : int.Parse(continuationToken);
             var items = Messages.Skip(offset).Take(7).ToArray();
             var next = offset + items.Length;
@@ -512,7 +600,8 @@ public class MentionCommandTests
         public IMentionService Service => services.GetRequiredService<IMentionService>();
         public Update Update { get; } = new()
         {
-            Message = new Message { Id = 1000, Chat = new Chat { Id = -100 }, Text = "@TestBot Question" }
+            Message = new Message { Id = 1000, Chat = new Chat { Id = -100 }, Text = "@TestBot Question",
+                Date = new DateTime(2026, 1, 1, 1, 0, 0, DateTimeKind.Utc) }
         };
 
         public Fixture()
@@ -583,6 +672,12 @@ public class MentionCommandTests
         public string[] SourceUrls { get; set; } = ["https://example.com/source"];
         public object[]? Annotations { get; set; }
         public string Status { get; set; } = "completed";
+        public int HistoryCalls { get; set; }
+        public List<JsonElement> HistoryResults { get; } = [];
+        public List<string> HistoryErrors { get; } = [];
+        public bool ExpectHistoryError { get; set; }
+        public string HistoryFrom { get; set; } = "2026-01-01T00:00:00+00:00";
+        public string HistoryTo { get; set; } = "2026-01-01T01:00:00+00:00";
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests++;
@@ -598,12 +693,41 @@ public class MentionCommandTests
             Assert.False(root.GetProperty("store").GetBoolean());
             Assert.Equal(3, root.GetProperty("max_tool_calls").GetInt32());
             Assert.Equal(2000, root.GetProperty("max_output_tokens").GetInt32());
-            Assert.Equal("web_search", Assert.Single(root.GetProperty("tools").EnumerateArray()).GetProperty("type").GetString());
+            var tools = root.GetProperty("tools").EnumerateArray().ToArray();
+            Assert.Single(tools, tool => tool.GetProperty("type").GetString() == "web_search");
             var messages = root.GetProperty("input");
-            Assert.Single(messages.EnumerateArray(), message => message.GetProperty("role").GetString() == "user");
+            var user = Assert.Single(messages.EnumerateArray(), message =>
+                message.TryGetProperty("role", out var role) && role.GetString() == "user");
             Assert.False(root.TryGetProperty("previous_response_id", out _));
             Prompt = root.TryGetProperty("instructions", out var instructions) ? instructions.GetString()! : Text(messages[0]);
-            Input = JsonSerializer.Deserialize<MentionRequest>(Text(messages.EnumerateArray().Last()));
+            Input = JsonSerializer.Deserialize<MentionRequest>(Text(user));
+            using var payload = JsonDocument.Parse(Text(user));
+            Assert.False(payload.RootElement.TryGetProperty("Context", out _));
+            Assert.Equal(Input!.Conversation is not null,
+                tools.Any(tool => tool.GetProperty("type").GetString() == "function" &&
+                    tool.GetProperty("name").GetString() == "get_message_history"));
+            if (Input.Conversation is not null)
+            {
+                var schema = Assert.Single(tools, tool => tool.GetProperty("type").GetString() == "function")
+                    .GetProperty("parameters").GetProperty("properties");
+                Assert.Equal("date-time", schema.GetProperty("from").GetProperty("format").GetString());
+                Assert.Equal("date-time", schema.GetProperty("to").GetProperty("format").GetString());
+                Assert.False(schema.TryGetProperty("chatId", out _));
+            }
+            var results = messages.EnumerateArray().Where(message =>
+                message.TryGetProperty("type", out var type) && type.GetString() == "function_call_output").ToArray();
+            HistoryResults.Clear();
+            HistoryErrors.Clear();
+            foreach (var result in results)
+            {
+                if (ExpectHistoryError)
+                {
+                    HistoryErrors.Add(result.GetProperty("output").GetString()!);
+                    continue;
+                }
+                using var outputDocument = JsonDocument.Parse(result.GetProperty("output").GetString()!);
+                HistoryResults.Add(outputDocument.RootElement.Clone());
+            }
             if (Requests <= RateLimitResponses)
             {
                 var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
@@ -615,6 +739,18 @@ public class MentionCommandTests
                 return response;
             }
             var output = new List<object>();
+            if (results.Length < HistoryCalls)
+            {
+                output.Add(new { type = "function_call", id = "fc-" + results.Length,
+                    call_id = "call-" + results.Length, name = "get_message_history", status = "completed",
+                    arguments = JsonSerializer.Serialize(new
+                    {
+                        from = HistoryFrom, to = HistoryTo,
+                        continuationToken = HistoryResults.Count == 0 ? null : HistoryResults[^1].GetProperty("ContinuationToken").GetString()
+                    }) });
+            }
+            else
+            {
             if (Search)
                 output.Add(new { type = "web_search_call", id = "ws-test", status = "completed",
                     action = new { type = "search", query = "public question" } });
@@ -623,6 +759,7 @@ public class MentionCommandTests
                     ? Annotations ?? SourceUrls.Select(url => (object)new { type = "url_citation", start_index = 0, end_index = 6,
                         title = "Official source", url }).ToArray()
                     : Array.Empty<object>() } } });
+            }
             var json = Fail ? "{\"error\":{\"message\":\"AI unavailable\",\"type\":\"invalid_request_error\"}}" : JsonSerializer.Serialize(new
             {
                 id = "resp-test", @object = "response", created_at = 0, model = "mention", status = Status,

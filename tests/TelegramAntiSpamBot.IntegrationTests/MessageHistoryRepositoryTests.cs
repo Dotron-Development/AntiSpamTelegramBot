@@ -275,6 +275,61 @@ public class MessageHistoryRepositoryTests
         Assert.Null(page.ContinuationToken);
     }
 
+    [Fact]
+    public async Task RangePagesUseIndexedUtcBoundsAndReadOnlyOneHundredRowsPerCall()
+    {
+        var table = new HistoryTable();
+        using var services = CreateServices(table);
+        var repository = services.GetRequiredService<IMessageHistoryRepository>();
+        var from = new DateTimeOffset(2026, 1, 1, 2, 0, 0, TimeSpan.FromHours(2));
+        var to = from.AddSeconds(105);
+        for (var id = -1; id <= 105; id++)
+        {
+            var message = new HistoryMessage(-100, id + 2, from.AddSeconds(id).UtcTicks,
+                new(null, null, "Message " + id));
+            await repository.SaveAsync(message);
+            await repository.SaveAsync(message with { ChatId = -200 });
+        }
+        using var cancellation = new CancellationTokenSource();
+
+        var first = await repository.GetRangePageAsync(-100, from, to, cancellationToken: cancellation.Token);
+        var second = await repository.GetRangePageAsync(-100, from, to, first.ContinuationToken, cancellation.Token);
+
+        Assert.Equal(Enumerable.Range(2, 100), first.Messages.Select(message => message.MessageId));
+        Assert.Equal(Enumerable.Range(102, 5), second.Messages.Select(message => message.MessageId));
+        Assert.All(first.Messages.Concat(second.Messages), message => Assert.Equal(-100, message.ChatId));
+        Assert.Equal("100", first.ContinuationToken);
+        Assert.Null(second.ContinuationToken);
+        Assert.Equal(2, table.RangePagesRead);
+        Assert.Equal(100, table.MaxPerPage);
+        Assert.Equal(100, table.RequestedPageSize);
+        Assert.Equal(cancellation.Token, table.QueryCancellationToken);
+        var start = from.UtcTicks.ToString("D19") + "-";
+        var end = to.UtcTicks.ToString("D19") + "-";
+        Assert.Equal(TableClient.CreateQueryFilter($"PartitionKey eq {"-100"} and RowKey ge {start} and RowKey lt {end}"), table.Filter);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task RangePagesRejectInvalidIntervalBeforeQuerying(int seconds)
+    {
+        var table = new HistoryTable();
+        using var services = CreateServices(table);
+        var from = DateTimeOffset.UtcNow;
+        await Assert.ThrowsAsync<ArgumentException>(() => services.GetRequiredService<IMessageHistoryRepository>()
+            .GetRangePageAsync(-100, from, from.AddSeconds(seconds)));
+        Assert.Null(table.Filter);
+    }
+
+    [Fact]
+    public async Task RangePageStorageFailureIsNotReturnedAsEmptyHistory()
+    {
+        using var services = CreateServices(new HistoryTable { Missing = true });
+        await Assert.ThrowsAsync<RequestFailedException>(() => services.GetRequiredService<IMessageHistoryRepository>()
+            .GetRangePageAsync(-100, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow));
+    }
+
     private static ServiceProvider CreateServices(HistoryTable table) => new ServiceCollection()
         .AddLogging()
         .AddPersistence()
@@ -292,6 +347,9 @@ public class MessageHistoryRepositoryTests
         public string? ResultToken { get; init; }
         public string? RequestedToken { get; private set; }
         public int? RequestedPageSize { get; private set; }
+        public int? MaxPerPage { get; private set; }
+        public int RangePagesRead { get; private set; }
+        public CancellationToken QueryCancellationToken { get; private set; }
 
         public override Task<Response> UpsertEntityAsync<T>(T entity,
             TableUpdateMode mode = TableUpdateMode.Merge, CancellationToken cancellationToken = default)
@@ -309,8 +367,26 @@ public class MessageHistoryRepositoryTests
             IEnumerable<string>? select = null, CancellationToken cancellationToken = default)
         {
             Filter = filter;
+            MaxPerPage = maxPerPage;
+            QueryCancellationToken = cancellationToken;
             if (Missing)
                 throw new RequestFailedException(404, "Table not found");
+            if (maxPerPage == 100)
+            {
+                Assert.Equal(new[] { "PartitionKey", "RowKey", "DateTimeTicks", "Content", "UpdateType", "UpdateId" }, select);
+                var bounds = System.Text.RegularExpressions.Regex.Match(filter!,
+                    "^PartitionKey eq '([^']+)' and RowKey ge '([^']+)' and RowKey lt '([^']+)'$");
+                Assert.True(bounds.Success);
+                var rows = Rows.Where(row => row.PartitionKey == bounds.Groups[1].Value &&
+                    string.CompareOrdinal(row.RowKey, bounds.Groups[2].Value) >= 0 &&
+                    string.CompareOrdinal(row.RowKey, bounds.Groups[3].Value) < 0).OrderBy(row => row.RowKey).Cast<T>().ToArray();
+                return new RangePageable<T>(rows, (token, size) =>
+                {
+                    RequestedToken = token;
+                    RequestedPageSize = size;
+                    RangePagesRead++;
+                });
+            }
             if (filter is null && !Paging)
                 Assert.Equal(new[] { "PartitionKey", "RowKey" }, select);
             else
@@ -324,6 +400,20 @@ public class MessageHistoryRepositoryTests
         {
             Batches.Add(transactionActions.ToArray());
             return Task.FromResult<Response<IReadOnlyList<Response>>>(null!);
+        }
+
+        private sealed class RangePageable<T>(T[] rows, Action<string?, int?> onPage) : AsyncPageable<T> where T : notnull
+        {
+            public override async IAsyncEnumerable<Page<T>> AsPages(string? continuationToken = null, int? pageSizeHint = null)
+            {
+                await Task.CompletedTask;
+                onPage(continuationToken, pageSizeHint);
+                var offset = continuationToken is null ? 0 : int.Parse(continuationToken);
+                var values = rows.Skip(offset).Take(pageSizeHint!.Value).ToArray();
+                var next = offset + values.Length;
+                yield return Page<T>.FromValues(values, next < rows.Length ? next.ToString() : null, null!);
+                throw new InvalidOperationException("A single history tool call must not read a second server page.");
+            }
         }
     }
 }

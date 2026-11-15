@@ -121,6 +121,10 @@ Edit [dev.tfvars](src/infrastructure/environments/dev.tfvars) and [prod.tfvars](
 - `disable_public_access`, according to the environment's network requirements.
 - Optional `function_alert_emails`, `command_cooldown` and `spam_restriction_timeout`.
 
+Function failure alerts evaluate failed Application Insights requests every five
+minutes over a five-minute window. This query does not support Azure Monitor's
+one-minute evaluation frequency.
+
 ## 8. Deploy and Verify
 
 1. Run [release dev](.github/workflows/release-dev.yaml) manually from GitHub Actions, or push to `main` to deploy `dev` automatically.
@@ -204,7 +208,13 @@ See [the web setup guide](src/web/README.md) for additional frontend configurati
 
 Messages starting with `@BotName` invoke a Microsoft Agent Framework agent backed by Azure OpenAI Responses. Existing slash commands, spam detection, reply context, Telegram Markdown formatting and the chat-level command cooldown are unchanged. A new agent run is created for each mention; conversations are not shared between chats or requests, and Responses storage is disabled (`store: false`).
 
-The agent has exactly one hosted tool: web search backed by Bing. It decides whether to search; ordinary questions can be answered without tools. Search results are untrusted evidence, and source URLs from response annotations are included in Telegram answers. The instructions prohibit sending private chat history, identities or secrets in search queries; this is a model instruction, not a deterministic data-loss-prevention filter.
+The agent has hosted web search backed by Bing and, for Telegram mentions only, a local `get_message_history` tool. Ordinary questions can be answered without either tool. Initial mention payloads contain `Question`, `From`, explicit `ReplyTo` and `Conversation` metadata (chat/message IDs, UTC mention date and optional reply date), not surrounding messages. Web previews keep their existing request/response shape and have no history tool.
+
+`get_message_history(from, to, continuationToken = null)` accepts ISO 8601 timestamps with a UTC offset, with inclusive `from` and exclusive `to`. It is bound to the current chat and rejects intervals ending after the mention's timestamp. Each call returns at most 100 messages, oldest first, with ISO 8601 `Date`, author/reply/payload/update metadata and an opaque `ContinuationToken`. Reuse the same interval and token for the next page; stop only when the token is null, not merely when a page is empty. The prompt requests narrow relevant intervals and no history retrieval when the question and explicit reply suffice. Errors are logged and reported as tool errors rather than empty history.
+
+Azure Tables retrieval uses equality on `PartitionKey` (chat ID) plus a range on the existing time-prefixed `RowKey`, not an unindexed timestamp filter or a full-chat scan. Both query page size and SDK page size are 100, only required properties are selected, and each call consumes one server page. No schema migration or secondary index is needed. The 90-second mention deadline also covers history retrieval. Retention remains the latest 1000 entries per chat after cleanup; historical coverage is not guaranteed.
+
+Search results and retrieved history are untrusted evidence, and source URLs from response annotations are included in Telegram answers. The instructions prohibit sending private chat history, identities or secrets in search queries; this is a model instruction, not a deterministic data-loss-prevention filter.
 
 Use the existing `OpenAiServicesConfiguration__ServiceUrl` as the Azure account's base URL (without `/openai/v1`), and `OpenAiServicesConfiguration__MentionDeployment` for a deployment supporting Responses and hosted web search (default: `mention`). Mention requests append `/openai/v1/responses` to that base URL. Authentication uses the existing optional API key or Azure credential/managed identity; no separate Bing API key is required. Entra authentication requests the `https://ai.azure.com/.default` scope and requires inference access to the resource.
 

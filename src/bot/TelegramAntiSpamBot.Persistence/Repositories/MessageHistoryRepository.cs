@@ -113,13 +113,7 @@ internal sealed class MessageHistoryRepository(
     public async IAsyncEnumerable<HistoryMessage> GetAsync(long chatId, DateTimeOffset from, DateTimeOffset to,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (from >= to)
-            throw new ArgumentException("The start of the history interval must precede its end.", nameof(from));
-
-        var partition = chatId.ToString(CultureInfo.InvariantCulture);
-        var start = from.UtcDateTime.Ticks.ToString("D19", CultureInfo.InvariantCulture) + "-";
-        var end = to.UtcDateTime.Ticks.ToString("D19", CultureInfo.InvariantCulture) + "-";
-        var filter = TableClient.CreateQueryFilter($"PartitionKey eq {partition} and RowKey ge {start} and RowKey lt {end}");
+        var filter = GetRangeFilter(chatId, from, to);
 
         await foreach (var entry in historyTable.QueryAsync<TableEntity>(filter: filter, cancellationToken: cancellationToken))
         {
@@ -128,6 +122,34 @@ internal sealed class MessageHistoryRepository(
                 entry.GetInt64("DateTimeTicks")!.Value,
                 DeserializeContent(entry.GetString("Content")), ReadUpdateType(entry), entry.GetInt32("UpdateId"));
         }
+    }
+
+    public async Task<HistoryMessagePage> GetRangePageAsync(long chatId, DateTimeOffset from, DateTimeOffset to,
+        string? continuationToken = null, CancellationToken cancellationToken = default)
+    {
+        var filter = GetRangeFilter(chatId, from, to);
+        await foreach (var page in historyTable.QueryAsync<TableEntity>(filter: filter, maxPerPage: 100,
+            select: ["PartitionKey", "RowKey", "DateTimeTicks", "Content", "UpdateType", "UpdateId"],
+            cancellationToken: cancellationToken).AsPages(continuationToken, 100))
+        {
+            return new HistoryMessagePage(page.Values.Select(entry => new HistoryMessage(chatId,
+                int.Parse(entry.RowKey.AsSpan(20, 10), CultureInfo.InvariantCulture),
+                entry.GetInt64("DateTimeTicks")!.Value,
+                DeserializeContent(entry.GetString("Content")), ReadUpdateType(entry), entry.GetInt32("UpdateId")))
+                .ToArray(), page.ContinuationToken);
+        }
+        return new HistoryMessagePage([], null);
+    }
+
+    private static string GetRangeFilter(long chatId, DateTimeOffset from, DateTimeOffset to)
+    {
+        if (from >= to)
+            throw new ArgumentException("The start of the history interval must precede its end.", nameof(from));
+
+        var partition = chatId.ToString(CultureInfo.InvariantCulture);
+        var start = from.UtcDateTime.Ticks.ToString("D19", CultureInfo.InvariantCulture) + "-";
+        var end = to.UtcDateTime.Ticks.ToString("D19", CultureInfo.InvariantCulture) + "-";
+        return TableClient.CreateQueryFilter($"PartitionKey eq {partition} and RowKey ge {start} and RowKey lt {end}");
     }
 
     private static string GetRowKey(long dateTimeTicks, int messageId) =>
