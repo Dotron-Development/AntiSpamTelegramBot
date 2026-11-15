@@ -1,6 +1,7 @@
 ﻿global using System.Diagnostics.CodeAnalysis;
 global using System.ClientModel;
 global using System.Text.Json;
+global using System.Text.Json.Serialization;
 global using Microsoft.Extensions.Logging;
 global using OpenAI.Chat;
 global using Azure.AI.OpenAI;
@@ -13,6 +14,7 @@ global using System.Reflection;
 global using System.Text;
 global using Azure.AI.OpenAI.Chat;
 global using System.ComponentModel.DataAnnotations;
+global using System.ComponentModel;
 global using TelegramAntiSpamBot.Persistence.DTO;
 global using TelegramAntiSpamBot.Persistence.Repositories;
 global using Microsoft.Agents.AI;

@@ -177,7 +177,7 @@ public class MentionCommandTests
         using var fixture = new Fixture();
         fixture.Ai.RateLimitResponses = 10;
 
-        var exception = await Assert.ThrowsAsync<System.ClientModel.ClientResultException>(() =>
+        var exception = await Assert.ThrowsAsync<ClientResultException>(() =>
             fixture.Service.GenerateAsync(new MentionRequest("Question", null, null)));
 
         Assert.Equal(429, exception.Status);
@@ -190,7 +190,7 @@ public class MentionCommandTests
         using var fixture = new Fixture();
         fixture.Ai.Fail = true;
 
-        var exception = await Assert.ThrowsAsync<System.ClientModel.ClientResultException>(() =>
+        var exception = await Assert.ThrowsAsync<ClientResultException>(() =>
             fixture.Service.GenerateAsync(new MentionRequest("Question", null, null)));
 
         Assert.Equal(400, exception.Status);
@@ -610,7 +610,7 @@ public class MentionCommandTests
             var client = new ResponsesClient(new ApiKeyCredential("test-only"), new ResponsesClientOptions
             {
                 Endpoint = new Uri("https://mention.example.test"), Transport = new HttpClientPipelineTransport(aiHttp),
-                RetryPolicy = TelegramAntiSpamBot.OpenAI.DependencyInjection.CreateMentionClientOptions(new Uri("https://mention.example.test")).RetryPolicy
+                RetryPolicy = OpenAiDependencyInjection.CreateMentionClientOptions(new Uri("https://mention.example.test")).RetryPolicy
             });
             var collection = new ServiceCollection().AddLogging().AddOpenAiService().AddCommands()
                 .AddSingleton<ITelegramBotClient>(new TelegramBotClient("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk", telegramHttp))
@@ -707,10 +707,12 @@ public class MentionCommandTests
                     tool.GetProperty("name").GetString() == "get_message_history"));
             if (Input.Conversation is not null)
             {
-                var schema = Assert.Single(tools, tool => tool.GetProperty("type").GetString() == "function")
-                    .GetProperty("parameters").GetProperty("properties");
+                var historyTool = Assert.Single(tools, tool => tool.GetProperty("type").GetString() == "function");
+                Assert.Contains("Retrieve up to 100 messages", historyTool.GetProperty("description").GetString());
+                var schema = historyTool.GetProperty("parameters").GetProperty("properties");
                 Assert.Equal("date-time", schema.GetProperty("from").GetProperty("format").GetString());
                 Assert.Equal("date-time", schema.GetProperty("to").GetProperty("format").GetString());
+                Assert.Contains("Inclusive start timestamp", schema.GetProperty("from").GetProperty("description").GetString());
                 Assert.False(schema.TryGetProperty("chatId", out _));
             }
             var results = messages.EnumerateArray().Where(message =>
