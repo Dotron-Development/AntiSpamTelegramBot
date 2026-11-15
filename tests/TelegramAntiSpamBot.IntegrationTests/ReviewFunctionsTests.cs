@@ -294,58 +294,6 @@ public class ReviewFunctionsTests
         Assert.NotEqual(Assert.Single(first.HashDecisions).Hash, Assert.Single(second.HashDecisions).Hash);
     }
 
-    [Fact]
-    public async Task ChroniclePreviewDoesNotRecordCallsOrPostToTelegram()
-    {
-        using var fixture = new Fixture(commandCooldown: TimeSpan.FromMinutes(2));
-        var response = await fixture.HistoryFunctions.PreviewChronicle(fixture.Request(), -100);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Null(fixture.PreviewCall);
-        Assert.Equal(1, fixture.PreviewGenerations);
-        Assert.Empty(fixture.Telegram.Calls);
-        response.Body.Position = 0;
-        using var document = await JsonDocument.ParseAsync(response.Body);
-        Assert.Equal("Preview summary", document.RootElement.GetProperty("summary").GetString());
-        Assert.False(document.RootElement.GetProperty("skipped").GetBoolean());
-    }
-
-    [Fact]
-    public async Task ChroniclePreviewBypassesCooldownOnRepeatedCalls()
-    {
-        using var fixture = new Fixture { AllowCommandCall = false };
-        await fixture.HistoryFunctions.PreviewChronicle(fixture.Request(), -100);
-        var response = await fixture.HistoryFunctions.PreviewChronicle(fixture.Request(), -100);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(2, fixture.PreviewGenerations);
-        Assert.Null(fixture.PreviewCall);
-        Assert.Empty(fixture.Telegram.Calls);
-        response.Body.Position = 0;
-        using var document = await JsonDocument.ParseAsync(response.Body);
-        Assert.False(document.RootElement.GetProperty("skipped").GetBoolean());
-        Assert.Equal("Preview summary", document.RootElement.GetProperty("summary").GetString());
-    }
-
-    [Fact]
-    public async Task ChroniclePreviewRejectsInvalidChatAndReportsAiFailure()
-    {
-        using var fixture = new Fixture();
-        Assert.Equal(HttpStatusCode.BadRequest, (await fixture.HistoryFunctions.PreviewChronicle(fixture.Request(), 0)).StatusCode);
-        Assert.Null(fixture.PreviewCall);
-        fixture.PreviewFails = true;
-        Assert.Equal(HttpStatusCode.BadGateway, (await fixture.HistoryFunctions.PreviewChronicle(fixture.Request(), -100)).StatusCode);
-        Assert.Empty(fixture.Telegram.Calls);
-    }
-
-    [Fact]
-    public void ChroniclePreviewUsesAuthenticatedPostRoute()
-    {
-        var trigger = typeof(HistoryReviewFunctions).GetMethod(nameof(HistoryReviewFunctions.PreviewChronicle))!
-            .GetParameters()[0].GetCustomAttribute<HttpTriggerAttribute>();
-        Assert.Equal(AuthorizationLevel.Anonymous, trigger!.AuthLevel);
-        Assert.Equal(new[] { "post" }, trigger.Methods);
-        Assert.Equal("review/chronicle/{chatId:long}", trigger.Route);
-    }
-
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -363,7 +311,7 @@ public class ReviewFunctionsTests
         var row = document.RootElement.GetProperty(calls ? "calls" : "messages")[0];
         Assert.Equal(-100, row.GetProperty("chatId").GetInt64());
         if (calls)
-            Assert.Equal("/chronicle", row.GetProperty("command").GetString());
+            Assert.Equal("/report", row.GetProperty("command").GetString());
         else
             Assert.Equal("Original text", row.GetProperty("content").GetProperty("payload").GetProperty("userMessage").GetString());
     }
@@ -803,7 +751,7 @@ public class ReviewFunctionsTests
     }
 
     [Theory]
-    [InlineData("/chronicle")]
+    [InlineData("/report")]
     [InlineData("/stat")]
     public async Task WebhookRoutesCommandsWithoutSavingHistoryOrClassifying(string command)
     {
@@ -1208,8 +1156,6 @@ public class ReviewFunctionsTests
         public HistoryReviewFunctions HistoryFunctions { get; }
         public (long? ChatId, int PageSize, string? Token)? HistoryQuery { get; private set; }
         public bool AllowCommandCall { get; set; } = true;
-        public bool PreviewFails { get; set; }
-        public int PreviewGenerations { get; private set; }
         public (long ChatId, string Command, TimeSpan Cooldown)? PreviewCall { get; private set; }
         public bool HistoryTrimmed { get; private set; }
         public Task HistorySaveTask { get; set; } = Task.CompletedTask;
@@ -1232,7 +1178,7 @@ public class ReviewFunctionsTests
         public int CounterIncreases { get; private set; }
         public int HashChecks { get; private set; }
 
-        public Fixture(TimeSpan? spamRestrictionTimeout = null, TimeSpan? commandCooldown = null, bool reportCommands = false)
+        public Fixture(TimeSpan? spamRestrictionTimeout = null, bool reportCommands = false)
         {
             object? HandleRepositoryCall(MethodInfo method, object?[] arguments)
             {
@@ -1241,16 +1187,10 @@ public class ReviewFunctionsTests
                     case nameof(ICommandCallsRepository.TryAcquireAsync):
                         PreviewCall = ((long)arguments[0]!, (string)arguments[1]!, (TimeSpan)arguments[3]!);
                         return Task.FromResult(AllowCommandCall);
-                    case nameof(IChronicleService.GenerateAsync):
-                        Assert.Equal(-100L, arguments[0]);
-                        Assert.IsType<CancellationToken>(arguments[1]);
-                        PreviewGenerations++;
-                        return PreviewFails ? Task.FromException<string>(new InvalidOperationException("AI unavailable"))
-                            : Task.FromResult("Preview summary");
                     case nameof(ICommandCallsRepository.GetPageAsync):
                         HistoryQuery = ((long?)arguments[0], (int)arguments[1]!, (string?)arguments[2]);
                         if (method.DeclaringType == typeof(ICommandCallsRepository))
-                            return Task.FromResult(new CommandCallPage([new(-100, "/chronicle", DateTimeOffset.UtcNow)], "next-record"));
+                            return Task.FromResult(new CommandCallPage([new(-100, "/report", DateTimeOffset.UtcNow)], "next-record"));
                         return Task.FromResult(new HistoryMessagePage(History.ToArray(), "next-record"));
                     case nameof(IMessageHistoryRepository.SaveAsync):
                         History.Add((HistoryMessage)arguments[0]!);
@@ -1320,11 +1260,10 @@ public class ReviewFunctionsTests
                 BotName = "@TestBot",
                 DebugAiResponse = false,
                 SpamRestrictionTimeout = spamRestrictionTimeout ?? TimeSpan.FromHours(3),
-                CommandCooldown = commandCooldown ?? TimeSpan.FromMinutes(5)
+                CommandCooldown = TimeSpan.FromMinutes(5)
             });
             Functions = new ReviewFunctions(chatsRepository, probablySpamRepository, spamHashRepository, bot, botConfig);
-            HistoryFunctions = new HistoryReviewFunctions(HistoryRepository, CreateRepository<ICommandCallsRepository>(),
-                CreateRepository<IChronicleService>(), NullLogger<HistoryReviewFunctions>.Instance);
+            HistoryFunctions = new HistoryReviewFunctions(HistoryRepository, CreateRepository<ICommandCallsRepository>());
             var processor = new SpamMessageProcessor(NullLogger<SpamMessageProcessor>.Instance,
                 Detector, HistoryRepository, probablySpamRepository, messageCountRepository, spamHashRepository,
                 spamStatsRepository, bot, new TelegramImageUrlResolver(token), botConfig);
@@ -1417,7 +1356,7 @@ public class ReviewFunctionsTests
     private sealed class CommandStub : ICommandProcessor
     {
         public int Calls { get; private set; }
-        public bool IsCommand(string? message) => message is "/chronicle" or "/stat";
+        public bool IsCommand(string? message) => message is "/report" or "/stat";
         public Task ProcessCommand(Telegram.Bot.Types.Update update)
         {
             Calls++;

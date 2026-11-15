@@ -2,18 +2,14 @@
     min-height: 100svh;
 }
 
-.chronicle-button {
-    min-width: 158px;
-}
-
-.chronicle-preview {
+.mention-answer {
     padding: 20px 0;
     margin-bottom: 24px;
     border-top: 1px solid var(--line);
     border-bottom: 1px solid var(--line);
 }
 
-.chronicle-preview-heading {
+.mention-answer-heading {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
@@ -21,34 +17,21 @@
     margin-bottom: 16px;
 }
 
-.chronicle-preview-heading h2 {
+.mention-answer-heading h2 {
     font-size: 16px;
 }
 
-.chronicle-preview-heading span {
+.mention-answer-heading span {
     color: var(--muted);
     font-size: 11px;
     overflow-wrap: anywhere;
 }
 
-.chronicle-preview-heading>div:last-child {
-    display: flex;
-    flex-shrink: 0;
-}
-
-.chronicle-preview-text {
+.mention-answer-text {
     font-size: 14px;
     line-height: 1.8;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-}
-
-@media (max-width: 600px) {
-    .page-heading:has(.chronicle-button) {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 12px;
-    }
 }
 
 .workspace-tabs {

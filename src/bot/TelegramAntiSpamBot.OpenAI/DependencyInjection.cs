@@ -16,15 +16,11 @@
             serviceCollection.AddKeyedScoped("ImageAnalyzer", (provider, _) =>
                 CreateChatClient(provider, config => config.ImageRecognitionDeployment));
 
-            serviceCollection.AddKeyedScoped("Chronicle", (provider, _) =>
-                CreateChatClient(provider, config => config.ChronicleDeployment));
-
             serviceCollection.AddKeyedScoped("Mention", (provider, _) =>
                 CreateChatClient(provider, config => config.MentionDeployment, CreateMentionClientOptions()));
 
             serviceCollection.AddSingleton<SpamDetectionInstructions>();
             serviceCollection.AddScoped<ISpamDetectionService, SpamDetectionService>();
-            serviceCollection.AddScoped<IChronicleService, ChronicleService>();
             serviceCollection.AddScoped<IMentionService, MentionService>();
             return serviceCollection;
         }

@@ -9,7 +9,6 @@ namespace TelegramAntiSpamBot.OpenAI
         public required string ImageRecognitionDeployment { get; init; }
         [Required]
         public required string SpamRecognitionDeployment { get; init; }
-        public string ChronicleDeployment { get; init; } = "chronicle";
         public string MentionDeployment { get; init; } = "mention";
 
         /// <summary>

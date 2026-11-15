@@ -130,21 +130,6 @@ export function parseMentionPreview(text: string): MentionPreview {
   return data
 }
 
-export interface ChroniclePreview {
-  chatId: string
-  summary: string | null
-  skipped: boolean
-}
-
-export function parseChroniclePreview(text: string): ChroniclePreview {
-  const data = parse(text) as { chatId: LosslessNumber; summary: string | null; skipped: boolean }
-  
-  if (typeof data.skipped !== 'boolean' || (data.summary !== null && typeof data.summary !== 'string'))
-    throw new Error('Invalid Chronicle response.')
-  
-  return { chatId: data.chatId.toString(), summary: data.summary, skipped: data.skipped }
-}
-
 interface HistoryAuthorResponse {
   id: LosslessNumber
   name: string

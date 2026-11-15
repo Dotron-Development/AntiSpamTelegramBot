@@ -12,8 +12,6 @@
             return instructions;
         }
 
-        public Task<string> GetChronicleInstructions() => FindResource("ChronicleInstructions.md");
-
         public Task<string> GetMentionInstructions() => FindResource("MentionInstructions.md");
 
         private static async Task<string> FindResource(string name)

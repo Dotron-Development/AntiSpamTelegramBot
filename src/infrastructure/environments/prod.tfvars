@@ -18,11 +18,6 @@ spam_recognition = {
   version  = "2026-09-22"
   capacity = 50
 }
-chronicle = {
-  name     = "gpt-6.1-terra"
-  version  = "2026-10-26"
-  capacity = 100
-}
 mention = {
   name     = "gpt-6.1-terra"
   version  = "2026-10-26"

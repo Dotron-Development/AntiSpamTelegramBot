@@ -117,7 +117,7 @@ Edit [dev.tfvars](src/infrastructure/environments/dev.tfvars) and [prod.tfvars](
 - Existing GitHub runner VNet, resource group and subnet names.
 - `bot_name`, including `@`, and `forwardSpamToChatId`.
 - `review_client_id`, using the review website/API registration from step 6, not the deployment application.
-- AI model names, versions and capacities for `spam_recognition`, `image_text_extractor`, `chronicle` and `mention`.
+- AI model names, versions and capacities for `spam_recognition`, `image_text_extractor` and `mention`.
 - `disable_public_access`, according to the environment's network requirements.
 - Optional `function_alert_emails`, `command_cooldown` and `spam_restriction_timeout`.
 

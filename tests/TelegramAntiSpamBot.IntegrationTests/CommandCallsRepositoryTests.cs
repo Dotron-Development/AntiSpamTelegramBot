@@ -72,7 +72,7 @@ public class CommandCallsRepositoryTests
 
     [Theory]
     [InlineData(-200, "/stat")]
-    [InlineData(-100, "/chronicle")]
+    [InlineData(-100, "/report")]
     public async Task DifferentChatsAndCommandsUseSeparateRecords(long chatId, string command)
     {
         var table = new CallsTable { Existing = Entry(Now) };
@@ -84,7 +84,7 @@ public class CommandCallsRepositoryTests
     }
 
     [Theory]
-    [InlineData("/chronicle", "%2Fchronicle")]
+    [InlineData("/report", "%2Freport")]
     [InlineData("/stat", "%2Fstat")]
     [InlineData("/test\\?#\u0001", "%2Ftest%5C%3F%23%01")]
     [InlineData("/literal%2F", "%2Fliteral%252F")]

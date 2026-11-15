@@ -3,9 +3,7 @@ namespace TelegramAntiSpamBot.Functions;
 
 public sealed class HistoryReviewFunctions(
     IMessageHistoryRepository historyRepository,
-    ICommandCallsRepository commandCallsRepository,
-    IChronicleService chronicleService,
-    ILogger<HistoryReviewFunctions> logger)
+    ICommandCallsRepository commandCallsRepository)
 {
     private static readonly JsonObjectSerializer Serializer = new(new JsonSerializerOptions(JsonSerializerDefaults.Web));
     [Function("GetReviewHistory")]
@@ -38,31 +36,6 @@ public sealed class HistoryReviewFunctions(
         return response;
     }
 
-    [Function("PreviewChronicle")]
-    public async Task<HttpResponseData> PreviewChronicle(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "review/chronicle/{chatId:long}")] HttpRequestData request,
-        long chatId, CancellationToken cancellationToken = default)
-    {
-        if (chatId == 0)
-            return await Error(request, HttpStatusCode.BadRequest, "A non-zero chatId is required.");
-        try
-        {
-            var summary = await chronicleService.GenerateAsync(chatId, cancellationToken: cancellationToken);
-            var response = request.CreateResponse(HttpStatusCode.OK);
-            await response.WriteAsJsonAsync(new ChroniclePreviewResponse(chatId, summary, false), Serializer, cancellationToken);
-            return response;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            logger.LogError(exception, "Unable to generate Chronicle preview for chat {chatId}", chatId);
-            return await Error(request, HttpStatusCode.BadGateway, "Unable to generate Chronicle. Please try again later.");
-        }
-    }
-
     private static (long? ChatId, int PageSize, string? Error) ReadQuery(HttpRequestData request)
     {
         long? chatId = null;
@@ -87,6 +60,3 @@ public sealed class HistoryReviewFunctions(
         return response;
     }
 }
-
-/// <summary>A UI-only Chronicle preview; skipped is always false, retained for API compatibility.</summary>
-public sealed record ChroniclePreviewResponse(long ChatId, string? Summary, bool Skipped);

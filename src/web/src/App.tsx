@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { Check, CircleAlert, Copy, History, ListChecks, LoaderCircle, LogOut, ShieldCheck, Sparkles, Terminal, UnlockKeyhole, X } from 'lucide-react'
-import { getCommandCalls, getHistory, previewChronicle, validId } from './api/client'
+import { useState } from 'react'
+import { Check, CircleAlert, History, ListChecks, LogOut, ShieldCheck, Sparkles, Terminal, UnlockKeyhole, X } from 'lucide-react'
+import { getCommandCalls, getHistory, validId } from './api/client'
 import type { ReviewMessage } from './api/client'
 import { DecisionDialog } from './components/DecisionDialog'
 import { LastReview } from './components/LastReview'
@@ -14,7 +14,7 @@ import { useTablePage } from './hooks/useTablePage'
 import { useChats } from './hooks/useChats'
 import { useModeration } from './hooks/useModeration'
 import { useReviewQueue } from './hooks/useReviewQueue'
-import { connection, errorText } from './lib/workspace'
+import { connection } from './lib/workspace'
 import type { Notice, QueueQuery } from './lib/workspace'
 import { currentAccount, signOut } from './lib/auth'
 import './styles/App.css'
@@ -22,17 +22,13 @@ import './styles/App.css'
 function App() {
     const [view, setView] = useState<'queue' | 'calls' | 'history' | 'mention'>('queue')
     const [notice, setNotice] = useState<Notice | null>(null)
-    const [preview, setPreview] = useState<{ chatId: string; summary: string } | null>(null)
-    const [generating, setGenerating] = useState(false)
     const [mentionGenerating, setMentionGenerating] = useState(false)
-    const previewRequest = useRef<AbortController | null>(null)
-    useEffect(() => () => previewRequest.current?.abort(), [])
     const chats = useChats(connection, setNotice)
     const queue = useReviewQueue(connection, setNotice)
     const moderation = useModeration(connection, setNotice, queue.remove)
     const calls = useTablePage(connection, setNotice, getCommandCalls, row => `${row.chatId}:${row.command}`)
     const history = useTablePage(connection, setNotice, getHistory, row => `${row.chatId}:${row.messageId}`)
-    const locked = queue.loading || moderation.working || chats.loading || calls.loading || history.loading || generating || mentionGenerating
+    const locked = queue.loading || moderation.working || chats.loading || calls.loading || history.loading || mentionGenerating
     const records = view === 'history' ? history : calls
     const title = view === 'queue' ? 'Review queue' : view === 'calls' ? 'Command calls' : view === 'history' ? 'Message history' : 'Test mention command'
     const hasMore = !!queue.continuationToken
@@ -42,29 +38,6 @@ function App() {
         if (view !== 'queue') { void records.load(query); return }
         if (!query.chatId || validId(query.chatId)) moderation.clearLastReview()
         void queue.load(query)
-    }
-
-    async function generateChronicle() {
-        if (locked || previewRequest.current || !validId(chats.chatId)) return
-        const chatId = chats.chatId
-        const controller = new AbortController()
-        previewRequest.current = controller
-        setGenerating(true)
-        setPreview(null)
-        setNotice(null)
-        try {
-            const result = await previewChronicle(connection, chatId, controller.signal)
-            if (controller.signal.aborted) return
-            if (result.chatId !== chatId) throw new Error('Chronicle response belongs to a different chat.')
-            if (result.skipped) setNotice({ error: false, text: 'Chronicle is on cooldown. Try again later.' })
-            else if (result.summary) setPreview({ chatId, summary: result.summary })
-            else throw new Error('Chronicle returned an empty response.')
-        } catch (error) {
-            if (!controller.signal.aborted) setNotice({ error: true, text: errorText(error) })
-        } finally {
-            previewRequest.current = null
-            if (!controller.signal.aborted) setGenerating(false)
-        }
     }
 
     function openRestrictions(message?: ReviewMessage) {
@@ -107,30 +80,17 @@ function App() {
                 {view === 'queue' && <button className="button subtle" onClick={() => openRestrictions(queue.selected ?? moderation.lastReview?.message)} disabled={locked}>
                     <UnlockKeyhole size={16} /><span>Remove restrictions</span>
                 </button>}
-                {view === 'history' && chats.chatId && <button className="button subtle chronicle-button" disabled={locked}
-                    onClick={() => void generateChronicle()}>
-                    {generating ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={16} />}
-                    <span>{generating ? 'Generating...' : 'Test Chronicle'}</span>
-                </button>}
             </section>
 
             {view !== 'mention' && <QueryForm chats={chats.chats} chatId={chats.chatId} endpoint={connection.endpoint}
                 busy={locked} chatsLoading={chats.loading} loading={view === 'queue' ? queue.loading : records.loading}
                 submitLabel={view === 'queue' ? 'Load queue' : 'Load records'} itemLabel={view === 'calls' ? 'calls' : 'messages'}
-                onChatChange={chatId => { chats.setChatId(chatId); setPreview(null) }} onRefresh={chats.refresh} onSubmit={load} />}
+                onChatChange={chats.setChatId} onRefresh={chats.refresh} onSubmit={load} />}
 
             {notice && <div className={`notice ${notice.error ? 'error' : 'success'}`} role={notice.error ? 'alert' : 'status'}>
                 {notice.error ? <CircleAlert size={17} /> : <Check size={17} />}<span>{notice.text}</span>
                 <button className="icon-button" title="Dismiss notification" aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={16} /></button>
             </div>}
-
-            {view === 'history' && preview?.chatId === chats.chatId && <section className="chronicle-preview" aria-label="Chronicle preview">
-                <div className="chronicle-preview-heading"><div><h2>Chronicle</h2>
-                    <span>{chats.chats.find(chat => chat.chatId === preview.chatId)?.name ?? preview.chatId}</span></div>
-                    <div><button className="icon-button" title="Copy Chronicle" aria-label="Copy Chronicle" onClick={() => void copy(preview.summary)}><Copy size={16} /></button>
-                        <button className="icon-button" title="Close Chronicle" aria-label="Close Chronicle" onClick={() => setPreview(null)}><X size={16} /></button></div>
-                </div><div className="chronicle-preview-text">{preview.summary}</div>
-            </section>}
 
             {view === 'mention' ? <MentionPreview connection={connection} busy={locked} onBusyChange={setMentionGenerating} onCopy={copy} />
                 : view === 'queue' ? <section className="workspace" aria-label="Message review workspace">

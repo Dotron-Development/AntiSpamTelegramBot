@@ -81,10 +81,10 @@ export function MentionPreview({ connection, busy, onBusyChange, onCopy }: {
             </fieldset>
         </form>
         {error && <p className="notice error" role="alert">{error}</p>}
-        {answer !== null && <section className="chronicle-preview" aria-label="Mention answer">
-            <div className="chronicle-preview-heading"><div><h2>AI answer</h2><span>Markdown source; Telegram formatting is applied when the bot sends a message.</span></div>
+        {answer !== null && <section className="mention-answer" aria-label="Mention answer">
+            <div className="mention-answer-heading"><div><h2>AI answer</h2><span>Markdown source; Telegram formatting is applied when the bot sends a message.</span></div>
                 <button className="icon-button" title="Copy answer" aria-label="Copy answer" onClick={() => void onCopy(answer)}><Copy size={16} /></button></div>
-            <div className="chronicle-preview-text">{answer}</div>
+            <div className="mention-answer-text">{answer}</div>
         </section>}
     </section>
 }

@@ -559,7 +559,7 @@ test('command calls tab filters, paginates, refreshes and stays read-only', asyn
     const url = new URL(route.request().url())
     queries.push(url)
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-      calls: [{ chatId, command: url.searchParams.has('continuationToken') ? '/stat' : '/chronicle', lastCall: '2026-10-31T12:00:00Z' }],
+      calls: [{ chatId, command: url.searchParams.has('continuationToken') ? '/stat' : '/report', lastCall: '2026-10-31T12:00:00Z' }],
       continuationToken: url.searchParams.has('continuationToken') ? null : 'next+/= page',
     }) })
   })
@@ -569,7 +569,7 @@ test('command calls tab filters, paginates, refreshes and stays read-only', asyn
   await page.getByRole('button', { name: 'Load records' }).click()
   const table = page.getByRole('region', { name: 'Command calls table' })
   await expect(table.locator('tbody tr')).toHaveCount(1)
-  await expect(table).toContainText('/chronicle')
+  await expect(table).toContainText('/report')
   await expect(table).toContainText('31 Oct 2026')
   expect(queries[0].searchParams.get('chatId')).toBe(chatId)
   expect(queries[0].searchParams.get('pageSize')).toBe('50')
@@ -720,66 +720,6 @@ test('table views handle empty pages, errors and retry without mutating data', a
   await expect(page.getByRole('alert')).toHaveCount(0)
 })
 
-test('Chronicle preview is available for a selected history chat and renders without Telegram posting', async ({ page }, testInfo) => {
-  let posts = 0
-  let release!: () => void
-  const gate = new Promise<void>(resolve => { release = resolve })
-  const summary = 'Alice raised the question. Bob answered.\nAI aside: apparently the future still needs a meeting. <b>Plain text</b>'
-  await page.route('**/api/review/chronicle/*', async route => {
-    posts++
-    expect(route.request().method()).toBe('POST')
-    expect(new URL(route.request().url()).pathname).toBe(`/api/review/chronicle/${chatId}`)
-    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
-    await gate
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ chatId, summary, skipped: false }) })
-  })
-  await openWorkspace(page, { loadQueue: false })
-  await expect(page.getByRole('button', { name: 'Test Chronicle' })).toHaveCount(0)
-  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Test Chronicle' })).toHaveCount(0)
-  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
-  await page.getByRole('button', { name: 'Test Chronicle' }).click()
-  await expect(page.getByRole('button', { name: 'Generating...' })).toBeDisabled()
-  await expect(page.getByLabel('Chat', { exact: true })).toBeDisabled()
-  release()
-  const preview = page.getByRole('region', { name: 'Chronicle preview' })
-  await expect(preview).toContainText(summary)
-  await expect(preview.locator('b')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Copy Chronicle' })).toBeVisible()
-  expect(posts).toBe(1)
-  await page.screenshot({ path: testInfo.outputPath('preview-desktop.png'), fullPage: true })
-  await page.setViewportSize({ width: 390, height: 844 })
-  await expect(page.getByRole('button', { name: 'Test Chronicle' })).toBeVisible()
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.screenshot({ path: testInfo.outputPath('preview-mobile.png'), fullPage: true })
-  await page.getByLabel('Chat', { exact: true }).selectOption('')
-  await expect(preview).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Test Chronicle' })).toHaveCount(0)
-})
-
-test('Chronicle preview handles failure, cooldown and an explicit retry', async ({ page }) => {
-  let attempts = 0
-  await page.route('**/api/review/chronicle/*', route => {
-    attempts++
-    if (attempts === 1) return route.fulfill({ status: 502, contentType: 'application/json', body: '{"error":"AI unavailable"}' })
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-      chatId, summary: attempts === 2 ? null : 'A fresh recap.', skipped: attempts === 2,
-    }) })
-  })
-  await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
-  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
-  await page.getByRole('button', { name: 'Test Chronicle' }).click()
-  await expect(page.getByRole('alert')).toContainText('AI unavailable')
-  expect(attempts).toBe(1)
-  await page.getByRole('button', { name: 'Test Chronicle' }).click()
-  await expect(page.getByRole('status')).toContainText('Chronicle is on cooldown')
-  await expect(page.getByRole('alert')).toHaveCount(0)
-  await expect(page.getByRole('region', { name: 'Chronicle preview' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Test Chronicle' }).click()
-  await expect(page.getByRole('region', { name: 'Chronicle preview' })).toContainText('A fresh recap.')
-  expect(attempts).toBe(3)
-})
 test('mention preview sends question and only explicit reply context without Telegram actions', async ({ page }) => {
   const requests: unknown[] = []
   await page.route('**/api/review/mention', route => {

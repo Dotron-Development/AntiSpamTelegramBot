@@ -1,9 +1,8 @@
-import { parseApiError, parseReviewChatPage, parseReviewMessagePage, parseCommandCallPage, parseHistoryPage, parseChroniclePreview, parseMentionPreview } from './contracts'
+import { parseApiError, parseReviewChatPage, parseReviewMessagePage, parseCommandCallPage, parseHistoryPage, parseMentionPreview } from './contracts'
 import type { MentionPreviewRequest, ReviewChatPage, ReviewMessage, ReviewMessageRequest, ReviewPage } from './contracts'
 
 export type { ReviewChat, ReviewChatPage, ReviewMessage, ReviewMessageFrom, ReviewMessageReplyTo, ReviewPage } from './contracts'
 export type { CommandCall, HistoryMessage, TablePage } from './contracts'
-export type { ChroniclePreview } from './contracts'
 
 export interface Connection {
   endpoint: string
@@ -115,11 +114,6 @@ export async function getCommandCalls(connection: Connection, chatId: string, pa
 export async function getHistory(connection: Connection, chatId: string, pageSize: number,
   token: string | null, signal?: AbortSignal) {
   return parseHistoryPage(await request(connection, `/history?${tableQuery(chatId, pageSize, token)}`, 'GET', undefined, signal))
-}
-
-export async function previewChronicle(connection: Connection, chatId: string, signal?: AbortSignal) {
-  if (!validId(chatId)) throw new Error('Select a valid chat from the list.')
-  return parseChroniclePreview(await request(connection, `/chronicle/${chatId}`, 'POST', undefined, signal, 120_000))
 }
 
 export async function previewMention(connection: Connection, body: MentionPreviewRequest, signal?: AbortSignal) {

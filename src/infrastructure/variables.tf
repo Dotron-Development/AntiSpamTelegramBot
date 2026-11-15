@@ -116,20 +116,6 @@ variable "spam_recognition" {
   })
 }
 
-variable "chronicle" {
-  description = "The configuration of the separate chat-summary deployment."
-  type = object({
-    name     = string
-    version  = string
-    capacity = number
-  })
-  default = {
-    name     = "gpt-6.1-terra"
-    version  = "2026-10-26"
-    capacity = 10
-  }
-}
-
 variable "mention" {
   description = "The configuration of the separate bot-mention reply deployment."
   type = object({
