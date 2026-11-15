@@ -204,21 +204,6 @@ After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) wit
 
 See [the web setup guide](src/web/README.md) for additional frontend configuration.
 
-### Pull request checks
-
-[PR checks](.github/workflows/pr-checks.yaml) builds the .NET solution in Release
-and runs all offline tests on every pull request. It requires no Azure credentials
-or deployment access and uploads TRX test results, including when tests fail.
-Tests marked `Category=External` are excluded because they call real Azure OpenAI
-and require local credentials. Run the same offline tests locally with:
-
-```powershell
-dotnet test tests\TelegramAntiSpamBot.IntegrationTests\TelegramAntiSpamBot.IntegrationTests.csproj --configuration Release --filter "Category!=External"
-```
-
-To block merges on failures, add `.NET build and tests` as a required status check
-in the repository's branch protection or ruleset settings after its first run.
-
 ## 10. Mention Agent and Web Search
 
 Messages starting with `@BotName` invoke a Microsoft Agent Framework agent backed by Azure OpenAI Responses. Existing slash commands, spam detection, reply context, Telegram Markdown formatting and the chat-level command cooldown are unchanged. A new agent run is created for each mention; conversations are not shared between chats or requests, and Responses storage is disabled (`store: false`).
