@@ -1,5 +1,3 @@
-using Telegram.Bot.Exceptions;
-
 namespace TelegramAntiSpamBot.Functions
 {
     public class SpamMessageProcessor(ILogger<SpamMessageProcessor> logger,

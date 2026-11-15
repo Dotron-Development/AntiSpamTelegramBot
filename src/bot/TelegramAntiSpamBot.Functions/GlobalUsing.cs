@@ -20,3 +20,4 @@ global using TelegramAntispamBot.Configuration;
 global using Azure.Core.Serialization;
 global using TelegramAntiSpamBot.Persistence.DTO;
 global using TelegramAntiSpamBot.Persistence.Repositories;
+global using Telegram.Bot.Exceptions;

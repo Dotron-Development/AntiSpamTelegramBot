@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging;
-
 namespace TelegramAntiSpamBot.Persistence.Repositories;
 
 internal sealed class MessageHistoryRepository(

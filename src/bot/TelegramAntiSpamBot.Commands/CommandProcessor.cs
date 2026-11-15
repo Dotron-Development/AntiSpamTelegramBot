@@ -1,5 +1,3 @@
-﻿using Telegram.Bot.Exceptions;
-
 namespace TelegramAntiSpamBot.Commands
 {
     internal class CommandProcessor(

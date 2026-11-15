@@ -1,5 +1,3 @@
-using OpenAI.Responses;
-
 #pragma warning disable OPENAI001
 
 namespace TelegramAntiSpamBot.IntegrationTests;

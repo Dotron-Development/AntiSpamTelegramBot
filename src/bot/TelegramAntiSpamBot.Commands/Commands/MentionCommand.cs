@@ -1,5 +1,3 @@
-using TelegramAntiSpamBot.Persistence.DTO;
-
 namespace TelegramAntiSpamBot.Commands.Commands;
 
 internal sealed class MentionCommand(
