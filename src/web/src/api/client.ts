@@ -1,7 +1,7 @@
 import { parseApiError, parseReviewChatPage, parseReviewMessagePage, parseCommandCallPage, parseHistoryPage, parseMentionPreview } from './contracts'
 import type { MentionPreviewRequest, ReviewChatPage, ReviewMessage, ReviewMessageRequest, ReviewPage } from './contracts'
 
-export type { ReviewChat, ReviewChatPage, ReviewMessage, ReviewMessageFrom, ReviewMessageReplyTo, ReviewPage } from './contracts'
+export type { ReviewChat, ReviewChatPage, ReviewMessage, MessageFrom, ReviewMessageReplyTo, ReviewPage } from './contracts'
 export type { CommandCall, HistoryMessage, TablePage } from './contracts'
 
 export interface Connection {
@@ -44,7 +44,7 @@ export function messageDate(ticks: string): Date | null {
   }
 }
 
-async function request(connection: Connection, path: string, method: 'GET' | 'POST', body?: unknown,
+async function request(connection: Connection, path: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown,
   signal?: AbortSignal, timeout = 30_000): Promise<string> {
   const endpoint = normalizeEndpoint(connection.endpoint)
   const api = endpoint.endsWith('/api') ? endpoint : `${endpoint}/api`
@@ -114,6 +114,11 @@ export async function getCommandCalls(connection: Connection, chatId: string, pa
 export async function getHistory(connection: Connection, chatId: string, pageSize: number,
   token: string | null, signal?: AbortSignal) {
   return parseHistoryPage(await request(connection, `/history?${tableQuery(chatId, pageSize, token)}`, 'GET', undefined, signal))
+}
+
+export async function clearChatHistory(connection: Connection, chatId: string) {
+  if (!validId(chatId)) throw new Error('Select a valid chat before clearing its history.')
+  await request(connection, `/history/${chatId}`, 'DELETE', undefined, undefined, 120_000)
 }
 
 export async function previewMention(connection: Connection, body: MentionPreviewRequest, signal?: AbortSignal) {

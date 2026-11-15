@@ -29,8 +29,8 @@ public class RepositoryTests
         Assert.All(page.Messages, message =>
         {
             Assert.Equal(42, message.UserId);
-            Assert.Equal(new ReviewMessageFrom("Alice", "alice"), message.From);
-            Assert.Equal(new ReviewMessageReplyTo(6, new ReviewMessageFrom("Bob", "bob"), "Question"), message.ReplyTo);
+            Assert.Equal(new MessageFrom(42, "Alice", "alice"), message.From);
+            Assert.Equal(new ReviewMessageReplyTo(6, new MessageFrom(99, "Bob", "bob"), "Question"), message.ReplyTo);
             Assert.Equal("caption", message.Message);
             Assert.Equal("OCR", message.ImageText);
             Assert.Equal("HASH", message.ContentHash);
@@ -75,8 +75,8 @@ public class RepositoryTests
         var table = new TableStub();
         using var services = Services("ProbablySpam", table);
         var repository = services.GetRequiredService<IProbablySpamRepository>();
-        var message = new ReviewMessage(-100, 7, 42, new ReviewMessageFrom("Alice", "alice"),
-            new ReviewMessageReplyTo(6, new ReviewMessageFrom("Bob", "bob"), "Question"),
+        var message = new ReviewMessage(-100, 7, 42, new MessageFrom(42, "Alice", "alice"),
+            new ReviewMessageReplyTo(6, new MessageFrom(99, "Bob", "bob"), "Question"),
             "caption", "OCR", "HASH", 638000000000000000);
 
         await repository.SaveReviewMessageAsync(message);
@@ -85,10 +85,12 @@ public class RepositoryTests
         Assert.Equal("7", write.Entity.RowKey);
         Assert.Equal(TableUpdateMode.Replace, write.Mode);
         Assert.False(write.Update);
-        Assert.Equal("{\"name\":\"Alice\",\"nick\":\"alice\"}", Property<string>(write.Entity, "From"));
-        Assert.Equal("{\"messageId\":6,\"from\":{\"name\":\"Bob\",\"nick\":\"bob\"},\"text\":\"Question\"}",
+        Assert.Equal("{\"id\":42,\"name\":\"Alice\",\"username\":\"alice\"}", Property<string>(write.Entity, "From"));
+        Assert.Equal("{\"messageId\":6,\"from\":{\"id\":99,\"name\":\"Bob\",\"username\":\"bob\"},\"text\":\"Question\"}",
             Property<string>(write.Entity, "ReplyTo"));
         table.LookupRow = MessageRow("-100", "7");
+        table.LookupRow["From"] = Property<string>(write.Entity, "From");
+        table.LookupRow["ReplyTo"] = Property<string>(write.Entity, "ReplyTo");
         Assert.Equal(message, await repository.GetReviewMessageAsync(-100, 7));
         Assert.Equal(("-100", "7"), table.LookupKeys);
         table.LookupRow = null;
@@ -253,8 +255,8 @@ public class RepositoryTests
     private static Dictionary<string, object> MessageRow(string chatId, string messageId) => new()
     {
         ["PartitionKey"] = chatId, ["RowKey"] = messageId, ["UserId"] = 42L,
-        ["From"] = "{\"name\":\"Alice\",\"nick\":\"alice\"}",
-        ["ReplyTo"] = "{\"messageId\":6,\"from\":{\"name\":\"Bob\",\"nick\":\"bob\"},\"text\":\"Question\"}",
+        ["From"] = "{\"id\":42,\"name\":\"Alice\",\"username\":\"alice\"}",
+        ["ReplyTo"] = "{\"messageId\":6,\"from\":{\"id\":99,\"name\":\"Bob\",\"username\":\"bob\"},\"text\":\"Question\"}",
         ["Message"] = "caption", ["ImageText"] = "OCR", ["ContentHash"] = "HASH", ["MessageDateTicks"] = 638000000000000000L
     };
 

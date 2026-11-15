@@ -7,7 +7,7 @@ public sealed class MessageHistoryCleanupFunctions(
 {
     [Function("CleanupMessageHistory")]
     public async Task Run(
-        [TimerTrigger("0 0 * * * *", UseMonitor = true)] TimerInfo timer,
+        [TimerTrigger("0 0 0 * * *", UseMonitor = true)] TimerInfo timer,
         CancellationToken cancellationToken)
     {
         var deleted = await historyRepository.TrimAsync(cancellationToken);

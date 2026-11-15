@@ -366,7 +366,7 @@ public class ReviewFunctionsTests
         using var fixture = new Fixture();
         fixture.Message = fixture.Message! with
         {
-            ReplyTo = new ReviewMessageReplyTo(5, new ReviewMessageFrom("Bob", "bob"), "Question")
+            ReplyTo = new ReviewMessageReplyTo(5, new MessageFrom(99, "Bob", "bob"), "Question")
         };
 
         await fixture.Functions.Review(fixture.Request("{\"isSpam\":false}"), -100, 7);
@@ -378,11 +378,11 @@ public class ReviewFunctionsTests
     }
 
     [Fact]
-    public async Task NotSpamRepublishOmitsMissingNick()
+    public async Task NotSpamRepublishOmitsMissingUsername()
     {
         using var fixture = new Fixture
         {
-            Message = new ReviewMessage(-100, 7, 42, new ReviewMessageFrom("Alice", null), null,
+            Message = new ReviewMessage(-100, 7, 42, new MessageFrom(42, "Alice", null), null,
                 "Original caption", "Recognized text", "HASH", DateTime.UtcNow.Ticks)
         };
 
@@ -610,7 +610,7 @@ public class ReviewFunctionsTests
         Assert.Equal(-100, message.ChatId);
         Assert.Equal(7, message.MessageId);
         Assert.Equal(42, message.UserId);
-        Assert.Equal(new ReviewMessageFrom("Alice Smith", "alice"), message.From);
+        Assert.Equal(new MessageFrom(42, "Alice Smith", "alice"), message.From);
         Assert.Equal("Original Caption 123!", message.Message);
         Assert.Equal("OCR \"quoted\"\nsecond line", message.ImageText);
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1700000000).UtcDateTime.Ticks, message.MessageDateTicks);
@@ -744,7 +744,7 @@ public class ReviewFunctionsTests
         var response = await fixture.Webhook.Run(fixture.Request(update));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Equal(new ReviewMessageReplyTo(4, new ReviewMessageFrom("Bob", "bob"), "Question"),
+        Assert.Equal(new ReviewMessageReplyTo(4, new MessageFrom(99, "Bob", "bob"), "Question"),
             Assert.IsType<ReviewMessage>(fixture.SavedMessage).ReplyTo);
     }
 
@@ -837,7 +837,7 @@ public class ReviewFunctionsTests
         Assert.Equal("Original Caption 123!", message.Content.Payload.UserMessage);
         Assert.Equal(fixture.Detector.ImageContent, message.Content.Payload.ImageText);
         Assert.Equal(fixture.Detector.ClassifiedPayload, message.Content.Payload);
-        Assert.Equal(new HistoryMessageAuthor(42, "Alice Smith", "alice"), message.Content.From);
+        Assert.Equal(new MessageFrom(42, "Alice Smith", "alice"), message.Content.From);
     }
 
     [Theory]
@@ -977,7 +977,7 @@ public class ReviewFunctionsTests
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         var message = Assert.Single(fixture.History);
         Assert.Equal(-200, message.ChatId);
-        Assert.Equal(new HistoryMessageAuthor(-200, "News", null), message.Content.From);
+        Assert.Equal(new MessageFrom(-200, "News", null), message.Content.From);
         Assert.Equal(new HistoryMessageReply(7, new(42, "Alice", null), "Previous post"), message.Content.ReplyTo);
         Assert.Empty(fixture.Telegram.Calls);
         Assert.Single(fixture.SavedChats);
@@ -1023,7 +1023,42 @@ public class ReviewFunctionsTests
     }
 
     [Fact]
-    public async Task HourlyCleanupCallsHistoryRepository()
+    public async Task ClearHistoryDeletesOnlyRequestedChatAndForwardsCancellation()
+    {
+        using var fixture = new Fixture();
+        using var cancellation = new CancellationTokenSource();
+        var response = await fixture.HistoryFunctions.ClearHistory(fixture.Request(""), -100, cancellation.Token);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal((-100L, cancellation.Token), fixture.ClearedHistory);
+        Assert.False(fixture.Deleted);
+        Assert.False(fixture.HistoryTrimmed);
+        var trigger = typeof(HistoryReviewFunctions).GetMethod(nameof(HistoryReviewFunctions.ClearHistory))!
+            .GetParameters()[0].GetCustomAttribute<HttpTriggerAttribute>()!;
+        Assert.Equal("review/history/{chatId:long}", trigger.Route);
+        Assert.NotNull(trigger.Methods);
+        Assert.Contains("delete", trigger.Methods);
+        Assert.Equal(AuthorizationLevel.Anonymous, trigger.AuthLevel);
+    }
+
+    [Fact]
+    public async Task ClearHistoryRejectsZeroChatWithoutDeleting()
+    {
+        using var fixture = new Fixture();
+        var response = await fixture.HistoryFunctions.ClearHistory(fixture.Request(""), 0);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(fixture.ClearedHistory);
+    }
+
+    [Fact]
+    public async Task ClearHistoryDoesNotReportSuccessOnStorageFailure()
+    {
+        using var fixture = new Fixture { HistoryClearFails = true };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.HistoryFunctions.ClearHistory(fixture.Request(""), -100));
+    }
+
+    [Fact]
+    public async Task DailyCleanupCallsHistoryRepository()
     {
         using var fixture = new Fixture();
         var function = new MessageHistoryCleanupFunctions(fixture.HistoryRepository,
@@ -1034,7 +1069,7 @@ public class ReviewFunctionsTests
         Assert.True(fixture.HistoryTrimmed);
         var timer = typeof(MessageHistoryCleanupFunctions).GetMethod(nameof(MessageHistoryCleanupFunctions.Run))!
             .GetParameters()[0].GetCustomAttribute<TimerTriggerAttribute>();
-        Assert.Equal("0 0 * * * *", timer!.Schedule);
+        Assert.Equal("0 0 0 * * *", timer!.Schedule);
         Assert.True(timer.UseMonitor);
     }
 
@@ -1146,7 +1181,7 @@ public class ReviewFunctionsTests
             })).BuildServiceProvider();
         private readonly HttpClient httpClient;
         public TelegramHandler Telegram { get; } = new();
-        public ReviewMessage? Message { get; set; } = new(-100, 7, 42, new ReviewMessageFrom("Alice", "alice"), null, "Original caption", "Recognized text", "HASH", DateTime.UtcNow.Ticks);
+        public ReviewMessage? Message { get; set; } = new(-100, 7, 42, new MessageFrom(42, "Alice", "alice"), null, "Original caption", "Recognized text", "HASH", DateTime.UtcNow.Ticks);
         public List<(string Hash, bool IsSpam)> HashDecisions { get; } = [];
         public bool Deleted { get; private set; }
         public List<HistoryMessage> History { get; } = [];
@@ -1156,6 +1191,8 @@ public class ReviewFunctionsTests
         public bool AllowCommandCall { get; set; } = true;
         public (long ChatId, string Command, TimeSpan Cooldown)? PreviewCall { get; private set; }
         public bool HistoryTrimmed { get; private set; }
+        public (long ChatId, CancellationToken Token)? ClearedHistory { get; private set; }
+        public bool HistoryClearFails { get; set; }
         public Task HistorySaveTask { get; set; } = Task.CompletedTask;
         public Task ChatSaveTask { get; set; } = Task.CompletedTask;
         public TaskCompletionSource HistorySaveStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1197,6 +1234,9 @@ public class ReviewFunctionsTests
                     case nameof(IMessageHistoryRepository.TrimAsync):
                         HistoryTrimmed = true;
                         return Task.FromResult(10);
+                    case nameof(IMessageHistoryRepository.ClearChatAsync):
+                        ClearedHistory = ((long)arguments[0]!, (CancellationToken)arguments[1]!);
+                        return HistoryClearFails ? Task.FromException<int>(new InvalidOperationException("Storage unavailable")) : Task.FromResult(10);
                     case nameof(IChatsRepository.SaveChatAsync):
                         if (ChatSaveFails) return Task.FromException(new InvalidOperationException("Storage unavailable"));
                         SavedChats.Add((ReviewChat)arguments[0]!);

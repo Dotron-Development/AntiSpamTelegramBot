@@ -58,7 +58,7 @@ public sealed class MentionReviewFunctionsTests
         using var fixture = new Fixture();
         Assert.Equal(HttpStatusCode.OK, (await fixture.Functions.PreviewMention(fixture.Request(body))).StatusCode);
         var request = Assert.Single(fixture.Service.Requests);
-        Assert.Equal(fromUsername is null ? null : new HistoryMessageAuthor(0, "", fromUsername), request.From);
+        Assert.Equal(fromUsername is null ? null : new MessageFrom(0, "", fromUsername), request.From);
         Assert.Equal(new HistoryMessageReply(0,
             replyUsername is null ? null : new(0, "", replyUsername), ""), request.ReplyTo);
     }
@@ -71,8 +71,8 @@ public sealed class MentionReviewFunctionsTests
             {"question":"Hi","fromName":"Alice","replyTo":{"name":"Bob","text":"Hi"}}
             """));
         var request = Assert.Single(fixture.Service.Requests);
-        Assert.Equal(new HistoryMessageAuthor(0, "Alice", null), request.From);
-        Assert.Equal(new HistoryMessageAuthor(0, "Bob", null), request.ReplyTo!.From);
+        Assert.Equal(new MessageFrom(0, "Alice", null), request.From);
+        Assert.Equal(new MessageFrom(0, "Bob", null), request.ReplyTo!.From);
     }
 
     [Theory]

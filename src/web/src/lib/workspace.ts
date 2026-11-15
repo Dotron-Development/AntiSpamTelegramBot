@@ -1,5 +1,5 @@
 import { messageDate } from '../api/client'
-import type { Connection, ReviewMessage, ReviewMessageFrom } from '../api/client'
+import type { Connection, ReviewMessage, MessageFrom } from '../api/client'
 import { getAccessToken } from './auth'
 
 export interface QueueQuery { chatId: string; pageSize: number }
@@ -40,11 +40,11 @@ export function dateLabel(message: ReviewMessage): string {
     return date ? dateFormatter.format(date) : 'Date unavailable'
 }
 
-export function reviewFromLabel(from: ReviewMessageFrom): string {
+export function reviewFromLabel(from: MessageFrom): string {
     const name = from.name?.trim() ?? ''
-    const nick = from.nick?.trim()
-    if (name && nick) return `${name} @${nick}`
-    return name || (nick ? `@${nick}` : 'Unknown sender')
+    const username = from.username?.trim()
+    if (name && username) return `${name} @${username}`
+    return name || (username ? `@${username}` : 'Unknown sender')
 }
 
 export function initials(name: string): string {

@@ -269,7 +269,7 @@ public class MentionCommandTests
             Caption = caption ? "Quoted caption" : null
         };
         await fixture.Processor.ProcessCommand(fixture.Update);
-        Assert.Equal(new HistoryMessageAuthor(1, "Anna Smith", "anna"), fixture.Ai.Input!.From);
+        Assert.Equal(new MessageFrom(1, "Anna Smith", "anna"), fixture.Ai.Input!.From);
         Assert.Equal(new HistoryMessageReply(42, new(2, "Boris", "boris"), caption ? "Quoted caption" : "Quoted text"), fixture.Ai.Input.ReplyTo);
         Assert.Contains("same language as the Question", fixture.Ai.Prompt);
         Assert.Contains("untrusted context", fixture.Ai.Prompt);
@@ -287,7 +287,7 @@ public class MentionCommandTests
             SenderChat = new Chat { Id = -200, Title = "Channel", Username = "channel" }
         };
         await fixture.Processor.ProcessCommand(fixture.Update);
-        Assert.Equal(new HistoryMessageAuthor(-200, "Channel", "channel"), fixture.Ai.Input!.ReplyTo!.From);
+        Assert.Equal(new MessageFrom(-200, "Channel", "channel"), fixture.Ai.Input!.ReplyTo!.From);
     }
 
     [Fact]
@@ -419,7 +419,7 @@ public class MentionCommandTests
     {
         using var fixture = new Fixture();
         fixture.Ai.HistoryCalls = 1;
-        var author = new HistoryMessageAuthor(2, "Boris", "boris");
+        var author = new MessageFrom(2, "Boris", "boris");
         var reply = new HistoryMessageReply(40, author, "Nested reply");
         fixture.History.Messages.Add(History(998) with
         {
@@ -583,6 +583,7 @@ public class MentionCommandTests
         public IAsyncEnumerable<HistoryMessage> GetAsync(long chatId, DateTimeOffset from, DateTimeOffset to,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<int> TrimAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<int> ClearChatAsync(long chatId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class Fixture : IDisposable

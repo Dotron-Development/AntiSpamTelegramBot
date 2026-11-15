@@ -58,8 +58,14 @@ export function useReviewQueue(connection: Connection, notify: Notify) {
         if (query && continuationToken) void load(query, true)
     }
 
+    function completeBatch() {
+        setMessages([])
+        setSelectedId(null)
+        setContinuationToken(null)
+    }
+
     return {
         query, messages, selected: messages.find(message => messageKey(message) === selectedId) ?? messages[0],
-        select: setSelectedId, continuationToken, loading, hasLoaded, load, loadMore, remove,
+        select: setSelectedId, continuationToken, loading, hasLoaded, load, loadMore, remove, completeBatch,
     }
 }

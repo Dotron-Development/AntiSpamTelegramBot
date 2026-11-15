@@ -59,8 +59,8 @@ public sealed class MentionReviewFunctions(
     private static bool ValidAuthor(string? name, string? username) =>
         (name is null || name.Length <= 200) && (username is null || username.Length <= 64);
 
-    private static HistoryMessageAuthor? Author(string? name, string? username) =>
-        name is null && username is null ? null : new HistoryMessageAuthor(0, name ?? string.Empty, username);
+    private static MessageFrom? Author(string? name, string? username) =>
+        name is null && username is null ? null : new MessageFrom(0, name ?? string.Empty, username);
 
     private static async Task<HttpResponseData> Error(
         HttpRequestData request, HttpStatusCode status, string error, CancellationToken cancellationToken)

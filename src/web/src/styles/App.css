@@ -439,6 +439,16 @@ main {
     margin-bottom: 27px;
 }
 
+.page-heading:has(>.page-heading-actions) {
+    flex-wrap: wrap;
+}
+
+.page-heading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .eyebrow {
     font-size: 10px;
     font-weight: 700;

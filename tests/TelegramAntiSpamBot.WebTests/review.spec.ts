@@ -2,15 +2,17 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { parseHistoryPage, parseReviewMessagePage } from '../../src/web/src/api/contracts'
 
 const chatId = '-1001234567890'
 const userId = '9007199254740993'
 const ticks = '638712864000000001'
 const fakeToken = 'test-only-not-a-real-token'
 const apiRoute = 'https://review.example.test/api/review/**'
-const messageJSON = `{"ChatId":${chatId},"MessageId":7,"UserId":${userId},"From":{"Name":"Alice Smith","Nick":null},"ReplyTo":null,"Message":"Hello team!\\n<em>Not HTML</em>","ImageText":"Image text: special offer","ContentHash":"HASH","MessageDateTicks":${ticks}}`
+const messageJSON = `{"ChatId":${chatId},"MessageId":7,"UserId":${userId},"From":{"Id":${userId},"Name":"Alice Smith","Username":null},"ReplyTo":null,"Message":"Hello team!\\n<em>Not HTML</em>","ImageText":"Image text: special offer","ContentHash":"HASH","MessageDateTicks":${ticks}}`
 const firstPage = `{"Messages":[${messageJSON}],"ContinuationToken":"next+/= page"}`
-const lastPage = `{"Messages":[{"ChatId":${chatId},"MessageId":8,"UserId":43,"From":{"Name":"Bob Jones","Nick":null},"ReplyTo":null,"Message":"Another pending message","ImageText":"","ContentHash":"HASH","MessageDateTicks":${ticks}}],"ContinuationToken":null}`
+const secondMessageJSON = `{"ChatId":${chatId},"MessageId":8,"UserId":43,"From":{"Id":43,"Name":"Bob Jones","Username":null},"ReplyTo":null,"Message":"Another pending message","ImageText":"","ContentHash":"HASH","MessageDateTicks":${ticks}}`
+const lastPage = `{"Messages":[${secondMessageJSON}],"ContinuationToken":null}`
 const emptyPage = '{"Messages":[],"ContinuationToken":null}'
 const chatPage = `{"Chats":[{"ChatId":${chatId},"Name":"Test group","LastSeenUtc":"2026-10-25T00:00:00+00:00"}],"ContinuationToken":null}`
 
@@ -30,6 +32,83 @@ async function mockAuthentication(page: Page, roles: string[] | null = ['Moderat
 }
 
 test.beforeEach(async ({ page }) => { await mockAuthentication(page) })
+
+test('review and history share authors with lossless IDs and usernames', () => {
+  const review = parseReviewMessagePage(firstPage).messages[0]
+  expect(review.from).toEqual({ id: userId, name: 'Alice Smith', username: null })
+
+  const history = parseHistoryPage(`{"messages":[{"chatId":${chatId},"messageId":7,"dateTimeTicks":${ticks},
+    "content":{"from":{"id":${userId},"name":"Alice Smith","username":null},"replyTo":null,"payload":{}}}],
+    "continuationToken":null}`).rows[0]
+  expect(history.content.from).toEqual(review.from)
+
+  const reply = `{"MessageId":6,"From":{"Id":${userId},"Name":"Bob","Username":"bob"},"Text":"Question"}`
+  const withReply = parseReviewMessagePage(firstPage.replace('"ReplyTo":null', `"ReplyTo":${reply}`)).messages[0]
+  expect(withReply.replyTo?.from).toEqual({ id: userId, name: 'Bob', username: 'bob' })
+})
+
+test('DANGER clears only the selected chat history after explicit confirmation', async ({ page }) => {
+  let deletions = 0
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route(apiRoute, async route => {
+    if (route.request().method() === 'DELETE') {
+      deletions++
+      expect(new URL(route.request().url()).pathname).toBe(`/api/review/history/${chatId}`)
+      expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+      await gate
+      return route.fulfill({ status: 204 })
+    }
+    return route.fulfill({ contentType: 'application/json', body: '{"messages":[],"continuationToken":null}' })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  const danger = page.getByRole('button', { name: 'DANGER: Clear chat history', exact: true })
+  await expect(danger).toBeDisabled()
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
+  await danger.click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText(chatId)
+  await expect(dialog).toContainText('This cannot be undone')
+  await expect(dialog.getByRole('button', { name: 'Delete chat history', exact: true })).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(deletions).toBe(0)
+  await danger.click()
+  await dialog.getByLabel('Type DANGER to confirm', { exact: true }).fill('DANGER')
+  await dialog.getByRole('button', { name: 'Delete chat history', exact: true }).click()
+  try {
+    await expect.poll(() => deletions).toBe(1)
+    await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Delete chat history', exact: true })).toBeDisabled()
+    await expect(page.getByRole('tab', { name: 'Review queue', exact: true })).toBeDisabled()
+  } finally { release() }
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('status')).toContainText(`Message history cleared for chat ${chatId}`)
+  await expect(page.getByRole('region', { name: 'Message history table' })).toContainText('No records loaded.')
+  expect(deletions).toBe(1)
+})
+
+test('failed history deletion warns about partial results and is never retried automatically', async ({ page }) => {
+  let deletions = 0
+  await page.route(apiRoute, route => {
+    if (route.request().method() === 'DELETE') {
+      deletions++
+      return route.fulfill({ status: 503 })
+    }
+    return route.fulfill({ contentType: 'application/json', body: '{"messages":[],"continuationToken":null}' })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
+  await page.getByRole('button', { name: 'DANGER: Clear chat history', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Type DANGER to confirm', { exact: true }).fill('DANGER')
+  await dialog.getByRole('button', { name: 'Delete chat history', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Deletion may be partial')
+  await expect(dialog.getByRole('button', { name: 'Delete chat history', exact: true })).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(deletions).toBe(1)
+})
 
 test('redirects automatically to sign-in without mounting the workspace', async ({ page }) => {
   await mockAuthentication(page, null)
@@ -160,6 +239,90 @@ test('not-spam returns a decision, then restrictions can be removed independentl
   await expect(page.getByRole('status')).toContainText(`Restrictions removed for user ${userId}`)
   expect(mutations[1].path).toBe(`/api/review/restrictions/${chatId}/${userId}`)
   expect(mutations[1].body).toBeFalsy()
+})
+
+test('batch spam collects every filtered page first and reports sequential progress without duplicates', async ({ page }) => {
+  const queries: URL[] = []
+  const mutations: string[] = []
+  const releases: (() => void)[] = []
+  await page.route(apiRoute, async route => {
+    const url = new URL(route.request().url())
+    if (route.request().method() === 'GET') {
+      queries.push(url)
+      const token = url.searchParams.get('continuationToken')
+      const body = token === null ? firstPage : token === 'next+/= page'
+        ? '{"Messages":[],"ContinuationToken":"last"}'
+        : `{"Messages":[${messageJSON},${secondMessageJSON}],"ContinuationToken":null}`
+      return route.fulfill({ contentType: 'application/json', body })
+    }
+    mutations.push(url.pathname)
+    expect(route.request().postDataJSON()).toEqual({ isSpam: true })
+    expect(queries.slice(1).map(query => query.searchParams.get('continuationToken'))).toEqual([null, 'next+/= page', 'last'])
+    await new Promise<void>(resolve => { releases.push(resolve) })
+    return route.fulfill({ status: 204 })
+  })
+  await openWorkspace(page)
+  await page.getByLabel('Chat', { exact: true }).selectOption('')
+  await page.getByRole('button', { name: 'Mark all as spam', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText(`Chat ${chatId}`)
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(mutations).toHaveLength(0)
+  await page.getByRole('button', { name: 'Mark all as spam', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true }).click()
+  try {
+    await expect.poll(() => mutations.length).toBe(1)
+    await expect(dialog.getByRole('status')).toContainText('0/2')
+    await expect(page.getByRole('tab', { name: 'Message history', exact: true })).toBeDisabled()
+    releases[0]()
+    await expect.poll(() => mutations.length).toBe(2)
+    await expect(dialog.getByRole('status')).toContainText('1/2')
+    await expect(page.locator('.message-row')).toHaveCount(0)
+    releases[1]()
+    await expect(dialog.getByRole('status')).toContainText('2/2')
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    await expect(page.getByRole('status')).toContainText('Marked 2 messages as spam')
+    await expect(page.getByRole('button', { name: 'Load more', exact: true })).toHaveCount(0)
+    expect(mutations).toEqual([`/api/review/messages/${chatId}/7`, `/api/review/messages/${chatId}/8`])
+    expect(queries.every(query => query.searchParams.get('chatId') === chatId)).toBe(true)
+  } finally { releases.forEach(release => release()) }
+})
+
+test('batch spam sends no decisions if a later queue page fails', async ({ page }) => {
+  let mutations = 0
+  await page.route(apiRoute, route => {
+    if (route.request().method() !== 'GET') { mutations++; return route.fulfill({ status: 204 }) }
+    const token = new URL(route.request().url()).searchParams.get('continuationToken')
+    return token ? route.fulfill({ status: 503 }) : route.fulfill({ contentType: 'application/json', body: firstPage })
+  })
+  await openWorkspace(page)
+  await page.getByRole('button', { name: 'Mark all as spam', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('No spam decisions were sent')
+  await expect(dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true })).toBeDisabled()
+  expect(mutations).toBe(0)
+  await expect(page.locator('.message-row')).toHaveCount(1)
+})
+
+test('batch spam stops on the first decision error and preserves completed progress', async ({ page }) => {
+  const mutations: string[] = []
+  const third = secondMessageJSON.replace('"MessageId":8', '"MessageId":9')
+  await page.route(apiRoute, route => {
+    if (route.request().method() === 'GET')
+      return route.fulfill({ contentType: 'application/json', body: `{"Messages":[${messageJSON},${secondMessageJSON},${third}],"ContinuationToken":null}` })
+    mutations.push(new URL(route.request().url()).pathname)
+    return route.fulfill({ status: mutations.length === 2 ? 503 : 204 })
+  })
+  await openWorkspace(page)
+  await page.getByRole('button', { name: 'Mark all as spam', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Batch stopped at 1/3')
+  await expect(dialog.getByRole('status')).toContainText('1/3')
+  await expect(page.locator('.message-row')).toHaveCount(2)
+  expect(mutations).toEqual([`/api/review/messages/${chatId}/7`, `/api/review/messages/${chatId}/8`])
+  await expect(dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true })).toHaveCount(0)
 })
 
 test('spam confirms once and does not implicitly remove restrictions', async ({ page }) => {
