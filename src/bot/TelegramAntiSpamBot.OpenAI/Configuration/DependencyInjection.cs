@@ -22,6 +22,7 @@ namespace TelegramAntiSpamBot.OpenAI
                 CreateMentionClient(provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>().Value));
 
             serviceCollection.AddSingleton<SpamDetectionInstructions>();
+            serviceCollection.AddTransient<MentionHistoryToolFactory>();
             serviceCollection.AddScoped<ISpamDetectionService, SpamDetectionService>();
             serviceCollection.AddScoped<IMentionService, MentionService>();
             return serviceCollection;
@@ -30,7 +31,7 @@ namespace TelegramAntiSpamBot.OpenAI
         internal static ResponsesClientOptions CreateMentionClientOptions(Uri endpoint) => new()
         {
             Endpoint = endpoint,
-            RetryPolicy = new System.ClientModel.Primitives.ClientRetryPolicy(5)
+            RetryPolicy = new ClientRetryPolicy(5)
         };
 
         internal static ResponsesClient CreateMentionClient(OpenAiServicesConfiguration config)

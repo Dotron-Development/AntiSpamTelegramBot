@@ -1,4 +1,6 @@
 ﻿global using Microsoft.Extensions.DependencyInjection;
+global using System.Collections.Concurrent;
+global using System.Globalization;
 global using TelegramAntiSpamBot.OpenAI;
 global using Microsoft.Extensions.Configuration;
 global using Azure.Core.Serialization;
@@ -31,3 +33,6 @@ global using TelegramAntiSpamBot.Persistence;
 global using TelegramAntispamBot.Configuration;
 global using OpenAI.Responses;
 global using System.Text.Json.Nodes;
+global using System.Text.RegularExpressions;
+global using TelegramAntiSpamBot.Commands.Commands;
+global using OpenAiDependencyInjection = TelegramAntiSpamBot.OpenAI.DependencyInjection;

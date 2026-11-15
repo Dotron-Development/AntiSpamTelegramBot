@@ -5,8 +5,7 @@ namespace TelegramAntiSpamBot.OpenAI;
 internal sealed class MentionService(
     [FromKeyedServices("Mention")] ResponsesClient client,
     SpamDetectionInstructions instructions,
-    IMessageHistoryRepository historyRepository,
-    ILogger<MentionService> logger,
+    MentionHistoryToolFactory historyToolFactory,
     IOptions<OpenAiServicesConfiguration> configuration) : IMentionService
 {
     public async Task<MentionResponse> GenerateAsync(MentionRequest request, CancellationToken cancellationToken = default)
@@ -15,14 +14,19 @@ internal sealed class MentionService(
         var prompt = await instructions.GetMentionInstructions();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(90));
+
         var tools = new List<AITool> { new HostedWebSearchTool() };
+
         if (request.Conversation is { } conversation)
-            tools.Add(CreateHistoryTool(conversation, timeout.Token));
+            tools.Add(historyToolFactory.Create(conversation, timeout.Token));
+
         var agent = CreateAgent(prompt, tools);
         var response = await agent.RunAsync(
             JsonSerializer.Serialize(request), cancellationToken: timeout.Token);
+
         if (response.AsChatResponse().RawRepresentation is ResponseResult result && result.Status != ResponseStatus.Completed)
             throw new InvalidOperationException($"Mention agent response did not complete: {result.Status}.");
+
         var answer = response.Text;
 
         if (string.IsNullOrWhiteSpace(answer))
@@ -99,40 +103,6 @@ internal sealed class MentionService(
         }
         formatted.Append(answer.AsSpan(position));
         return new MentionResponse(formatted.ToString(), urls);
-    }
-
-    private AIFunction CreateHistoryTool(MentionConversation conversation, CancellationToken cancellationToken)
-    {
-        async Task<JsonElement> GetMessageHistory(DateTimeOffset from, DateTimeOffset to, string? continuationToken = null)
-        {
-            try
-            {
-                if (from >= to || to > conversation.Date)
-                    throw new ArgumentException("Use from < to <= Conversation.Date; history excludes the current mention and later messages.");
-
-                var page = await historyRepository.GetRangePageAsync(conversation.ChatId, from, to,
-                    continuationToken, cancellationToken);
-                return JsonSerializer.SerializeToElement(new
-                {
-                    Messages = page.Messages.Select(message => new
-                    {
-                        message.MessageId,
-                        Date = new DateTimeOffset(new DateTime(message.DateTimeTicks, DateTimeKind.Utc)),
-                        message.Content, message.UpdateType, message.UpdateId
-                    }).ToArray(),
-                    page.ContinuationToken
-                });
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                logger.LogError(exception, "Unable to load mention history for chat {ChatId}, from {From} to {To}",
-                    conversation.ChatId, from, to);
-                throw;
-            }
-        }
-
-        return AIFunctionFactory.Create(GetMessageHistory, "get_message_history",
-            "Retrieve up to 100 messages from the current chat, oldest first. from and to are ISO 8601 timestamps with UTC offset: from inclusive, to exclusive, to <= Conversation.Date. Use a narrow relevant interval. For the next page pass the returned ContinuationToken unchanged with the same from/to; null means no more pages. Errors mean history is unavailable, not empty.");
     }
 
     private AIAgent CreateAgent(string prompt, IList<AITool> tools) =>

@@ -1,6 +1,7 @@
 ﻿global using Microsoft.Azure.Functions.Worker;
 global using Microsoft.Extensions.Logging;
 global using System.Text.Json;
+global using System.Globalization;
 global using Telegram.Bot;
 global using Telegram.Bot.Types;
 global using Telegram.Bot.Types.Enums;

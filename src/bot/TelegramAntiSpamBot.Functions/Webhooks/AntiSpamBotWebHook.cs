@@ -51,7 +51,7 @@ namespace TelegramAntiSpamBot.Functions
                 var name = chat.Title ?? string.Join(" ", new[] { chat.FirstName, chat.LastName }
                     .Where(part => !string.IsNullOrWhiteSpace(part)));
                 if (string.IsNullOrWhiteSpace(name))
-                    name = chat.Username ?? chat.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    name = chat.Username ?? chat.Id.ToString(CultureInfo.InvariantCulture);
                 await chatsRepository.SaveChatAsync(new ReviewChat(chat.Id, name, DateTimeOffset.UtcNow));
             }
             catch (Exception exception)

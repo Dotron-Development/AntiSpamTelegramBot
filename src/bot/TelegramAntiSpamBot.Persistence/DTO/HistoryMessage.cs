@@ -3,13 +3,13 @@ namespace TelegramAntiSpamBot.Persistence.DTO;
 public sealed record HistoryMessage(long ChatId, int MessageId, long DateTimeTicks, HistoryMessageContent Content,
     HistoryUpdateType UpdateType = HistoryUpdateType.Message, int? UpdateId = null);
 
-[method: System.Text.Json.Serialization.JsonConstructor]
+[method: JsonConstructor]
 public sealed record HistoryMessageContent(MessageFrom? From, HistoryMessageReply? ReplyTo, MessagePayload Payload)
 {
     public HistoryMessageContent(MessageFrom? from, HistoryMessageReply? replyTo, string text)
         : this(from, replyTo, new MessagePayload(UserMessage: text)) { }
 
-    [System.Text.Json.Serialization.JsonIgnore]
+    [JsonIgnore]
     public string Text => Payload.UserMessage ?? string.Empty;
 }
 

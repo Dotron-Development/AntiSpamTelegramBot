@@ -1,9 +1,3 @@
-using System.Globalization;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
-using TelegramAntispamBot.Configuration;
-using TelegramAntiSpamBot.Commands;
-
 namespace TelegramAntiSpamBot.IntegrationTests;
 
 public class ConfigurationValidationTests

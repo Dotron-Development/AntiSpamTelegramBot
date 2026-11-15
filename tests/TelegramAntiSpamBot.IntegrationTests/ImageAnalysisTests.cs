@@ -296,7 +296,7 @@ public class ImageAnalysisTests
     private sealed class RecordingChatClient(OpenAIClientOptions clientOptions)
         : ChatClient("image-analyzer", new ApiKeyCredential("test-only"), clientOptions)
     {
-        public System.Collections.Concurrent.ConcurrentQueue<ChatCompletionOptions> Options { get; } = new();
+        public ConcurrentQueue<ChatCompletionOptions> Options { get; } = new();
 
         public override async Task<ClientResult<ChatCompletion>> CompleteChatAsync(
             IEnumerable<ChatMessage> messages, ChatCompletionOptions? options = null,

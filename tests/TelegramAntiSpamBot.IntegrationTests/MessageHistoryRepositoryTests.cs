@@ -425,7 +425,7 @@ public class MessageHistoryRepositoryTests
             if (maxPerPage == 100)
             {
                 Assert.Equal(new[] { "PartitionKey", "RowKey", "DateTimeTicks", "Content", "UpdateType", "UpdateId" }, select);
-                var bounds = System.Text.RegularExpressions.Regex.Match(filter!,
+                var bounds = Regex.Match(filter!,
                     "^PartitionKey eq '([^']+)' and RowKey ge '([^']+)' and RowKey lt '([^']+)'$");
                 Assert.True(bounds.Success);
                 var rows = Rows.Where(row => row.PartitionKey == bounds.Groups[1].Value &&
@@ -442,7 +442,7 @@ public class MessageHistoryRepositoryTests
                 Assert.Equal(new[] { "PartitionKey", "RowKey" }, select);
             else
                 Assert.Null(select);
-            var partitionFilter = filter is null ? null : System.Text.RegularExpressions.Regex.Match(filter, "^PartitionKey eq '([^']+)'$");
+            var partitionFilter = filter is null ? null : Regex.Match(filter, "^PartitionKey eq '([^']+)'$");
             var selectedRows = partitionFilter is { Success: true }
                 ? Rows.Where(row => row.PartitionKey == partitionFilter.Groups[1].Value)
                 : Rows;

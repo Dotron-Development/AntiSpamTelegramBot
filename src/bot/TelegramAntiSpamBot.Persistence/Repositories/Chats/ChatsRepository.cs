@@ -8,7 +8,7 @@ namespace TelegramAntiSpamBot.Persistence.Repositories
             var entry = new ChatEntry
             {
                 PartitionKey = ChatEntry.CatalogPartitionKey,
-                RowKey = chat.ChatId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                RowKey = chat.ChatId.ToString(CultureInfo.InvariantCulture),
                 Name = chat.Name,
                 LastSeenUtc = chat.LastSeenUtc
             };
@@ -16,7 +16,7 @@ namespace TelegramAntiSpamBot.Persistence.Repositories
             {
                 await chatsTable.UpsertEntityAsync(entry, TableUpdateMode.Replace);
             }
-            catch (Azure.RequestFailedException exception) when (exception.Status == 404)
+            catch (RequestFailedException exception) when (exception.Status == 404)
             {
                 await chatsTable.CreateIfNotExistsAsync();
                 await chatsTable.UpsertEntityAsync(entry, TableUpdateMode.Replace);
@@ -31,11 +31,11 @@ namespace TelegramAntiSpamBot.Persistence.Repositories
                 await foreach (var page in query.AsPages(continuationToken, pageSize))
                 {
                     return new ReviewChatPage(page.Values.Select(entry => new ReviewChat(
-                        long.Parse(entry.RowKey, System.Globalization.CultureInfo.InvariantCulture),
+                        long.Parse(entry.RowKey, CultureInfo.InvariantCulture),
                         entry.Name, entry.LastSeenUtc)).ToArray(), page.ContinuationToken);
                 }
             }
-            catch (Azure.RequestFailedException exception) when (exception.Status == 404)
+            catch (RequestFailedException exception) when (exception.Status == 404)
             {
                 return new ReviewChatPage([], null);
             }

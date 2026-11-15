@@ -619,7 +619,7 @@ public class ReviewFunctionsTests
         var sanitizedPayload = new MessagePayload(
             ImageText: MessageContentSanitizer.Sanitize(message.ImageText),
             UserMessage: MessageContentSanitizer.Sanitize(message.Message));
-        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.Unicode.GetBytes(
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(Encoding.Unicode.GetBytes(
             JsonSerializer.Serialize(sanitizedPayload)))), message.ContentHash);
         Assert.Empty(fixture.HashDecisions);
         Assert.Empty(fixture.History);
@@ -1306,8 +1306,8 @@ public class ReviewFunctionsTests
                 Detector, HistoryRepository, probablySpamRepository, messageCountRepository, spamHashRepository,
                 spamStatsRepository, bot, new TelegramImageUrlResolver(token), botConfig);
             ICommandProcessor commands = reportCommands
-                ? new CommandProcessor([new TelegramAntiSpamBot.Commands.Commands.ReportCommand(messageCountRepository,
-                    processor, NullLogger<TelegramAntiSpamBot.Commands.Commands.ReportCommand>.Instance)],
+                ? new CommandProcessor([new ReportCommand(messageCountRepository,
+                    processor, NullLogger<ReportCommand>.Instance)],
                     botConfig.Value, bot, CreateRepository<ICommandCallsRepository>(), NullLogger<CommandProcessor>.Instance)
                 : Commands;
             Webhook = new AntiSpamBotWebHook(NullLogger<AntiSpamBotWebHook>.Instance,
