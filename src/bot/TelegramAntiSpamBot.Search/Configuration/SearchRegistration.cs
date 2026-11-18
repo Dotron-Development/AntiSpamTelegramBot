@@ -6,6 +6,7 @@ public static class SearchRegistration
     {
         services.AddSingleton<ISearchEmbeddings, AzureSearchEmbeddings>();
         services.AddScoped<PostIndexer>();
+        services.AddScoped<PostSnapshotBuilder>();
         return services;
     }
 }

@@ -129,7 +129,7 @@ one-minute evaluation frequency.
 
 The `Vectors` repository in Persistence stores post titles and binary vector chunks in the bot's data storage account. The Search project reuses `OpenAiServicesConfiguration` for the endpoint and credentials; `OpenAiServicesConfiguration__SearchEmbeddingDeployment` selects the deployment. The index uses `text-embedding-3-large` version 1 (3,072 dimensions).
 
-The Telegram webhook queues only automatic channel forwards (and their edits) in discussion groups with text or a caption. It uses the original channel ID and post ID from `forward_origin`, not the discussion copy's IDs, so channel archive imports can use the same index keys. Forwards without a channel origin are skipped. `IndexChannelPost` reads `search-index`, batches paragraph-based fragments for embeddings, and atomically replaces the post vectors. Duplicate or stale jobs do not rewrite vectors. Failed deliveries are retried by the Functions host and move to `search-index-poison` after the retry limit; jobs, including poison messages, carry temporary source text. Blob snapshot generation is not connected yet.
+The Telegram webhook queues only automatic channel forwards (and their edits) in discussion groups with text or a caption. It uses the original channel ID and post ID from `forward_origin`, not the discussion copy's IDs, so channel archive imports can use the same index keys. Forwards without a channel origin are skipped. `IndexChannelPost` reads `search-index`, batches paragraph-based fragments for embeddings, and atomically replaces the post vectors. Duplicate or stale jobs do not rewrite vectors. Failed deliveries are retried by the Functions host and move to `search-index-poison` after the retry limit; jobs, including poison messages, carry temporary source text. After indexing, the worker schedules a delayed `reset-snapshot` message. `RebuildSearchSnapshot` assembles the channel's `Vectors` partition into a checksummed binary snapshot and publishes it as `<channel-id>` (no extension) in the private `search-snapshots` container. Pending requests covered by an already-built snapshot are skipped; exhausted retries go to `reset-snapshot-poison`. The review UI's **Search snapshots** tab lists blobs, sizes and last-modified timestamps and can queue a rebuild by channel ID, including for a channel with an existing index but no snapshot yet. Refresh the list after the worker finishes. A channel with no indexed posts does not produce a blob.
 
 The indexing queues use the data storage account; the Functions host and deployment container keep their separate Function App storage account. If the queues were previously deployed in Function App storage, pause producers and drain or back up both queues before applying the change. Terraform replaces the queues and does not migrate messages.
 
@@ -172,7 +172,7 @@ After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) wit
 ## 9. Run Locally
 
 1. Sign in with `az login`. Ensure your account can access the AI deployments and application Table Storage. For private resources, configure working network access and DNS.
-2. Configure the ignored [local.settings.json](src/bot/TelegramAntiSpamBot.Functions/local.settings.json) with the Telegram bot token, webhook header, bot username, Azure AI endpoint and deployment names, and Table Storage URL. Use Azurite if `AzureWebJobsStorage` is `UseDevelopmentStorage=true`. For local ingestion with Azurite, also set `SearchQueueStorage` and `AzureTablesConfiguration__StorageAccountUrl` to `UseDevelopmentStorage=true`. Create the `search-index` and `search-index-poison` queues and the `Vectors` table before testing ingestion (create `Chats` for webhook chat registration). Keep real credentials outside version control.
+2. Configure the ignored [local.settings.json](src/bot/TelegramAntiSpamBot.Functions/local.settings.json) with the Telegram bot token, webhook header, bot username, Azure AI endpoint and deployment names, and Table Storage URL. Use Azurite if `AzureWebJobsStorage` is `UseDevelopmentStorage=true`. For local ingestion with Azurite, also set `SearchQueueStorage` and `AzureTablesConfiguration__StorageAccountUrl` to `UseDevelopmentStorage=true`. Create the `search-index`, `search-index-poison`, `reset-snapshot` and `reset-snapshot-poison` queues, the `Vectors` table, and the private `search-snapshots` container before testing ingestion (create `Chats` for webhook chat registration). Keep real credentials outside version control.
 
    ```json
    {
@@ -180,6 +180,8 @@ After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) wit
      "Values": {
        "AzureWebJobsStorage": "UseDevelopmentStorage=true",
        "SearchQueueStorage": "UseDevelopmentStorage=true",
+       "SnapshotStorageConfiguration__ServiceUrl": "UseDevelopmentStorage=true",
+       "SnapshotStorageConfiguration__ContainerName": "search-snapshots",
        "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
        "TelegramBotConfiguration__Token": "<dev-bot-token>",
        "TelegramBotConfiguration__SecretHeader": "<webhook-header>",

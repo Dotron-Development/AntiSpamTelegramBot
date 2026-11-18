@@ -17,6 +17,7 @@ builder.ConfigureServices(collection =>
     collection.AddPersistence();
     collection.AddSearch();
     collection.AddSingleton<PostIndexQueue>();
+    collection.AddSingleton<SnapshotResetQueue>();
     collection.AddCommands();
 });
 

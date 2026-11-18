@@ -11,6 +11,7 @@ import { MessageQueue } from './components/MessageQueue'
 import { MentionPreview } from './components/MentionPreview'
 import { QueryForm } from './components/QueryForm'
 import { RestrictionsDialog } from './components/RestrictionsDialog'
+import { SearchSnapshots } from './components/SearchSnapshots'
 import { RecordsTable } from './components/RecordsTable'
 import { useTablePage } from './hooks/useTablePage'
 import { useChats } from './hooks/useChats'
@@ -22,7 +23,7 @@ import { currentAccount, signOut } from './lib/auth'
 import './styles/App.css'
 
 function App() {
-    const [view, setView] = useState<'queue' | 'calls' | 'history' | 'mention'>('queue')
+    const [view, setView] = useState<'queue' | 'calls' | 'history' | 'mention' | 'snapshots'>('queue')
     const [notice, setNotice] = useState<Notice | null>(null)
     const [mentionGenerating, setMentionGenerating] = useState(false)
     const [clearChatId, setClearChatId] = useState<string | null>(null)
@@ -36,7 +37,7 @@ function App() {
     const history = useTablePage(connection, setNotice, getHistory, row => `${row.chatId}:${row.messageId}`)
     const locked = queue.loading || moderation.working || chats.loading || calls.loading || history.loading || mentionGenerating || clearWorking
     const records = view === 'history' ? history : calls
-    const title = view === 'queue' ? 'Review queue' : view === 'calls' ? 'Command calls' : view === 'history' ? 'Message history' : 'Test mention command'
+    const title = view === 'queue' ? 'Review queue' : view === 'calls' ? 'Command calls' : view === 'history' ? 'Message history' : view === 'snapshots' ? 'Search snapshots' : 'Test mention command'
     const hasMore = !!queue.continuationToken
 
     function load(query: QueueQuery) {
@@ -98,6 +99,7 @@ function App() {
                 <button role="tab" aria-selected={view === 'calls'} disabled={locked} onClick={() => { setView('calls'); setNotice(null) }}><Terminal size={16} />Command calls</button>
                 <button role="tab" aria-selected={view === 'history'} disabled={locked} onClick={() => { setView('history'); setNotice(null) }}><History size={16} />Message history</button>
                 <button role="tab" aria-selected={view === 'mention'} disabled={locked} onClick={() => { setView('mention'); setNotice(null) }}><Sparkles size={16} />Test mention</button>
+                <button role="tab" aria-selected={view === 'snapshots'} disabled={locked} onClick={() => { setView('snapshots'); setNotice(null) }}>Search snapshots</button>
             </nav>
             <section className="page-heading">
                 <div><div className="eyebrow">TELEGRAM MODERATION</div><h1>{title}<span className="heading-dot">.</span></h1></div>
@@ -115,7 +117,7 @@ function App() {
                 </button>}
             </section>
 
-            {view !== 'mention' && <QueryForm chats={chats.chats} chatId={chats.chatId} endpoint={connection.endpoint}
+            {view !== 'mention' && view !== 'snapshots' && <QueryForm chats={chats.chats} chatId={chats.chatId} endpoint={connection.endpoint}
                 busy={locked} chatsLoading={chats.loading} loading={view === 'queue' ? queue.loading : records.loading}
                 submitLabel={view === 'queue' ? 'Load queue' : 'Load records'} itemLabel={view === 'calls' ? 'calls' : 'messages'}
                 onChatChange={chats.setChatId} onRefresh={chats.refresh} onSubmit={load} />}
@@ -125,7 +127,8 @@ function App() {
                 <button className="icon-button" title="Dismiss notification" aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={16} /></button>
             </div>}
 
-            {view === 'mention' ? <MentionPreview connection={connection} busy={locked} onBusyChange={setMentionGenerating} onCopy={copy} />
+            {view === 'snapshots' ? <SearchSnapshots connection={connection} />
+                : view === 'mention' ? <MentionPreview connection={connection} busy={locked} onBusyChange={setMentionGenerating} onCopy={copy} />
                 : view === 'queue' ? <section className="workspace" aria-label="Message review workspace">
                 <MessageQueue messages={queue.messages} selected={queue.selected} query={queue.query}
                     loading={queue.loading} working={moderation.working} busy={locked} hasLoaded={queue.hasLoaded}

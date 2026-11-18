@@ -1,0 +1,10 @@
+@baseUrl = http://localhost:7009
+
+### List published blob names, sizes and timestamps
+GET {{baseUrl}}/api/review/search-snapshots
+
+### Queue a rebuild (202 Accepted)
+POST {{baseUrl}}/api/review/search-snapshots/-1001234567890/reset
+
+### Reject an invalid ID (400 Bad Request)
+POST {{baseUrl}}/api/review/search-snapshots/0/reset

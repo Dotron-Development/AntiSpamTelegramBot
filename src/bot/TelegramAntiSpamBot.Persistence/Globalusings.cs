@@ -14,3 +14,6 @@ global using System.Runtime.CompilerServices;
 global using System.Text;
 global using System.Text.Json.Serialization;
 global using Microsoft.Extensions.Logging;
+global using Azure.Storage;
+global using Azure.Storage.Blobs;
+global using Azure.Storage.Blobs.Models;

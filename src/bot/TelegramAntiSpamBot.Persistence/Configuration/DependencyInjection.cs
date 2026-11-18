@@ -1,4 +1,4 @@
-﻿namespace TelegramAntiSpamBot.Persistence
+namespace TelegramAntiSpamBot.Persistence
 {
     public static class DependencyInjection
     {
@@ -10,6 +10,20 @@
                 .BindConfiguration(nameof(AzureTablesConfiguration))
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
+
+            serviceCollection.AddOptions<SnapshotStorageConfiguration>()
+                .BindConfiguration(nameof(SnapshotStorageConfiguration))
+                .ValidateDataAnnotations();
+            serviceCollection.AddSingleton<Repositories.IPostSnapshotRepository>(provider =>
+            {
+                var settings = provider.GetRequiredService<IOptions<SnapshotStorageConfiguration>>().Value;
+                var service = settings.ServiceUrl == "UseDevelopmentStorage=true"
+                    ? new BlobServiceClient(settings.ServiceUrl)
+                    : new BlobServiceClient(new Uri(settings.ServiceUrl), new ManagedIdentityCredential(
+                        ManagedIdentityId.FromUserAssignedClientId(settings.IdentityClientId ??
+                            throw new InvalidOperationException("Missing snapshot storage identity client ID."))));
+                return new Repositories.BlobPostSnapshotRepository(service.GetBlobContainerClient(settings.ContainerName));
+            });
 
             foreach (var tableName in TableNames)
             {

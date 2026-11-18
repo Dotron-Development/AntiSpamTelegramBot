@@ -53,3 +53,15 @@ resource "azurerm_storage_queue" "search_index" {
   name               = each.key
   storage_account_id = azurerm_storage_account.data_storage.id
 }
+
+resource "azurerm_storage_queue" "reset_snapshot" {
+  for_each           = toset(["reset-snapshot", "reset-snapshot-poison"])
+  name               = each.key
+  storage_account_id = azurerm_storage_account.data_storage.id
+}
+
+resource "azurerm_storage_container" "search_snapshots" {
+  name                  = "search-snapshots"
+  storage_account_id    = azurerm_storage_account.data_storage.id
+  container_access_type = "private"
+}

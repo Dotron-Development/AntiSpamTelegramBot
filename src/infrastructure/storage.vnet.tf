@@ -87,3 +87,40 @@ resource "azurerm_private_endpoint" "data_storage_queue" {
 
   tags = local.tags
 }
+
+resource "azurerm_private_dns_zone" "data_storage_blob" {
+  count               = var.disable_public_access ? 1 : 0
+  name                = "privatelink.blob.core.windows.net"
+  resource_group_name = azurerm_resource_group.rg.name
+  tags                = local.tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "data_storage_blob" {
+  count               = var.disable_public_access ? 1 : 0
+  name                = "vnl-data-storage-blob-${var.environment_prefix}"
+  virtual_network_id  = azurerm_virtual_network.vnet.id
+  private_dns_zone_id = azurerm_private_dns_zone.data_storage_blob[0].id
+  tags                = local.tags
+}
+
+resource "azurerm_private_endpoint" "data_storage_blob" {
+  count               = var.disable_public_access ? 1 : 0
+  name                = "pe-data-storage-blob-${var.environment_prefix}"
+  subnet_id           = azurerm_subnet.subnet2_private_endpoints[0].id
+  location            = var.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  private_service_connection {
+    name                           = "sc-data-storage-blob-${var.environment_prefix}"
+    private_connection_resource_id = azurerm_storage_account.data_storage.id
+    is_manual_connection           = false
+    subresource_names              = ["blob"]
+  }
+
+  private_dns_zone_group {
+    name                 = "blob"
+    private_dns_zone_ids = [azurerm_private_dns_zone.data_storage_blob[0].id]
+  }
+
+  tags = local.tags
+}
