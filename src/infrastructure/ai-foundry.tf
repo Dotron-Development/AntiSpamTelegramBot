@@ -120,9 +120,3 @@ resource "azurerm_cognitive_deployment" "search_embeddings" {
     capacity = var.search_embedding_capacity
   }
 }
-
-import {
-  for_each = var.adopt_existing_search_embeddings ? toset([var.environment_prefix]) : toset([])
-  to       = azurerm_cognitive_deployment.search_embeddings
-  id       = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/rg-${local.appName}-${each.key}/providers/Microsoft.CognitiveServices/accounts/${local.appName}-ai-services-${each.key}/deployments/text-embedding-3-large"
-}

@@ -23,7 +23,6 @@ mock_provider "time" {}
 mock_provider "null" {}
 
 variables {
-  adopt_existing_search_embeddings = false
   keyvault_administrator_object_id = "33333333-3333-3333-3333-333333333333"
   telegram_bot_token               = "test-token"
   telegram_bot_secret_header       = "test-header"

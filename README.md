@@ -131,7 +131,24 @@ The `Vectors` repository in Persistence stores post titles and binary vector chu
 
 The Telegram webhook queues only automatic channel forwards (and their edits) in discussion groups with text or a caption. It uses the original channel ID and post ID from `forward_origin`, not the discussion copy's IDs, so channel archive imports can use the same index keys. Forwards without a channel origin are skipped. `IndexChannelPost` reads `search-index`, batches paragraph-based fragments for embeddings, and atomically replaces the post vectors. Duplicate or stale jobs do not rewrite vectors. Failed deliveries are retried by the Functions host and move to `search-index-poison` after the retry limit; jobs, including poison messages, carry temporary source text. Blob snapshot generation is not connected yet.
 
-The production Terraform plan imports the existing embedding deployment rather than creating a duplicate. Review the plan before applying: the deployment should be imported, not replaced. The PoC table is in a different storage account; it is not migrated by Terraform.
+### One-off Telegram archive import
+
+[ChannelArchiveImport](tools/ChannelArchiveImport/ChannelArchiveImport.csproj) reads `messages.html`, `messages2.html`, etc. from a Telegram Desktop **channel HTML export**. Pass the channel's numeric Bot API ID (not the discussion group ID). Dry-run is the default and does not contact Azure:
+
+```powershell
+$archive = 'C:\path\to\ChatExport'
+$channelId = '-1001234567890' # Replace with the export's channel ID.
+dotnet run --project .\tools\ChannelArchiveImport -- $archive $channelId
+```
+
+Once the indexing worker is deployed, sign in with `az login` using an identity with **Storage Queue Data Message Sender** on the destination queue. Replace the storage account placeholder and send a small test batch:
+
+```powershell
+$queue = 'https://<function-storage-account>.queue.core.windows.net/search-index'
+dotnet run --project .\tools\ChannelArchiveImport -- $archive $channelId --send --queue-url $queue --limit 5
+```
+
+Remove `--limit` for the full archive. The worker skips repeated archive jobs and does not overwrite newer webhook revisions. Posts without text or captions and oversized queue payloads are skipped and counted; oversize skips produce a nonzero exit code. For a local send, use `--send --azurite` with an existing `search-index` queue.
 
 ## 8. Deploy and Verify
 

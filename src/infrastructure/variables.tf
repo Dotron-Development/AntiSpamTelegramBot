@@ -187,9 +187,3 @@ variable "search_embedding_capacity" {
   type        = number
   default     = 10
 }
-
-variable "adopt_existing_search_embeddings" {
-  description = "Import the existing manually provisioned search deployment instead of creating it."
-  type        = bool
-  default     = false
-}

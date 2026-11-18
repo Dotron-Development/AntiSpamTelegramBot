@@ -12,6 +12,7 @@
     <PackageVersion Include="Azure.Storage.Queues" Version="12.28.1" />
     <PackageVersion Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.6.0" />
     <PackageVersion Include="Azure.Security.KeyVault.Secrets" Version="4.11.2" />
+    <PackageVersion Include="HtmlAgilityPack" Version="1.13.1" />
     <!-- Microsoft.ApplicationInsights -->
     <PackageVersion Include="Microsoft.ApplicationInsights.WorkerService" Version="3.2.0" />
     <!-- Microsoft.Azure.Functions.Worker -->
