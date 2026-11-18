@@ -133,3 +133,20 @@ export async function reviewMessage(connection: Connection, message: ReviewMessa
 export async function removeRestrictions(connection: Connection, chatId: string, userId: string) {
   await request(connection, `/restrictions/${chatId}/${userId}`, 'POST')
 }
+export interface SearchSnapshot {
+  name: string
+  sizeBytes: number
+  lastModified: string
+}
+
+export async function getSearchSnapshots(connection: Connection, signal?: AbortSignal): Promise<SearchSnapshot[]> {
+  const rows: SearchSnapshot[] = JSON.parse(await request(connection, '/search-snapshots', 'GET', undefined, signal))
+  if (!Array.isArray(rows) || rows.some(row => !row || typeof row.name !== 'string' ||
+    !Number.isSafeInteger(row.sizeBytes) || row.sizeBytes < 0 || typeof row.lastModified !== 'string' ||
+    !Number.isFinite(Date.parse(row.lastModified)))) throw new Error('Invalid snapshot list response.')
+  return rows
+}
+
+export async function resetSearchSnapshot(connection: Connection, channelId: string) {
+  await request(connection, `/search-snapshots/${encodeURIComponent(channelId)}/reset`, 'POST')
+}

@@ -18,6 +18,13 @@ resource "azurerm_role_assignment" "functionapp_identity_data_storage_queue" {
   principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
 }
 
+# Limit snapshot writes to the private snapshot container.
+resource "azurerm_role_assignment" "functionapp_identity_search_snapshots" {
+  scope                = "${azurerm_storage_account.data_storage.id}/blobServices/default/containers/${azurerm_storage_container.search_snapshots.name}"
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
+}
+
 ## Grant Read access for the function app to the Open AI services in the resource group
 resource "azurerm_role_assignment" "function_app_to_openai" {
   scope                = azurerm_resource_group.rg.id

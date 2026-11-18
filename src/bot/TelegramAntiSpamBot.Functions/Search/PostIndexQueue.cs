@@ -6,22 +6,22 @@ public sealed class PostIndexQueue(IConfiguration configuration)
 
     public async Task EnqueueAsync(PostIndexJob job, CancellationToken cancellationToken)
     {
-        var queue = LazyInitializer.EnsureInitialized(ref client, CreateClient);
+        var queue = LazyInitializer.EnsureInitialized(ref client, () => CreateClient(configuration, PostIndexJob.QueueName));
         await queue.SendMessageAsync(JsonSerializer.Serialize(job), timeToLive: TimeSpan.FromDays(1), cancellationToken: cancellationToken);
     }
 
-    private QueueClient CreateClient()
+    internal static QueueClient CreateClient(IConfiguration configuration, string queueName)
     {
         var connection = PostIndexJob.QueueConnection;
         var settings = configuration.GetSection(connection);
         var options = new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 };
         if (Uri.TryCreate(settings["queueServiceUri"], UriKind.Absolute, out var endpoint))
         {
-            var queueUri = new Uri(endpoint.AbsoluteUri.TrimEnd('/') + "/" + PostIndexJob.QueueName);
+            var queueUri = new Uri(endpoint.AbsoluteUri.TrimEnd('/') + "/" + queueName);
             return new QueueClient(queueUri, new ManagedIdentityCredential(ManagedIdentityId.FromUserAssignedClientId(
                 settings["clientId"] ?? throw new InvalidOperationException("Missing search queue identity client ID."))), options);
         }
         return new QueueClient(configuration[connection] ?? throw new InvalidOperationException("Missing search queue connection."),
-            PostIndexJob.QueueName, options);
+            queueName, options);
     }
 }

@@ -92,6 +92,10 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     "SearchQueueStorage__credential"      = "managedidentity"
     "SearchQueueStorage__clientId"        = azurerm_user_assigned_identity.functionapp_identity.client_id
 
+    "SnapshotStorageConfiguration__ServiceUrl"       = azurerm_storage_account.data_storage.primary_blob_endpoint
+    "SnapshotStorageConfiguration__ContainerName"    = azurerm_storage_container.search_snapshots.name
+    "SnapshotStorageConfiguration__IdentityClientId" = azurerm_user_assigned_identity.functionapp_identity.client_id
+
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = azurerm_cognitive_deployment.image_text_extraction.name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = azurerm_cognitive_deployment.spam_recognition.name
     "OpenAiServicesConfiguration__MentionDeployment"          = azurerm_cognitive_deployment.mention.name
@@ -116,6 +120,10 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
 
   depends_on = [
     azurerm_storage_queue.search_index,
+    azurerm_storage_queue.reset_snapshot,
+    azurerm_role_assignment.functionapp_identity_search_snapshots,
+    azurerm_private_endpoint.data_storage_blob,
+    azurerm_private_dns_zone_virtual_network_link.data_storage_blob,
     azurerm_role_assignment.functionapp_identity_data_storage_queue,
     azurerm_private_endpoint.data_storage_queue,
     azurerm_private_dns_zone_virtual_network_link.data_storage_queue,

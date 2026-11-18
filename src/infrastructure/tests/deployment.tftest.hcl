@@ -97,6 +97,20 @@ run "planning_search_foundation" {
 
   assert {
     condition = (
+      toset(keys(azurerm_storage_queue.reset_snapshot)) == toset(["reset-snapshot", "reset-snapshot-poison"]) &&
+      alltrue([for queue in azurerm_storage_queue.reset_snapshot : queue.storage_account_id == azurerm_storage_account.data_storage.id]) &&
+      azurerm_storage_container.search_snapshots.storage_account_id == azurerm_storage_account.data_storage.id &&
+      azurerm_storage_container.search_snapshots.container_access_type == "private" &&
+      azurerm_function_app_flex_consumption.function_app.app_settings["SnapshotStorageConfiguration__ContainerName"] == "search-snapshots" &&
+      azurerm_role_assignment.functionapp_identity_search_snapshots.role_definition_name == "Storage Blob Data Contributor" &&
+      toset(one(azurerm_private_endpoint.data_storage_blob).private_service_connection[0].subresource_names) == toset(["blob"]) &&
+      one(azurerm_private_dns_zone.data_storage_blob).name == "privatelink.blob.core.windows.net"
+    )
+    error_message = "Snapshot resets require private queue and blob access through the data storage account."
+  }
+
+  assert {
+    condition = (
       contains(keys(null_resource.data_storage_tables), "Vectors") &&
       toset(keys(azurerm_storage_queue.search_index)) == toset(["search-index", "search-index-poison"]) &&
       azurerm_function_app_flex_consumption.function_app.app_settings["SearchQueueStorage__credential"] == "managedidentity" &&
