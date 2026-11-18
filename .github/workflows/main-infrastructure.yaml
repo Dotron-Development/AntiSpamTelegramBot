@@ -38,44 +38,50 @@ env:
   ARM_USE_OIDC: "true"
 
 jobs:
+  approve-runner-connectivity:
+    name: Approve runner connectivity changes
+    if: inputs.environment == 'ppr' || inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    permissions: {}
+    environment: ${{ format('{0}-connectivity', inputs.environment) }}
+    steps:
+      - name: Verify approval environment is configured
+        env:
+          APPROVAL_CONFIGURED: ${{ vars.TERRAFORM_APPROVAL_CONFIGURED }}
+        run: test "$APPROVAL_CONFIGURED" = true
+
   setup-vm-runner-connectivity:
+    needs: approve-runner-connectivity
+    if: >-
+      ${{ !cancelled() && (needs.approve-runner-connectivity.result == 'success' ||
+        (inputs.environment == 'dev' && needs.approve-runner-connectivity.result == 'skipped')) }}
     uses: ./.github/workflows/runner-connectivity.yaml
     with:
       environment: ${{ inputs.environment }}
       enable_runner_endpoints: true
     secrets: inherit
 
-  main-infrastructure:
+  plan-infrastructure:
+    name: Plan infrastructure
     needs: setup-vm-runner-connectivity
+    if: ${{ !cancelled() && needs.setup-vm-runner-connectivity.result == 'success' }}
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: src/infrastructure
     env:
       TF_VAR_review_user_object_ids: ${{ vars.REVIEW_USER_OBJECT_IDS || '[]' }}
       TF_VAR_review_frontend_origins: ${{ vars.REVIEW_FRONTEND_ORIGINS || '["http://localhost:5173"]' }}
-
     outputs:
-      resource_group_name: ${{ steps.generate-outputs.outputs.resource_group_name }}
-      functionapp_name: ${{ steps.generate-outputs.outputs.functionapp_name }}
-      function_app_identity_name: ${{ steps.generate-outputs.outputs.function_app_identity_name }}
-      review_static_web_app_name: ${{ steps.generate-outputs.outputs.review_static_web_app_name }}
-      review_static_web_app_url: ${{ steps.generate-outputs.outputs.review_static_web_app_url }}
-      review_spa_build_settings: ${{ steps.generate-outputs.outputs.review_spa_build_settings }}
-
-    defaults:
-      run:
-        working-directory: src/infrastructure
+      plan_artifact_id: ${{ steps.upload-plan.outputs.artifact-id }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
-
-      - name: Verify Inputs
-        run: |
-          allowed_environments=("dev" "prod" "ppr")
-          if [[ ! " ${allowed_environments[@]} " =~ " ${{ inputs.environment }} " ]]; then
-            echo "Invalid environment: ${{ inputs.environment }}. Allowed values are: ${allowed_environments[@]}"
-            exit 1
-          fi
+        with:
+          persist-credentials: false
 
       - name: Azure login
         uses: azure/login@v3.1.0
@@ -98,26 +104,171 @@ jobs:
           AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
           AZ_MAIN_STATE_FILE_KEY: "terraform.tfstate"
         run: |
-          terraform init \
+          terraform init -input=false -lockfile=readonly \
             -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
             -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
             -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
-            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}" \
+            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}"
 
       - name: Terraform Plan
+        id: tfplan
         env:
-          AZ_OWNER_OBJECT_ID: ${{ secrets.AZ_OWNER_OBJECT_ID }}
-          AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          TF_VAR_keyvault_administrator_object_id: ${{ secrets.AZ_OWNER_OBJECT_ID }}
+          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_bot_secret_header: ${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}
+          TF_PLAN_KEY: ${{ secrets.TERRAFORM_PLAN_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          : "${TF_PLAN_KEY:?Configure TERRAFORM_PLAN_ENCRYPTION_KEY}"
+          umask 077
+          plan_dir=$(mktemp -d "$RUNNER_TEMP/tfplan.XXXXXXXX")
+          echo "directory=$plan_dir" >> "$GITHUB_OUTPUT"
+          trap 'rm -f "$plan_dir/tfplan"' EXIT
+          terraform plan -input=false -no-color -out="$plan_dir/tfplan" -var-file="environments/$DEPLOY_ENVIRONMENT.tfvars" >/dev/null
+          terraform show -json "$plan_dir/tfplan" | python3 -c '
+          import json, sys
+          from html import escape
+          plan = json.load(sys.stdin)
+          print("### Terraform plan\n<pre>")
+          count = 0
+          for resource in plan.get("resource_changes", []):
+              change = resource["change"]
+              actions = [action for action in change["actions"] if action != "no-op"]
+              if change.get("importing") is not None:
+                  actions.insert(0, "import")
+              previous = resource.get("previous_address")
+              if previous:
+                  actions.insert(0, "move")
+              if actions:
+                  address = resource["address"]
+                  print(escape(" + ".join(actions) + ": " + (previous + " -> " if previous else "") + address))
+                  count += 1
+          if not count:
+              print("No resource changes.")
+          print("</pre>")
+          ' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$TF_PLAN_KEY" | gpg --batch --yes --pinentry-mode loopback --no-symkey-cache \
+            --passphrase-fd 0 --symmetric --cipher-algo AES256 --output "$plan_dir/tfplan.gpg" "$plan_dir/tfplan"
+
+      - name: Upload encrypted plan
+        id: upload-plan
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: terraform-plan-${{ inputs.environment }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.tfplan.outputs.directory }}/tfplan.gpg
+          retention-days: 2
+          if-no-files-found: error
+
+      - name: Remove local plan files
+        if: always() && steps.tfplan.outputs.directory != ''
+        env:
+          PLAN_DIR: ${{ steps.tfplan.outputs.directory }}
+        run: rm -rf -- "$PLAN_DIR"
+
+  approve-infrastructure-apply:
+    name: Approve infrastructure apply
+    needs: plan-infrastructure
+    if: inputs.environment == 'ppr' || inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    permissions: {}
+    environment: ${{ format('{0}-apply', inputs.environment) }}
+    steps:
+      - name: Verify approval environment is configured
+        env:
+          APPROVAL_CONFIGURED: ${{ vars.TERRAFORM_APPROVAL_CONFIGURED }}
+        run: test "$APPROVAL_CONFIGURED" = true
+
+  main-infrastructure:
+    name: Apply saved Terraform plan
+    needs: [plan-infrastructure, approve-infrastructure-apply]
+    if: >-
+      ${{ !cancelled() && needs.plan-infrastructure.result == 'success' &&
+        needs.plan-infrastructure.outputs.plan_artifact_id != '' &&
+        (needs.approve-infrastructure-apply.result == 'success' ||
+        (inputs.environment == 'dev' && needs.approve-infrastructure-apply.result == 'skipped')) }}
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: src/infrastructure
+
+    outputs:
+      resource_group_name: ${{ steps.generate-outputs.outputs.resource_group_name }}
+      functionapp_name: ${{ steps.generate-outputs.outputs.functionapp_name }}
+      function_app_identity_name: ${{ steps.generate-outputs.outputs.function_app_identity_name }}
+      review_static_web_app_name: ${{ steps.generate-outputs.outputs.review_static_web_app_name }}
+      review_static_web_app_url: ${{ steps.generate-outputs.outputs.review_static_web_app_url }}
+      review_spa_build_settings: ${{ steps.generate-outputs.outputs.review_spa_build_settings }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Azure login
+        uses: azure/login@v3.1.0
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: "1.17.0"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        env:
+          # backend configuration
           AZ_TERRAFORM_BACKEND_STORAGEACCOUNT: ${{ vars.AZ_TERRAFORM_BACKEND_STORAGEACCOUNT }}
           AZ_TERRAFORM_BACKEND_RESOURCEGROUP: ${{ vars.AZ_TERRAFORM_BACKEND_RESOURCEGROUP }}
+          AZ_BACKEND_CONTAINER_NAME: ${{ inputs.environment }}
+          AZ_MAIN_STATE_FILE_KEY: "terraform.tfstate"
         run: |
-          terraform plan -out=tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
-            -var="keyvault_administrator_object_id=${AZ_OWNER_OBJECT_ID}" \
-            -var="telegram_bot_token=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
-            -var="telegram_bot_secret_header=${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}"
+          terraform init -input=false -lockfile=readonly \
+            -backend-config="storage_account_name=${AZ_TERRAFORM_BACKEND_STORAGEACCOUNT}"  \
+            -backend-config="container_name=${AZ_BACKEND_CONTAINER_NAME}" \
+            -backend-config="key=${AZ_MAIN_STATE_FILE_KEY}" \
+            -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}"
 
-      - name: Apply Terraform plan
-        run: terraform apply tfplan
+      - name: Create isolated plan directory
+        id: plan-directory
+        run: |
+          umask 077
+          plan_dir=$(mktemp -d "$RUNNER_TEMP/tfplan.XXXXXXXX")
+          echo "directory=$plan_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Download plan from this run
+        uses: actions/download-artifact@v8.0.2
+        with:
+          artifact-ids: ${{ needs.plan-infrastructure.outputs.plan_artifact_id }}
+          path: ${{ steps.plan-directory.outputs.directory }}
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Apply saved Terraform plan
+        env:
+          PLAN_DIR: ${{ steps.plan-directory.outputs.directory }}
+          TF_PLAN_KEY: ${{ secrets.TERRAFORM_PLAN_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          : "${TF_PLAN_KEY:?Configure TERRAFORM_PLAN_ENCRYPTION_KEY}"
+          umask 077
+          trap 'rm -f "$PLAN_DIR/tfplan"' EXIT
+          printf '%s\n' "$TF_PLAN_KEY" | gpg --batch --yes --pinentry-mode loopback --no-symkey-cache \
+            --passphrase-fd 0 --decrypt --output "$PLAN_DIR/tfplan" "$PLAN_DIR/tfplan.gpg"
+          unset TF_PLAN_KEY
+          terraform apply -input=false -no-color "$PLAN_DIR/tfplan"
+
+      - name: Remove local plan files
+        if: always() && steps.plan-directory.outputs.directory != ''
+        env:
+          PLAN_DIR: ${{ steps.plan-directory.outputs.directory }}
+        run: rm -rf -- "$PLAN_DIR"
 
       - name: Generate outputs
         id: generate-outputs

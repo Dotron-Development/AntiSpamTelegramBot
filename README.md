@@ -53,7 +53,9 @@ Configure these environment variables:
 | `REVIEW_USER_OBJECT_IDS` | Non-empty JSON array of permitted moderators' Entra user Object IDs, for example `["<USER_OBJECT_ID>"]`. |
 | `REVIEW_FRONTEND_ORIGINS` | Optional JSON array of additional exact frontend origins. Defaults to `["http://localhost:5173"]`; use `[]` for only the deployed website. |
 
-Protect `prod` with deployment branch restrictions and approval rules as appropriate.
+For each of `ppr` and `prod`, create two approval-only GitHub Environments: `<env>-connectivity` and `<env>-apply`. On each, restrict deployment to `main`, add **Required reviewers**, disable administrator bypass, and set the **environment** variable `TERRAFORM_APPROVAL_CONFIGURED=true` only after those rules are in place. Do not set this variable at repository or organization scope. These four environments do not need Azure credentials. Keep branch restrictions on the existing `ppr` and `prod` credential environments. Existing reviewer rules on those environments may cause additional prompts. Do not remove those rules without checking the other workflows that rely on them, including infrastructure destroy. `dev` has no approval gates.
+
+Add a distinct high-entropy secret `TERRAFORM_PLAN_ENCRYPTION_KEY` to each existing `dev`, `ppr`, and `prod` environment (for example, 32 random bytes encoded as hex). The self-hosted Linux runner needs GnuPG and Python 3.9+. The `ppr` and `prod` release waits for approval before temporary runner connectivity is changed, then shows a summary of resource actions and waits again before applying the saved plan. `dev` plans and applies automatically. Only the encrypted plan is uploaded; it expires after two days, so restart the workflow if it expires. If a release stops after establishing temporary runner connectivity, verify and clean up the temporary endpoints before leaving the environment idle.
 
 ## 5. Configure OIDC Deployment Access
 

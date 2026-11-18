@@ -84,8 +84,31 @@ jobs:
 
       - name: Plan runner connectivity cleanup
         if: ${{ !inputs.enable_runner_endpoints }}
-        # Ordinary apply updates DNS in place and removes only optional runner resources.
-        run: terraform plan -out=connectivity.tfplan -var-file=environments/${{ inputs.environment }}.tfvars
+        # Cleanup must not reconcile unrelated, unapproved infrastructure drift.
+        run: |
+          terraform plan -out=connectivity.tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
+            -target=time_sleep.kv_dns_propagation \
+            -target=time_sleep.data_storage_dns_propagation \
+            -target=azurerm_private_endpoint.kv_runner_pe \
+            -target=azurerm_private_endpoint.data_storage_runner_pe \
+            -target=azurerm_private_dns_a_record.keyvault_a_record \
+            -target=azurerm_private_dns_a_record.data_storage_a_record
+          terraform show -json connectivity.tfplan | python3 -c '
+          import json, sys
+          allowed = {
+              "time_sleep.kv_dns_propagation": [["delete"]],
+              "time_sleep.data_storage_dns_propagation": [["delete"]],
+              "azurerm_private_endpoint.kv_runner_pe": [["delete"]],
+              "azurerm_private_endpoint.data_storage_runner_pe": [["delete"]],
+              "azurerm_private_dns_a_record.keyvault_a_record": [["update"]],
+              "azurerm_private_dns_a_record.data_storage_a_record": [["update"]],
+          }
+          for item in json.load(sys.stdin).get("resource_changes", []):
+              actions = item["change"]["actions"]
+              address = item["address"].removesuffix("[0]")
+              if actions not in [["no-op"], ["read"]] and actions not in allowed.get(address, []):
+                  sys.exit("Cleanup refused an unexpected infrastructure change: " + address)
+          '
 
       - name: Apply runner connectivity plan
         run: terraform apply connectivity.tfplan
