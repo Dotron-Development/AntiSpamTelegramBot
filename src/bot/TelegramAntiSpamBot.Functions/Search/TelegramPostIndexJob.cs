@@ -10,13 +10,11 @@ internal static class TelegramPostIndexJob
             UpdateType.EditedMessage => update.EditedMessage,
             _ => null
         };
-        if (message is not { IsAutomaticForward: true } || message.Chat.Type is not (ChatType.Group or ChatType.Supergroup))
+        if (message is not { IsAutomaticForward: true, ForwardOrigin: MessageOriginChannel origin } ||
+            message.Chat.Type is not (ChatType.Group or ChatType.Supergroup) ||
+            origin.Chat is not { Type: ChatType.Channel, Id: not 0 } || origin.MessageId <= 0)
             return null;
-        return FromForward(message, update.Id);
-    }
 
-    private static PostIndexJob? FromForward(Message message, int updateId)
-    {
         var text = message.Text ?? message.Caption;
         if (string.IsNullOrWhiteSpace(text)) return null;
 
@@ -29,8 +27,8 @@ internal static class TelegramPostIndexJob
             if (!text.AsSpan(end, entity.Offset - end).Trim().IsEmpty) break;
             end = entity.Offset + entity.Length;
         }
-        var seconds = new DateTimeOffset(message.EditDate ?? message.Date).ToUnixTimeSeconds();
-        var revision = (seconds << 32) | (uint)updateId;
-        return new PostIndexJob(message.Chat.Id, message.Id, revision, text, start, end - start);
+        var seconds = new DateTimeOffset(message.EditDate ?? origin.Date).ToUnixTimeSeconds();
+        var revision = (seconds << 32) | (uint)update.Id;
+        return new PostIndexJob(origin.Chat.Id, origin.MessageId, revision, text, start, end - start);
     }
 }

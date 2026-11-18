@@ -2,23 +2,47 @@ namespace TelegramAntiSpamBot.IntegrationTests;
 
 public sealed class PostIndexingTests
 {
+    private const string ChannelOrigin = """
+        "forward_origin":{"type":"channel","date":1720000000,"chat":{"id":-10002,"type":"channel"},"message_id":13},
+        """;
+    private const string Forward = """
+        {"update_id":10,"message":{"message_id":42,"date":1720000100,
+          "chat":{"id":-10001,"type":"supergroup"},"is_automatic_forward":true,
+        """ + ChannelOrigin + """
+          "caption":"#Async\nPart 13\n\nPost body", "caption_entities":[
+            {"type":"bold","offset":0,"length":6},{"type":"bold","offset":7,"length":7}]}}
+        """;
+
     [Fact]
-    public void QueuesOnlyAutomaticDiscussionCopiesWithTextAndKeepsMultilineCaptionTitle()
+    public void UsesOriginalChannelAndPostIdsForAutomaticForwardsAndEdits()
     {
-        const string json = """
-            {"update_id":10,"message":{"message_id":42,"date":1720000000,
-              "chat":{"id":-10001,"type":"supergroup"},"is_automatic_forward":true,
-              "caption":"#Async\nPart 13\n\nPost body", "caption_entities":[
-                {"type":"bold","offset":0,"length":6},{"type":"bold","offset":7,"length":7}]}}
-            """;
-        var job = TelegramPostIndexJob.FromUpdate(JsonSerializer.Deserialize<Update>(json, JsonBotAPI.Options)!);
+        var job = ParseJob(Forward);
         Assert.NotNull(job);
-        Assert.Equal(-10001, job.ChatId);
-        Assert.Equal(42, job.MessageId);
+        Assert.Equal(-10002, job.ChatId);
+        Assert.Equal(13, job.MessageId);
+        Assert.Equal(1720000000L, job.Revision >> 32);
         Assert.Equal("#Async\nPart 13", job.Text.Substring(job.TitleOffset, job.TitleLength));
-        foreach (var ignored in new[] { json.Replace("true", "false"), json.Replace("\"message\":", "\"channel_post\":"), json.Replace("#Async\\nPart 13\\n\\nPost body", " ") })
-            Assert.Null(TelegramPostIndexJob.FromUpdate(JsonSerializer.Deserialize<Update>(ignored, JsonBotAPI.Options)!));
+
+        var edited = ParseJob(Forward.Replace("\"message\":{", "\"edited_message\":{\"edit_date\":1720000200,"));
+        Assert.NotNull(edited);
+        Assert.Equal((job.ChatId, job.MessageId), (edited.ChatId, edited.MessageId));
+        Assert.Equal(1720000200L, edited.Revision >> 32);
     }
+
+    [Fact]
+    public void SkipsMessagesWithoutAnAutomaticChannelOriginOrText()
+    {
+        Assert.Null(ParseJob(Forward.Replace(ChannelOrigin, "")));
+        Assert.Null(ParseJob(Forward.Replace(ChannelOrigin, """
+            "forward_origin":{"type":"hidden_user","date":1720000000,"sender_user_name":"Example"},
+            """)));
+        Assert.Null(ParseJob(Forward.Replace("true", "false")));
+        Assert.Null(ParseJob(Forward.Replace("\"message\":", "\"channel_post\":")));
+        Assert.Null(ParseJob(Forward.Replace("#Async\\nPart 13\\n\\nPost body", " ")));
+    }
+
+    private static PostIndexJob? ParseJob(string json) =>
+        TelegramPostIndexJob.FromUpdate(JsonSerializer.Deserialize<Update>(json, JsonBotAPI.Options)!);
 
     [Fact]
     public async Task IndexerBatchesLongTextWithTitleAndSkipsAlreadyIndexedJobs()
