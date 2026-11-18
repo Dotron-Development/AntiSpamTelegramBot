@@ -1,5 +1,4 @@
 # access from github runner subnet to data storage (required for null_resource table provisioning when disable_public_access = true)
-
 resource "azurerm_private_endpoint" "data_storage_runner_pe" {
   count                         = var.disable_public_access && var.enable_runner_endpoints ? 1 : 0
   name                          = "pe-runner-data-storage-${var.environment_prefix}"

@@ -88,9 +88,14 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     "AzureWebJobsStorage__accountName" = azurerm_storage_account.function_storage.name
     "AzureWebJobsStorage__clientId"    = azurerm_user_assigned_identity.functionapp_identity.client_id
 
+    "SearchQueueStorage__queueServiceUri" = azurerm_storage_account.function_storage.primary_queue_endpoint
+    "SearchQueueStorage__credential"      = "managedidentity"
+    "SearchQueueStorage__clientId"        = azurerm_user_assigned_identity.functionapp_identity.client_id
+
     "OpenAiServicesConfiguration__ImageRecognitionDeployment" = azurerm_cognitive_deployment.image_text_extraction.name
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = azurerm_cognitive_deployment.spam_recognition.name
     "OpenAiServicesConfiguration__MentionDeployment"          = azurerm_cognitive_deployment.mention.name
+    "OpenAiServicesConfiguration__SearchEmbeddingDeployment"  = azurerm_cognitive_deployment.search_embeddings.name
     "OpenAiServicesConfiguration__ServiceUrl"                 = azurerm_cognitive_account.ai_services.endpoint
     "OpenAiServicesConfiguration__ApiKey"                     = "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.kv.name};SecretName=${azurerm_key_vault_secret.ai_services_api_key.name})"
 

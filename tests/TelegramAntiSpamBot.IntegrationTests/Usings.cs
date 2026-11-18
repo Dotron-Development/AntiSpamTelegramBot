@@ -30,6 +30,7 @@ global using TelegramAntiSpamBot.Functions;
 global using TelegramAntiSpamBot.Persistence.DTO;
 global using TelegramAntiSpamBot.Persistence.Repositories;
 global using TelegramAntiSpamBot.Persistence;
+global using TelegramAntiSpamBot.Search;
 global using TelegramAntispamBot.Configuration;
 global using OpenAI.Responses;
 global using System.Text.Json.Nodes;

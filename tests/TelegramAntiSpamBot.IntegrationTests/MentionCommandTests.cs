@@ -620,7 +620,8 @@ public class MentionCommandTests
             collection.AddSingleton<IOptions<OpenAiServicesConfiguration>>(Options.Create(new OpenAiServicesConfiguration
             {
                 ServiceUrl = "https://mention.example.test/", ImageRecognitionDeployment = "images",
-                SpamRecognitionDeployment = "antispam", MentionDeployment = "mention"
+                SpamRecognitionDeployment = "antispam", MentionDeployment = "mention",
+                SearchEmbeddingDeployment = "text-embedding-3-large"
             }));
             collection.AddSingleton<IOptions<TelegramBotConfiguration>>(Options.Create(new TelegramBotConfiguration
             {

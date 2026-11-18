@@ -23,5 +23,7 @@ mention = {
   version  = "2026-10-26"
   capacity = 100
 }
-forwardSpamToChatId = "-1002395980780"
-debug_ai_response   = true
+adopt_existing_search_embeddings = true
+search_embedding_capacity        = 1000
+forwardSpamToChatId              = "-1002395980780"
+debug_ai_response                = true

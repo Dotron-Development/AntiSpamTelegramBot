@@ -1,0 +1,8 @@
+global using Microsoft.Extensions.DependencyInjection;
+global using OpenAI.Embeddings;
+global using TelegramAntiSpamBot.Persistence.Repositories;
+global using TelegramAntiSpamBot.Persistence.DTO;
+global using Microsoft.ML.Tokenizers;
+global using System.Security.Cryptography;
+global using System.Text.Json;
+global using System.Text.RegularExpressions;

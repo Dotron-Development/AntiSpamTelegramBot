@@ -181,3 +181,15 @@ variable "review_frontend_origins" {
     error_message = "Supply exact HTTPS origins, or HTTP loopback origins, without paths, trailing slashes or wildcards."
   }
 }
+
+variable "search_embedding_capacity" {
+  description = "Capacity in thousands of tokens per minute for the search embedding deployment."
+  type        = number
+  default     = 10
+}
+
+variable "adopt_existing_search_embeddings" {
+  description = "Import the existing manually provisioned search deployment instead of creating it."
+  type        = bool
+  default     = false
+}

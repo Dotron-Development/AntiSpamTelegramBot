@@ -4,7 +4,8 @@ namespace TelegramAntiSpamBot.Functions
         IChatsRepository chatsRepository,
         SpamMessageProcessor messageProcessor,
         ICommandProcessor commandProcessor,
-        IOptions<TelegramBotConfiguration> botConfig)
+        IOptions<TelegramBotConfiguration> botConfig,
+        PostIndexQueue indexQueue)
     {
         [Function("AntiSpamBotWebHook")]
         public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequestData req)
@@ -16,6 +17,10 @@ namespace TelegramAntiSpamBot.Functions
                 var message = ExtractMessageFromUpdate(update);
                 if (message is null)
                     return req.CreateResponse(HttpStatusCode.NoContent);
+
+                if (update is not null && message.Chat.Id != botConfig.Value.ForwardSpamToChatId &&
+                    TelegramPostIndexJob.FromUpdate(update) is { } job)
+                    await indexQueue.EnqueueAsync(job, req.FunctionContext.CancellationToken);
 
                 var registerChatTask = RegisterChatAsync(update);
 
