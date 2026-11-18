@@ -125,6 +125,14 @@ Function failure alerts evaluate failed Application Insights requests every five
 minutes over a five-minute window. This query does not support Azure Monitor's
 one-minute evaluation frequency.
 
+## Search storage and embeddings
+
+The `Vectors` repository in Persistence stores post titles and binary vector chunks in the bot's data storage account. The Search project reuses `OpenAiServicesConfiguration` for the endpoint and credentials; `OpenAiServicesConfiguration__SearchEmbeddingDeployment` selects the deployment. The index uses `text-embedding-3-large` version 1 (3,072 dimensions).
+
+The Telegram webhook queues only automatic channel forwards (and their edits) in discussion groups with text or a caption. `IndexChannelPost` reads `search-index`, batches paragraph-based fragments for embeddings, and atomically replaces the post vectors. Duplicate or stale jobs do not rewrite vectors. Failed deliveries are retried by the Functions host and move to `search-index-poison` after the retry limit; jobs, including poison messages, carry temporary source text. Blob snapshot generation is not connected yet.
+
+The production Terraform plan imports the existing embedding deployment rather than creating a duplicate. Review the plan before applying: the deployment should be imported, not replaced. The PoC table is in a different storage account; it is not migrated by Terraform.
+
 ## 8. Deploy and Verify
 
 1. Run [release dev](.github/workflows/release-dev.yaml) manually from GitHub Actions, or push to `main` to deploy `dev` automatically.
@@ -145,13 +153,14 @@ After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) wit
 ## 9. Run Locally
 
 1. Sign in with `az login`. Ensure your account can access the AI deployments and application Table Storage. For private resources, configure working network access and DNS.
-2. Configure the ignored [local.settings.json](src/bot/TelegramAntiSpamBot.Functions/local.settings.json) with the Telegram bot token, webhook header, bot username, Azure AI endpoint and deployment names, and Table Storage URL. Use Azurite if `AzureWebJobsStorage` is `UseDevelopmentStorage=true`. Keep real credentials outside version control.
+2. Configure the ignored [local.settings.json](src/bot/TelegramAntiSpamBot.Functions/local.settings.json) with the Telegram bot token, webhook header, bot username, Azure AI endpoint and deployment names, and Table Storage URL. Use Azurite if `AzureWebJobsStorage` is `UseDevelopmentStorage=true`. For local ingestion with Azurite, also set `SearchQueueStorage` and `AzureTablesConfiguration__StorageAccountUrl` to `UseDevelopmentStorage=true`. Create the `search-index` and `search-index-poison` queues and the `Vectors` table before testing ingestion (create `Chats` for webhook chat registration). Keep real credentials outside version control.
 
    ```json
    {
      "IsEncrypted": false,
      "Values": {
        "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+       "SearchQueueStorage": "UseDevelopmentStorage=true",
        "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
        "TelegramBotConfiguration__Token": "<dev-bot-token>",
        "TelegramBotConfiguration__SecretHeader": "<webhook-header>",
@@ -159,6 +168,8 @@ After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) wit
        "OpenAiServicesConfiguration__ServiceUrl": "https://<ai-service-endpoint>/",
        "OpenAiServicesConfiguration__SpamRecognitionDeployment": "antispam",
        "OpenAiServicesConfiguration__ImageRecognitionDeployment": "images",
+       "OpenAiServicesConfiguration__MentionDeployment": "mention",
+       "OpenAiServicesConfiguration__SearchEmbeddingDeployment": "text-embedding-3-large",
        "AzureTablesConfiguration__StorageAccountUrl": "https://<storage-account>.table.core.windows.net/"
      }
    }
@@ -216,7 +227,7 @@ Azure Tables retrieval uses equality on `PartitionKey` (chat ID) plus a range on
 
 Search results and retrieved history are untrusted evidence, and source URLs from response annotations are included in Telegram answers. The instructions prohibit sending private chat history, identities or secrets in search queries; this is a model instruction, not a deterministic data-loss-prevention filter.
 
-Use the existing `OpenAiServicesConfiguration__ServiceUrl` as the Azure account's base URL (without `/openai/v1`), and `OpenAiServicesConfiguration__MentionDeployment` for a deployment supporting Responses and hosted web search (default: `mention`). Mention requests append `/openai/v1/responses` to that base URL. Authentication uses the existing optional API key or Azure credential/managed identity; no separate Bing API key is required. Entra authentication requests the `https://ai.azure.com/.default` scope and requires inference access to the resource.
+Use the existing `OpenAiServicesConfiguration__ServiceUrl` as the Azure account's base URL (without `/openai/v1`), and `OpenAiServicesConfiguration__MentionDeployment` for a deployment supporting Responses and hosted web search (required; typically `mention`). Mention requests append `/openai/v1/responses` to that base URL. Authentication uses the existing optional API key or Azure credential/managed identity; no separate Bing API key is required. Entra authentication requests the `https://ai.azure.com/.default` scope and requires inference access to the resource.
 
 Each mention has a 90-second deadline, a hard 2000-output-token generation limit and a provider-side limit of three hosted tool calls. Output tokens include reasoning tokens for reasoning models; this limit is separate from Telegram's character limit. The tool-call limit is not a strict cap on billable Bing requests; Azure reports those separately in `tool_usage.web_search.num_requests`. Existing retry behavior is retained (up to five retries for transient failures). Incomplete and empty responses are rejected and errors are logged by the mention command.
 

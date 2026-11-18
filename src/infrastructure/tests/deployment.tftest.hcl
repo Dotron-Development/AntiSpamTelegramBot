@@ -23,6 +23,7 @@ mock_provider "time" {}
 mock_provider "null" {}
 
 variables {
+  adopt_existing_search_embeddings = false
   keyvault_administrator_object_id = "33333333-3333-3333-3333-333333333333"
   telegram_bot_token               = "test-token"
   telegram_bot_secret_header       = "test-header"
@@ -55,6 +56,21 @@ run "planning_versionless_key_vault_references" {
       } : azurerm_function_app_flex_consumption.function_app.app_settings[setting] == "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.kv.name};SecretName=${secret})"
     ])
     error_message = "Key Vault references must be versionless and known at plan time, even if the vault URI and secret versions are unknown."
+  }
+}
+
+run "planning_search_foundation" {
+  command = plan
+
+  assert {
+    condition = (
+      contains(keys(null_resource.data_storage_tables), "Vectors") &&
+      toset(keys(azurerm_storage_queue.search_index)) == toset(["search-index", "search-index-poison"]) &&
+      azurerm_function_app_flex_consumption.function_app.app_settings["SearchQueueStorage__credential"] == "managedidentity" &&
+      azurerm_function_app_flex_consumption.function_app.app_settings["OpenAiServicesConfiguration__SearchEmbeddingDeployment"] == azurerm_cognitive_deployment.search_embeddings.name &&
+      azurerm_cognitive_deployment.search_embeddings.model[0].name == "text-embedding-3-large"
+    )
+    error_message = "Search must provision the Vectors table and use its embedding deployment via the shared OpenAI configuration."
   }
 }
 

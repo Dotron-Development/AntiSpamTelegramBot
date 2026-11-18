@@ -1311,7 +1311,7 @@ public class ReviewFunctionsTests
                     botConfig.Value, bot, CreateRepository<ICommandCallsRepository>(), NullLogger<CommandProcessor>.Instance)
                 : Commands;
             Webhook = new AntiSpamBotWebHook(NullLogger<AntiSpamBotWebHook>.Instance,
-                chatsRepository, processor, commands, botConfig);
+                chatsRepository, processor, commands, botConfig, new PostIndexQueue(new ConfigurationBuilder().Build()));
         }
 
         public HttpRequestData Request(string body = "", string query = "") =>

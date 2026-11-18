@@ -2,7 +2,7 @@
 {
     public static class DependencyInjection
     {
-        private static readonly string[] TableNames = ["Chats", "ProbablySpam", "MessageCount", "SpamHash", "SpamStats", "MessageHistory", "CommandsCall"];
+        private static readonly string[] TableNames = ["Chats", "ProbablySpam", "MessageCount", "SpamHash", "SpamStats", "MessageHistory", "CommandsCall", "Vectors"];
 
         public static IServiceCollection AddPersistence(this IServiceCollection serviceCollection)
         {
@@ -16,6 +16,8 @@
                 serviceCollection.AddKeyedScoped(tableName, (provider, _) =>
                 {
                     var options = provider.GetRequiredService<IOptions<AzureTablesConfiguration>>();
+                    if (options.Value.StorageAccountUrl == "UseDevelopmentStorage=true")
+                        return new TableClient(options.Value.StorageAccountUrl, tableName);
                     var tableClient = new TableClient(
                         new Uri(options.Value.StorageAccountUrl),
                         tableName,
@@ -30,6 +32,8 @@
                 });
             }
 
+            serviceCollection.AddScoped<Repositories.IPostVectorRepository>(provider =>
+                new Repositories.TablePostVectorRepository(provider.GetRequiredKeyedService<TableClient>("Vectors")));
             serviceCollection.AddTransient<Repositories.IChatsRepository, Repositories.ChatsRepository>();
             serviceCollection.AddTransient<Repositories.IMessageHistoryRepository, Repositories.MessageHistoryRepository>();
             serviceCollection.AddTransient<Repositories.ICommandCallsRepository, Repositories.CommandCallsRepository>();

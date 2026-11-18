@@ -20,18 +20,21 @@ resource "azurerm_role_assignment" "function_app_to_openai" {
 }
 
 ## Grant the identity access to the application storage account
+# Blob access covers the Function App deployment container and host storage.
 resource "azurerm_role_assignment" "functionapp_identity_storage_access_app_blob" {
   scope                = azurerm_storage_account.function_storage.id
   role_definition_name = "Storage Blob Data Owner"
   principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
 }
 
+# Queue access covers sending and processing indexing jobs, including poison messages.
 resource "azurerm_role_assignment" "functionapp_identity_storage_access_app_queue" {
   scope                = azurerm_storage_account.function_storage.id
   role_definition_name = "Storage Queue Data Contributor"
   principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
 }
 
+# Table access here is for the Functions host; application data uses the separate data storage account.
 resource "azurerm_role_assignment" "functionapp_identity_storage_access_app_table" {
   scope                = azurerm_storage_account.function_storage.id
   role_definition_name = "Storage Table Data Contributor"

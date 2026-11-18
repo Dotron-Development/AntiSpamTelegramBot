@@ -21,6 +21,13 @@ namespace TelegramAntiSpamBot.OpenAI
             serviceCollection.AddKeyedScoped("Mention", (provider, _) =>
                 CreateMentionClient(provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>().Value));
 
+            serviceCollection.AddSingleton(provider =>
+            {
+                var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>().Value;
+                var options = new AzureOpenAIClientOptions(AzureOpenAIClientOptions.ServiceVersion.V2024_10_21);
+                return CreateAzureClient(config, options).GetEmbeddingClient(config.SearchEmbeddingDeployment);
+            });
+
             serviceCollection.AddSingleton<SpamDetectionInstructions>();
             serviceCollection.AddTransient<MentionHistoryToolFactory>();
             serviceCollection.AddScoped<ISpamDetectionService, SpamDetectionService>();
@@ -50,27 +57,20 @@ namespace TelegramAntiSpamBot.OpenAI
         private static ChatClient CreateChatClient(IServiceProvider provider, Func<OpenAiServicesConfiguration, string> deploymentSelector,
             AzureOpenAIClientOptions? options = null)
         {
-            var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>();
-            AzureOpenAIClient client;
+            var config = provider.GetRequiredService<IOptions<OpenAiServicesConfiguration>>().Value;
+            return CreateAzureClient(config, options).GetChatClient(deploymentSelector(config));
+        }
 
-            if (!string.IsNullOrEmpty(config.Value.ApiKey))
-            {
-                client = new AzureOpenAIClient(
-                  new Uri(config.Value.ServiceUrl), new ApiKeyCredential(config.Value.ApiKey), options);
-            }
-            else
-            {
-                client = new AzureOpenAIClient(
-                    new Uri(config.Value.ServiceUrl),
-                    config.Value.OpenAiIdentityClientId != null
-                        ? new DefaultAzureCredential(new DefaultAzureCredentialOptions()
-                        {
-                            ManagedIdentityClientId = config.Value.OpenAiIdentityClientId
-                        })
-                        : new DefaultAzureCredential(), options);
-            }
+        private static AzureOpenAIClient CreateAzureClient(OpenAiServicesConfiguration config, AzureOpenAIClientOptions? options)
+        {
+            var endpoint = new Uri(config.ServiceUrl);
+            if (!string.IsNullOrEmpty(config.ApiKey))
+                return new AzureOpenAIClient(endpoint, new ApiKeyCredential(config.ApiKey), options);
 
-            return client.GetChatClient(deploymentSelector(config.Value));
+            var credential = config.OpenAiIdentityClientId is { } clientId
+                ? new DefaultAzureCredential(new DefaultAzureCredentialOptions { ManagedIdentityClientId = clientId })
+                : new DefaultAzureCredential();
+            return new AzureOpenAIClient(endpoint, credential, options);
         }
     }
 }

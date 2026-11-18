@@ -15,6 +15,8 @@ builder.ConfigureServices(collection =>
     collection.AddOpenAiService();
     collection.AddTelegramBot();
     collection.AddPersistence();
+    collection.AddSearch();
+    collection.AddSingleton<PostIndexQueue>();
     collection.AddCommands();
 });
 

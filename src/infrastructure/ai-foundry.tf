@@ -102,3 +102,27 @@ resource "azurerm_cognitive_account_rai_policy" "rai_policy_high" {
 
   mode = "Asynchronous_filter"
 }
+
+resource "azurerm_cognitive_deployment" "search_embeddings" {
+  name                   = "text-embedding-3-large"
+  cognitive_account_id   = azurerm_cognitive_account.ai_services.id
+  rai_policy_name        = "Microsoft.DefaultV2"
+  version_upgrade_option = "NoAutoUpgrade"
+
+  model {
+    format  = "OpenAI"
+    name    = "text-embedding-3-large"
+    version = "1"
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = var.search_embedding_capacity
+  }
+}
+
+import {
+  for_each = var.adopt_existing_search_embeddings ? toset([var.environment_prefix]) : toset([])
+  to       = azurerm_cognitive_deployment.search_embeddings
+  id       = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/rg-${local.appName}-${each.key}/providers/Microsoft.CognitiveServices/accounts/${local.appName}-ai-services-${each.key}/deployments/text-embedding-3-large"
+}
