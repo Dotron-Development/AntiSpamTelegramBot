@@ -126,29 +126,7 @@ jobs:
           mkdir -- "$plan_dir"
           echo "directory=$plan_dir" >> "$GITHUB_OUTPUT"
           trap 'rm -f "$plan_dir/tfplan"' EXIT
-          terraform plan -input=false -no-color -out="$plan_dir/tfplan" -var-file="environments/$DEPLOY_ENVIRONMENT.tfvars" >/dev/null
-          terraform show -json "$plan_dir/tfplan" | python3 -c '
-          import json, sys
-          from html import escape
-          plan = json.load(sys.stdin)
-          print("### Terraform plan\n<pre>")
-          count = 0
-          for resource in plan.get("resource_changes", []):
-              change = resource["change"]
-              actions = [action for action in change["actions"] if action != "no-op"]
-              if change.get("importing") is not None:
-                  actions.insert(0, "import")
-              previous = resource.get("previous_address")
-              if previous:
-                  actions.insert(0, "move")
-              if actions:
-                  address = resource["address"]
-                  print(escape(" + ".join(actions) + ": " + (previous + " -> " if previous else "") + address))
-                  count += 1
-          if not count:
-              print("No resource changes.")
-          print("</pre>")
-          ' >> "$GITHUB_STEP_SUMMARY"
+          terraform plan -input=false -no-color -out="$plan_dir/tfplan" -var-file="environments/$DEPLOY_ENVIRONMENT.tfvars"
           printf '%s\n' "$TF_PLAN_KEY" | gpg --batch --yes --pinentry-mode loopback --no-symkey-cache \
             --passphrase-fd 0 --symmetric --cipher-algo AES256 --output "$plan_dir/tfplan.gpg" "$plan_dir/tfplan"
 
