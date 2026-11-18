@@ -51,5 +51,5 @@ resource "null_resource" "data_storage_tables" {
 resource "azurerm_storage_queue" "search_index" {
   for_each           = toset(["search-index", "search-index-poison"])
   name               = each.key
-  storage_account_id = azurerm_storage_account.function_storage.id
+  storage_account_id = azurerm_storage_account.data_storage.id
 }
