@@ -122,7 +122,8 @@ jobs:
           set -euo pipefail
           : "${TF_PLAN_KEY:?Configure TERRAFORM_PLAN_ENCRYPTION_KEY}"
           umask 077
-          plan_dir=$(mktemp -d "$RUNNER_TEMP/tfplan.XXXXXXXX")
+          plan_dir="$RUNNER_TEMP/tfplan-plan.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          mkdir -- "$plan_dir"
           echo "directory=$plan_dir" >> "$GITHUB_OUTPUT"
           trap 'rm -f "$plan_dir/tfplan"' EXIT
           terraform plan -input=false -no-color -out="$plan_dir/tfplan" -var-file="environments/$DEPLOY_ENVIRONMENT.tfvars" >/dev/null
@@ -238,8 +239,10 @@ jobs:
       - name: Create isolated plan directory
         id: plan-directory
         run: |
+          set -euo pipefail
           umask 077
-          plan_dir=$(mktemp -d "$RUNNER_TEMP/tfplan.XXXXXXXX")
+          plan_dir="$RUNNER_TEMP/tfplan-apply.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          mkdir -- "$plan_dir"
           echo "directory=$plan_dir" >> "$GITHUB_OUTPUT"
 
       - name: Download plan from this run
