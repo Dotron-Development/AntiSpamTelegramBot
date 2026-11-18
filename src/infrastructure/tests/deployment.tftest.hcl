@@ -61,6 +61,40 @@ run "planning_versionless_key_vault_references" {
 run "planning_search_foundation" {
   command = plan
 
+  variables {
+    disable_public_access = true
+  }
+
+  override_resource {
+    target          = azurerm_storage_account.data_storage
+    override_during = plan
+    values = {
+      id                     = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/rg-test/providers/Microsoft.Storage/storageAccounts/satgbotdatatest"
+      primary_queue_endpoint = "https://satgbotdatatest.queue.core.windows.net/"
+    }
+  }
+
+  assert {
+    condition = (
+      alltrue([for queue in azurerm_storage_queue.search_index : queue.storage_account_id == azurerm_storage_account.data_storage.id]) &&
+      azurerm_function_app_flex_consumption.function_app.app_settings["SearchQueueStorage__queueServiceUri"] == azurerm_storage_account.data_storage.primary_queue_endpoint &&
+      azurerm_function_app_flex_consumption.function_app.app_settings["AzureWebJobsStorage__accountName"] == azurerm_storage_account.function_storage.name &&
+      azurerm_role_assignment.functionapp_identity_data_storage_queue.scope == azurerm_storage_account.data_storage.id &&
+      azurerm_role_assignment.functionapp_identity_data_storage_queue.role_definition_name == "Storage Queue Data Contributor"
+    )
+    error_message = "Search queues and their managed identity access must use data storage without moving the Functions host storage."
+  }
+
+  assert {
+    condition = (
+      one(azurerm_private_endpoint.data_storage_queue).private_service_connection[0].private_connection_resource_id == azurerm_storage_account.data_storage.id &&
+      toset(one(azurerm_private_endpoint.data_storage_queue).private_service_connection[0].subresource_names) == toset(["queue"]) &&
+      one(azurerm_private_dns_zone.data_storage_queue).name == "privatelink.queue.core.windows.net" &&
+      length(azurerm_private_dns_zone_virtual_network_link.data_storage_queue) == 1
+    )
+    error_message = "Private data storage must expose the queue service through a private endpoint and a linked queue DNS zone."
+  }
+
   assert {
     condition = (
       contains(keys(null_resource.data_storage_tables), "Vectors") &&

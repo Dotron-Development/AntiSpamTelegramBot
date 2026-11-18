@@ -131,6 +131,8 @@ The `Vectors` repository in Persistence stores post titles and binary vector chu
 
 The Telegram webhook queues only automatic channel forwards (and their edits) in discussion groups with text or a caption. It uses the original channel ID and post ID from `forward_origin`, not the discussion copy's IDs, so channel archive imports can use the same index keys. Forwards without a channel origin are skipped. `IndexChannelPost` reads `search-index`, batches paragraph-based fragments for embeddings, and atomically replaces the post vectors. Duplicate or stale jobs do not rewrite vectors. Failed deliveries are retried by the Functions host and move to `search-index-poison` after the retry limit; jobs, including poison messages, carry temporary source text. Blob snapshot generation is not connected yet.
 
+The indexing queues use the data storage account; the Functions host and deployment container keep their separate Function App storage account. If the queues were previously deployed in Function App storage, pause producers and drain or back up both queues before applying the change. Terraform replaces the queues and does not migrate messages.
+
 ### One-off Telegram archive import
 
 [ChannelArchiveImport](tools/ChannelArchiveImport/ChannelArchiveImport.csproj) reads `messages.html`, `messages2.html`, etc. from a Telegram Desktop **channel HTML export**. Pass the channel's numeric Bot API ID (not the discussion group ID). Dry-run is the default and does not contact Azure:
@@ -141,10 +143,10 @@ $channelId = '-1001234567890' # Replace with the export's channel ID.
 dotnet run --project .\tools\ChannelArchiveImport -- $archive $channelId
 ```
 
-Once the indexing worker is deployed, sign in with `az login` using an identity with **Storage Queue Data Message Sender** on the destination queue. Replace the storage account placeholder and send a small test batch:
+Once the indexing worker is deployed, sign in with `az login` using an identity with **Storage Queue Data Message Sender** on the destination queue. Run the importer from a network that can reach the data storage queue endpoint; production requires access to its private endpoint and DNS. Use the data storage account for your environment (`satgbotdataprod` in production) and send a small test batch:
 
 ```powershell
-$queue = 'https://<function-storage-account>.queue.core.windows.net/search-index'
+$queue = 'https://<data-storage-account>.queue.core.windows.net/search-index'
 dotnet run --project .\tools\ChannelArchiveImport -- $archive $channelId --send --queue-url $queue --limit 5
 ```
 

@@ -88,7 +88,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     "AzureWebJobsStorage__accountName" = azurerm_storage_account.function_storage.name
     "AzureWebJobsStorage__clientId"    = azurerm_user_assigned_identity.functionapp_identity.client_id
 
-    "SearchQueueStorage__queueServiceUri" = azurerm_storage_account.function_storage.primary_queue_endpoint
+    "SearchQueueStorage__queueServiceUri" = azurerm_storage_account.data_storage.primary_queue_endpoint
     "SearchQueueStorage__credential"      = "managedidentity"
     "SearchQueueStorage__clientId"        = azurerm_user_assigned_identity.functionapp_identity.client_id
 
@@ -113,6 +113,13 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   } : {})
 
   tags = local.tags
+
+  depends_on = [
+    azurerm_storage_queue.search_index,
+    azurerm_role_assignment.functionapp_identity_data_storage_queue,
+    azurerm_private_endpoint.data_storage_queue,
+    azurerm_private_dns_zone_virtual_network_link.data_storage_queue,
+  ]
 
   lifecycle {
     ignore_changes = [tags["hidden-link: /app-insights-resource-id"]]

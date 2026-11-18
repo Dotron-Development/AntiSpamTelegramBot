@@ -12,6 +12,12 @@ resource "azurerm_role_assignment" "functionapp_identity_data_storage_access" {
   principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
 }
 
+resource "azurerm_role_assignment" "functionapp_identity_data_storage_queue" {
+  scope                = azurerm_storage_account.data_storage.id
+  role_definition_name = "Storage Queue Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
+}
+
 ## Grant Read access for the function app to the Open AI services in the resource group
 resource "azurerm_role_assignment" "function_app_to_openai" {
   scope                = azurerm_resource_group.rg.id
@@ -27,7 +33,7 @@ resource "azurerm_role_assignment" "functionapp_identity_storage_access_app_blob
   principal_id         = azurerm_user_assigned_identity.functionapp_identity.principal_id
 }
 
-# Queue access covers sending and processing indexing jobs, including poison messages.
+# Queue access here is for the Functions host.
 resource "azurerm_role_assignment" "functionapp_identity_storage_access_app_queue" {
   scope                = azurerm_storage_account.function_storage.id
   role_definition_name = "Storage Queue Data Contributor"
