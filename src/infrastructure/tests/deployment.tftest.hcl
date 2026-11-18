@@ -43,6 +43,21 @@ run "planning_with_unknown_spa_origin" {
   }
 }
 
+run "planning_versionless_key_vault_references" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for setting, secret in {
+        OpenAiServicesConfiguration__ApiKey    = "ai-services-api-key"
+        TelegramBotConfiguration__SecretHeader = "telegram-bot-secret-header"
+        TelegramBotConfiguration__Token        = "telegram-bot-token"
+      } : azurerm_function_app_flex_consumption.function_app.app_settings[setting] == "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.kv.name};SecretName=${secret})"
+    ])
+    error_message = "Key Vault references must be versionless and known at plan time, even if the vault URI and secret versions are unknown."
+  }
+}
+
 run "planning_without_additional_origins" {
   command = plan
 

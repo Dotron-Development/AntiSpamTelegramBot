@@ -82,6 +82,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     identity_ids = [azurerm_user_assigned_identity.functionapp_identity.id]
   }
 
+  # Use configured names so secret rotation cannot change a reference during apply.
   app_settings = merge({
     "AzureWebJobsStorage"              = "" //workaround until https://github.com/hashicorp/terraform-provider-azurerm/pull/29099 gets released
     "AzureWebJobsStorage__accountName" = azurerm_storage_account.function_storage.name
@@ -91,7 +92,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     "OpenAiServicesConfiguration__SpamRecognitionDeployment"  = azurerm_cognitive_deployment.spam_recognition.name
     "OpenAiServicesConfiguration__MentionDeployment"          = azurerm_cognitive_deployment.mention.name
     "OpenAiServicesConfiguration__ServiceUrl"                 = azurerm_cognitive_account.ai_services.endpoint
-    "OpenAiServicesConfiguration__ApiKey"                     = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.ai_services_api_key.id})"
+    "OpenAiServicesConfiguration__ApiKey"                     = "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.kv.name};SecretName=${azurerm_key_vault_secret.ai_services_api_key.name})"
 
     "AzureTablesConfiguration__StorageAccountUrl"     = azurerm_storage_account.data_storage.primary_table_endpoint
     "AzureTablesConfiguration__TableIdentityClientId" = azurerm_user_assigned_identity.functionapp_identity.client_id
@@ -100,8 +101,8 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
     "TelegramBotConfiguration__BotName"                = var.bot_name,
     "TelegramBotConfiguration__SpamRestrictionTimeout" = var.spam_restriction_timeout
     "TelegramBotConfiguration__CommandCooldown"        = var.command_cooldown
-    "TelegramBotConfiguration__SecretHeader"           = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_secret_header.id})"
-    "TelegramBotConfiguration__Token"                  = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.telegram_bot_token.id})"
+    "TelegramBotConfiguration__SecretHeader"           = "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.kv.name};SecretName=${azurerm_key_vault_secret.telegram_bot_secret_header.name})"
+    "TelegramBotConfiguration__Token"                  = "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.kv.name};SecretName=${azurerm_key_vault_secret.telegram_bot_token.name})"
     }, var.debug_ai_response != null ? {
     "TelegramBotConfiguration__DebugAiResponse" = var.debug_ai_response
   } : {})
