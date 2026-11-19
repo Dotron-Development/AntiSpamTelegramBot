@@ -117,25 +117,20 @@ jobs:
           TF_VAR_keyvault_administrator_object_id: ${{ secrets.AZ_OWNER_OBJECT_ID }}
           TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TF_VAR_telegram_bot_secret_header: ${{ secrets.TELEGRAM_BOT_SECRET_HEADER }}
-          TF_PLAN_KEY: ${{ secrets.TERRAFORM_PLAN_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
-          : "${TF_PLAN_KEY:?Configure TERRAFORM_PLAN_ENCRYPTION_KEY}"
           umask 077
           plan_dir="$RUNNER_TEMP/tfplan-plan.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           mkdir -- "$plan_dir"
           echo "directory=$plan_dir" >> "$GITHUB_OUTPUT"
-          trap 'rm -f "$plan_dir/tfplan"' EXIT
           terraform plan -input=false -no-color -out="$plan_dir/tfplan" -var-file="environments/$DEPLOY_ENVIRONMENT.tfvars"
-          printf '%s\n' "$TF_PLAN_KEY" | gpg --batch --yes --pinentry-mode loopback --no-symkey-cache \
-            --passphrase-fd 0 --symmetric --cipher-algo AES256 --output "$plan_dir/tfplan.gpg" "$plan_dir/tfplan"
 
-      - name: Upload encrypted plan
+      - name: Upload Terraform plan
         id: upload-plan
         uses: actions/upload-artifact@v7.0.2
         with:
           name: terraform-plan-${{ inputs.environment }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.tfplan.outputs.directory }}/tfplan.gpg
+          path: ${{ steps.tfplan.outputs.directory }}/tfplan
           retention-days: 2
           if-no-files-found: error
 
@@ -234,15 +229,10 @@ jobs:
       - name: Apply saved Terraform plan
         env:
           PLAN_DIR: ${{ steps.plan-directory.outputs.directory }}
-          TF_PLAN_KEY: ${{ secrets.TERRAFORM_PLAN_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
-          : "${TF_PLAN_KEY:?Configure TERRAFORM_PLAN_ENCRYPTION_KEY}"
           umask 077
           trap 'rm -f "$PLAN_DIR/tfplan"' EXIT
-          printf '%s\n' "$TF_PLAN_KEY" | gpg --batch --yes --pinentry-mode loopback --no-symkey-cache \
-            --passphrase-fd 0 --decrypt --output "$PLAN_DIR/tfplan" "$PLAN_DIR/tfplan.gpg"
-          unset TF_PLAN_KEY
           terraform apply -input=false -no-color "$PLAN_DIR/tfplan"
 
       - name: Remove local plan files
