@@ -87,6 +87,11 @@
     font-weight: 600;
 }
 
+.mention-chat select {
+    width: 100%;
+    font-size: 12px;
+}
+
 .mention-fields textarea {
     width: 100%;
     min-width: 0;

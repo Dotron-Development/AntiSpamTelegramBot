@@ -36,6 +36,25 @@ public sealed class MentionReviewFunctionsTests
         Assert.Single(document.RootElement.EnumerateObject());
     }
 
+    [Fact]
+    public async Task PreviewPassesSelectedChatAsHistoryContext()
+    {
+        using var fixture = new Fixture();
+        var before = DateTimeOffset.UtcNow;
+
+        var response = await fixture.Functions.PreviewMention(fixture.Request("""
+            {"question":"What happened earlier?","chatId":"-1001234567890"}
+            """));
+
+        var conversation = Assert.Single(fixture.Service.Requests).Conversation;
+        Assert.NotNull(conversation);
+        Assert.Equal(-1001234567890, conversation.ChatId);
+        Assert.Equal(0, conversation.MessageId);
+        Assert.InRange(conversation.Date, before, DateTimeOffset.UtcNow);
+        Assert.Null(conversation.ReplyDate);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     [Theory]
     [InlineData("{\"question\":\"\"}")]
     [InlineData("{\"question\":\"  \"}")]
@@ -133,6 +152,10 @@ public sealed class MentionReviewFunctionsTests
     [InlineData("{\"question\":\"Hi\",\"replyTo\":{\"text\":1}}")]
     [InlineData("{\"question\":\"Hi\",\"replyTo\":{\"text\":\"\",\"name\":false}}")]
     [InlineData("{\"question\":\"Hi\",\"replyTo\":{\"text\":\"\",\"username\":[]}}")]
+    [InlineData("{\"question\":\"Hi\",\"chatId\":\"0\"}")]
+    [InlineData("{\"question\":\"Hi\",\"chatId\":\"not-a-chat\"}")]
+    [InlineData("{\"question\":\"Hi\",\"chatId\":\"9223372036854775808\"}")]
+    [InlineData("{\"question\":\"Hi\",\"chatId\":123}")]
     public async Task PreviewRejectsMalformedOrInvalidInputWithoutGenerating(string body)
     {
         using var fixture = new Fixture();

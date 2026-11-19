@@ -128,7 +128,9 @@ function App() {
             </div>}
 
             {view === 'snapshots' ? <SearchSnapshots connection={connection} />
-                : view === 'mention' ? <MentionPreview connection={connection} busy={locked} onBusyChange={setMentionGenerating} onCopy={copy} />
+                : view === 'mention' ? <MentionPreview connection={connection} chats={chats.chats} chatId={chats.chatId}
+                    chatsLoading={chats.loading} onChatChange={chats.setChatId} busy={locked}
+                    onBusyChange={setMentionGenerating} onCopy={copy} />
                 : view === 'queue' ? <section className="workspace" aria-label="Message review workspace">
                 <MessageQueue messages={queue.messages} selected={queue.selected} query={queue.query}
                     loading={queue.loading} working={moderation.working} busy={locked} hasLoaded={queue.hasLoaded}
