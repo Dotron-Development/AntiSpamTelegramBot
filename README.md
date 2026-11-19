@@ -53,7 +53,9 @@ Configure these environment variables:
 | `REVIEW_USER_OBJECT_IDS` | Non-empty JSON array of permitted moderators' Entra user Object IDs, for example `["<USER_OBJECT_ID>"]`. |
 | `REVIEW_FRONTEND_ORIGINS` | Optional JSON array of additional exact frontend origins. Defaults to `["http://localhost:5173"]`; use `[]` for only the deployed website. |
 
-Protect `prod` with deployment branch restrictions and approval rules as appropriate.
+For each supported deployment environment other than `dev` (currently `ppr` and `prod`), create two approval-only GitHub Environments: `<env>-connectivity` and `<env>-apply`. On each, restrict deployment to `main`, add **Required reviewers**, disable administrator bypass, and set the **environment** variable `TERRAFORM_APPROVAL_CONFIGURED=true` only after those rules are in place. Do not set this variable at repository or organization scope. These four environments do not need Azure credentials. Keep the existing `ppr` and `prod` credential environments for secrets and Azure OIDC, restrict them to `main`, and disable administrator bypass. Once the approval-only environments are configured and the updated release and destroy workflows are live on `main`, remove **Required reviewers** from the credential environments. This removes extra approval prompts for Functions, the review SPA, Key Vault reference configuration, and runner endpoint cleanup. `ppr` and `prod` destroy still requires approval through `<env>-connectivity` before any Terraform changes. `dev` has no approval gates.
+
+Add a distinct high-entropy secret `TERRAFORM_PLAN_ENCRYPTION_KEY` to each existing `dev`, `ppr`, and `prod` environment (for example, 32 random bytes encoded as hex). The self-hosted Linux runner needs GnuPG and Python 3.9+. The `ppr` and `prod` release waits for approval before temporary runner connectivity is changed, then prints the Terraform plan in the Plan job log and waits again before applying the saved plan. `dev` plans and applies automatically. Plan and Apply use separate runner temp directories named by workflow run ID and attempt. Apply downloads the encrypted plan by artifact ID, not by runner path. The artifact expires after two days, so restart the workflow if it expires. If a release stops after establishing temporary runner connectivity, verify and clean up the temporary endpoints before leaving the environment idle.
 
 ## 5. Configure OIDC Deployment Access
 
@@ -120,6 +122,11 @@ Edit [dev.tfvars](src/infrastructure/environments/dev.tfvars) and [prod.tfvars](
 - AI model names, versions and capacities for `spam_recognition`, `image_text_extractor` and `mention`.
 - `disable_public_access`, according to the environment's network requirements.
 - Optional `function_alert_emails`, `command_cooldown` and `spam_restriction_timeout`.
+
+The data storage private endpoint NICs use `nic-data-storage-pe-<environment>-tables`,
+`nic-data-storage-pe-<environment>-queue`, and `nic-data-storage-pe-<environment>-blob`.
+Applying a NIC name change replaces the associated private endpoint. Review the
+Terraform plan and schedule a maintenance window if existing endpoints are affected.
 
 Function failure alerts evaluate failed Application Insights requests every five
 minutes over a five-minute window. This query does not support Azure Monitor's
