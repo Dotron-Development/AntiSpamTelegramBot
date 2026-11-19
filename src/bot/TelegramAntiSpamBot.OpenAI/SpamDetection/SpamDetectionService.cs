@@ -1,7 +1,7 @@
 ﻿
 namespace TelegramAntiSpamBot.OpenAI
 {
-    internal sealed partial class SpamDetectionService(
+    internal sealed class SpamDetectionService(
         [FromKeyedServices("SpamDetector")] ChatClient spamDetector,
         [FromKeyedServices("ImageAnalyzer")] ChatClient imageAnalyzer,
         SpamDetectionInstructions instructions,
@@ -53,8 +53,6 @@ namespace TelegramAntiSpamBot.OpenAI
             {
                 var requestJson = JsonSerializer.Serialize(new SpamDetectionRequest(userMessage, userMessagesCount, isReported));
 
-                LogDebugSpamDetectionAiRequest(logger, requestJson);
-
                 var instr = await instructions.GetSpamDetectionInstructions();
                 ChatCompletion completion = await spamDetector.CompleteChatAsync(
                 [
@@ -70,7 +68,6 @@ namespace TelegramAntiSpamBot.OpenAI
                 }
 
                 var responseText = string.Concat(completion.Content.Select(part => part.Text));
-                LogDebugSpamDetectionAiResponse(logger, responseText);
 
                 var result = JsonSerializer.Deserialize<SpamDetectionResult>(responseText);
 
@@ -79,28 +76,27 @@ namespace TelegramAntiSpamBot.OpenAI
                     return new SpamRequestResult(ResultType.Evaluated, result.Probability, result.Explanation);
                 }
 
-                logger.LogWarning("Unexpected answer from AI: {content}", responseText);
+                logger.LogWarning("Spam detection returned an invalid score or explanation");
                 return new SpamRequestResult(ResultType.Error);
             }
-            catch (ClientResultException e) when (e.Status == 400)
+            catch (ClientResultException e)
             {
-                logger.LogError(e, "Open AI filter blocked the message: {userMessage}", userMessage);
-                logger.LogError(e.ToString());
+                logger.LogError("Spam detection request failed with status {Status}", e.Status);
                 return new SpamRequestResult(ResultType.Error);
             }
             catch (Exception e)
             {
-                logger.LogError("Error occurred during spam detection process: {e}", e);
+                logger.LogError("Spam detection failed ({ErrorType})", e.GetType().Name);
                 return new SpamRequestResult(ResultType.Error);
             }
         }
 
-        public async Task<ImageAnalysisResult> ExtractImageText(string imageUrl)
+        public async Task<ImageAnalysisResult> ExtractImageText(BinaryData jpeg)
         {
-            LogDebugImageRecognitionAiRequest(logger, imageUrl);
-
-            if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uriResult)
-                || uriResult.Scheme != Uri.UriSchemeHttps) return new ImageAnalysisResult();
+            if (jpeg.ToMemory().IsEmpty)
+            {
+                return new ImageAnalysisResult();
+            }
 
             try
             {
@@ -109,7 +105,7 @@ namespace TelegramAntiSpamBot.OpenAI
                 [
                     new SystemChatMessage(imageRecognitionInstructions),
                     new UserChatMessage(
-                        ChatMessageContentPart.CreateImagePart(uriResult))
+                        ChatMessageContentPart.CreateImagePart(jpeg, "image/jpeg"))
 
                 ], CreateImageAnalysisOptions());
 
@@ -126,27 +122,13 @@ namespace TelegramAntiSpamBot.OpenAI
                     return new ImageAnalysisResult();
                 }
 
-                LogDebugImageRecognitionAiResponse(logger, imageResponse);
-
                 return JsonSerializer.Deserialize<ImageAnalysisResult>(imageResponse) ?? new ImageAnalysisResult();
             }
             catch (Exception exception)
             {
-                logger.LogWarning(exception, "Image analysis failed; continuing without image content");
+                logger.LogWarning("Image analysis failed ({ErrorType}); continuing without image content", exception.GetType().Name);
                 return new ImageAnalysisResult();
             }
         }
-
-        [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Request: {request}")]
-        private static partial void LogDebugSpamDetectionAiRequest(ILogger<SpamDetectionService> logger, string request);
-
-        [LoggerMessage(LogLevel.Debug, "Spam Detection AI Service Response: {response}")]
-        private static partial void LogDebugSpamDetectionAiResponse(ILogger<SpamDetectionService> logger, string response);
-
-        [LoggerMessage(LogLevel.Debug, "Image Recognition AI Service Response: {response}")]
-        private static partial void LogDebugImageRecognitionAiResponse(ILogger<SpamDetectionService> logger, string response);
-
-        [LoggerMessage(LogLevel.Debug, "Image Recognition AI Service Request: ImageUrl: {imageUrl}.")]
-        private static partial void LogDebugImageRecognitionAiRequest(ILogger<SpamDetectionService> logger, string imageUrl);
     }
 }

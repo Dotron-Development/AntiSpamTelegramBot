@@ -2,6 +2,8 @@ namespace TelegramAntiSpamBot.IntegrationTests;
 
 public class ImageAnalysisTests
 {
+    private static readonly BinaryData Photo = BinaryData.FromBytes(new byte[] { 0xff, 0xd8, 0xff, 0xd9 });
+
     [Theory]
     [InlineData("{\"TextOnImage\":\"Full text\\nSecond line\",\"ImageDescription\":\"A poster\"}", "A poster\nFull text\nSecond line")]
     [InlineData("{\"TextOnImage\":\"\",\"ImageDescription\":\"A cat\"}", "A cat")]
@@ -14,7 +16,7 @@ public class ImageAnalysisTests
     {
         using var fixture = new Fixture(payload);
 
-        var result = await fixture.Detector.ExtractImageText("https://images.example.test/photo.jpg");
+        var result = await fixture.Detector.ExtractImageText(Photo);
 
         Assert.Equal(expected, result.ToMessageContent());
         using var expectedPayload = JsonDocument.Parse(payload);
@@ -44,7 +46,7 @@ public class ImageAnalysisTests
         Assert.Contains("ImageDescription", prompt);
         Assert.Contains("TextOnImage", prompt);
         Assert.Contains("Do not summarize, translate, or omit", prompt);
-        Assert.Equal("https://images.example.test/photo.jpg",
+        Assert.Equal($"data:image/jpeg;base64,{Convert.ToBase64String(Photo.ToArray())}",
             messages[1].GetProperty("content")[0].GetProperty("image_url").GetProperty("url").GetString());
     }
 
@@ -206,7 +208,7 @@ public class ImageAnalysisTests
         var detector = fixture.Detector;
 
         var results = await Task.WhenAll(Enumerable.Range(0, 32).Select(index =>
-            detector.ExtractImageText($"https://images.example.test/photo-{index}.jpg")));
+            detector.ExtractImageText(Photo)));
 
         Assert.All(results, result => Assert.Equal("A poster\nText", result.ToMessageContent()));
         Assert.Equal(32, fixture.Client.Options.Count);
@@ -215,15 +217,12 @@ public class ImageAnalysisTests
             .Distinct(ReferenceEqualityComparer.Instance).Count());
     }
 
-    [Theory]
-    [InlineData("http://images.example.test/photo.jpg")]
-    [InlineData("not a URL")]
-    [InlineData("")]
-    public async Task InvalidImageUrlsDoNotCallAnalyzer(string imageUrl)
+    [Fact]
+    public async Task EmptyPhotoDoesNotCallAnalyzer()
     {
         using var fixture = new Fixture("{}");
 
-        var result = await fixture.Detector.ExtractImageText(imageUrl);
+        var result = await fixture.Detector.ExtractImageText(BinaryData.FromBytes(Array.Empty<byte>()));
         Assert.Empty(result.TextOnImage!);
         Assert.Empty(result.ImageDescription!);
         Assert.Empty(result.ToMessageContent());
@@ -245,7 +244,7 @@ public class ImageAnalysisTests
     {
         using var fixture = new Fixture(payload, finishReason);
 
-        var result = await fixture.Detector.ExtractImageText("https://images.example.test/photo.jpg");
+                var result = await fixture.Detector.ExtractImageText(Photo);
 
         Assert.Empty(result.ToMessageContent());
         Assert.NotNull(fixture.Handler.Request);
@@ -258,10 +257,34 @@ public class ImageAnalysisTests
     {
         using var fixture = new Fixture("{}", statusCode: statusCode);
 
-        var result = await fixture.Detector.ExtractImageText("https://images.example.test/photo.jpg");
+                var result = await fixture.Detector.ExtractImageText(Photo);
 
         Assert.Empty(result.ToMessageContent());
         Assert.NotNull(fixture.Handler.Request);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.BadRequest)]
+    public async Task ClassificationLogsOmitPrivateInputAndModelOutput(HttpStatusCode status)
+    {
+        var logs = new RecordingLogs();
+        using var fixture = new Fixture("{\"Probability\":101,\"Explanation\":\"private-reply\"}", statusCode: status, logs: logs);
+        await fixture.Detector.IsSpamAsync(new MessagePayload(UserMessage: "private-input"), 1);
+
+        Assert.NotEmpty(logs.Messages);
+        Assert.DoesNotContain(logs.Messages, message => message.Contains("private-input") || message.Contains("private-reply"));
+    }
+
+    private sealed class RecordingLogs : ILoggerProvider, ILogger
+    {
+        public List<string> Messages { get; } = [];
+        public ILogger CreateLogger(string categoryName) => this;
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel level, EventId id, TState state, Exception? error, Func<TState, Exception?, string> format) =>
+            Messages.Add($"{format(state, error)} {error}");
+        public void Dispose() { }
     }
 
     private sealed class Fixture : IDisposable
@@ -272,7 +295,7 @@ public class ImageAnalysisTests
         public RecordingChatClient Client { get; }
         public ISpamDetectionService Detector => services.GetRequiredService<ISpamDetectionService>();
 
-        public Fixture(string? payload, string finishReason = "stop", HttpStatusCode statusCode = HttpStatusCode.OK)
+        public Fixture(string? payload, string finishReason = "stop", HttpStatusCode statusCode = HttpStatusCode.OK, RecordingLogs? logs = null)
         {
             Handler = new AnalyzerHandler(payload, finishReason, statusCode);
             http = new HttpClient(Handler);
@@ -281,7 +304,10 @@ public class ImageAnalysisTests
                 Endpoint = new Uri("https://analyzer.example.test"),
                 Transport = new HttpClientPipelineTransport(http)
             });
-            services = new ServiceCollection().AddLogging().AddOpenAiService()
+            services = new ServiceCollection().AddLogging(builder =>
+            {
+                if (logs is not null) builder.SetMinimumLevel(LogLevel.Trace).AddProvider(logs);
+            }).AddOpenAiService()
                 .AddKeyedSingleton<ChatClient>("ImageAnalyzer", Client)
                 .AddKeyedSingleton<ChatClient>("SpamDetector", Client).BuildServiceProvider();
         }

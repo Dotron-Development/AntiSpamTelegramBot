@@ -8,7 +8,6 @@ namespace TelegramAntiSpamBot.Functions
         ISpamHashRepository spamHashRepository,
         ISpamStatsRepository spamStatsRepository,
         ITelegramBotClient bot,
-        TelegramImageUrlResolver imageUrlResolver,
         IOptions<TelegramBotConfiguration> botConfig) : IReportedMessageProcessor
     {
         public async Task ProcessReportedAsync(Message message) =>
@@ -51,11 +50,8 @@ namespace TelegramAntiSpamBot.Functions
                 var isSpam = false;
                 var originalText = GetMessageText(message);
 
-                var imageUrl = message.Chat.Id != botConfig.Value.ForwardSpamToChatId
-                    ? await ExtractUrlImageFromMessage(message)
-                    : null;
-                var imageAnalysis = imageUrl is not null
-                    ? await detectionService.ExtractImageText(imageUrl)
+                var imageAnalysis = message.Chat.Id != botConfig.Value.ForwardSpamToChatId
+                    ? await AnalyzePhotoAsync(message)
                     : null;
 
                 var imageText = imageAnalysis?.ToMessageContent() ?? string.Empty;
@@ -75,11 +71,10 @@ namespace TelegramAntiSpamBot.Functions
                     var increaseCounterTask = isReported
                         ? Task.CompletedTask
                         : messageCountRepository.IncreaseMessageCount(message.Chat.Id, fromUser.Id);
-                    logger.LogInformation("Message content: {messageContent}", messageContent);
 
                     // Step 3. Check message content for spam
                     if (messageContent.HasContent
-                        && (isReported || ((messageContent.ContentLength > 20 || imageUrl is not null) && userMessageCount < 100)))
+                        && (isReported || ((messageContent.ContentLength > 20 || imageAnalysis is not null) && userMessageCount < 100)))
                     {
                         // Step 3.1 Shortcut. if there is hashed spam message in db
                         // Quick access
@@ -115,12 +110,11 @@ namespace TelegramAntiSpamBot.Functions
                         var spamDetectionResult = await detectionService.IsSpamAsync(messageContent, userMessageCount,
                             isReported: isReported);
 
-                        logger.LogInformation("SPAM DETECTION RESULT: {probability}. EXPLANATION: {explanation}",
-                            spamDetectionResult.Probability, spamDetectionResult.Explanation);
+                        logger.LogInformation("Spam detection result: {resultType}, probability: {probability}",
+                            spamDetectionResult.ResultType, spamDetectionResult.Probability);
 
                         if (spamDetectionResult.ResultType == ResultType.Error)
                         {
-                            logger.LogError("Spam detection service returned error for message: {messageContent}", messageContent);
                             throw new InvalidOperationException("Spam detection service returned an error.");
                         }
 
@@ -246,15 +240,25 @@ namespace TelegramAntiSpamBot.Functions
         private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
 
-        private async Task<string?> ExtractUrlImageFromMessage(Message message)
+        private async Task<ImageAnalysisResult?> AnalyzePhotoAsync(Message message)
         {
-            var photoSize = message.Photo?.LastOrDefault();
-            if (photoSize == null) return null;
+            if (message.Photo?.LastOrDefault() is not { } photo) return null;
 
-            var fileInfo = await bot.GetFile(photoSize.FileId);
-            return fileInfo is { FilePath.Length: > 0 }
-                ? imageUrlResolver.GetImageUrl(fileInfo.FilePath)
-                : null;
+            var file = await bot.GetFile(photo.FileId);
+            if (string.IsNullOrEmpty(file.FilePath)) return null;
+
+            using var stream = new MemoryStream();
+            try
+            {
+                await bot.DownloadFile(file.FilePath, stream);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning("Telegram photo download failed ({ErrorType}); continuing without image content", ex.GetType().Name);
+                return new ImageAnalysisResult();
+            }
+
+            return await detectionService.ExtractImageText(new BinaryData(stream.GetBuffer().AsMemory(0, (int)stream.Length)));
         }
 
         private static MessageFrom? GetMessageFrom(Message message)

@@ -11,6 +11,7 @@ global using Azure;
 global using Microsoft.Azure.Functions.Worker.Http;
 global using Microsoft.Azure.Functions.Worker;
 global using Microsoft.Extensions.Logging.Abstractions;
+global using Microsoft.Extensions.Logging;
 global using Microsoft.Extensions.Options;
 global using OpenAI.Chat;
 global using OpenAI;
