@@ -1,18 +1,38 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { getSearchSnapshots, resetSearchSnapshot, validId } from '../api/client'
-import type { Connection, SearchSnapshot } from '../api/client'
+import { getSearchSnapshotChannel, getSearchSnapshots, resetSearchSnapshot, validId } from '../api/client'
+import type { Connection, ReviewChat, SearchSnapshot } from '../api/client'
 import { errorText } from '../lib/workspace'
+import { ChatPicker } from './ChatPicker'
 
-export function SearchSnapshots({ connection }: { connection: Connection }) {
+export function SearchSnapshots({ connection, chats, chatsLoading, onRefreshChats }: {
+    connection: Connection; chats: ReviewChat[]; chatsLoading: boolean; onRefreshChats: () => Promise<void>
+}) {
     const [items, setItems] = useState<SearchSnapshot[]>([])
     const [refresh, setRefresh] = useState(0)
     const [loading, setLoading] = useState(true)
     const [queued, setQueued] = useState('')
     const [working, setWorking] = useState(false)
     const [error, setError] = useState('')
-    const [channelId, setChannelId] = useState('')
+    const [manualId, setManualId] = useState('')
+    const [selectedGroup, setSelectedGroup] = useState('')
+    const [linkRefresh, setLinkRefresh] = useState(0)
+    const [linked, setLinked] = useState<{ groupId: string; channelId: string; error?: string } | null>(null)
+    const groups = chats.filter(chat => chat.chatId.startsWith('-') && validId(chat.chatId))
+    const groupId = groups.some(chat => chat.chatId === selectedGroup) ? selectedGroup : ''
+    const link = groupId && linked?.groupId === groupId ? linked : null
+
+    useEffect(() => {
+        if (!groupId) return
+        const abort = new AbortController()
+        void getSearchSnapshotChannel(connection, groupId, abort.signal).then(channelId => {
+            if (!abort.signal.aborted) setLinked({ groupId, channelId })
+        }).catch(cause => {
+            if (!abort.signal.aborted) setLinked({ groupId, channelId: '', error: errorText(cause) })
+        })
+        return () => abort.abort()
+    }, [connection, groupId, linkRefresh])
 
     useEffect(() => {
         const abort = new AbortController()
@@ -40,22 +60,35 @@ export function SearchSnapshots({ connection }: { connection: Connection }) {
         }
     }
 
+    const id = groupId ? (link?.channelId ?? '') : manualId.trim()
+    const canRebuild = !working && id.startsWith('-') && validId(id) && (!groupId || !chatsLoading)
+
     function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault()
-        void reset(channelId.trim())
+        if (canRebuild) void reset(id)
     }
 
-    const id = channelId.trim()
     return <section className="records-panel" aria-label="Search snapshots">
         <div className="records-toolbar">
             <span>{items.length} blobs</span>
             <button className="icon-button" aria-label="Refresh snapshots" title="Refresh snapshots" disabled={loading}
                 onClick={() => { setLoading(true); setError(''); setRefresh(value => value + 1) }}><RefreshCw size={16} /></button>
         </div>
-        <form className="records-toolbar" onSubmit={submit}>
-            <label>Channel ID <input value={channelId} onChange={event => setChannelId(event.target.value)} placeholder="-100…" /></label>
-            <button className="button subtle" disabled={working || !id.startsWith('-') || !validId(id)}>Queue rebuild</button>
+        <form className="querybar" onSubmit={submit}>
+            <ChatPicker chats={groups} chatId={groupId} busy={working || chatsLoading} chatsLoading={chatsLoading}
+                label="Discussion group" emptyLabel="Enter channel ID manually"
+                onRefresh={async () => {
+                    setLinked(null)
+                    setLinkRefresh(value => value + 1)
+                    await onRefreshChats()
+                }} onChatChange={value => { setLinked(null); setSelectedGroup(value) }} />
+            <div className="chat-field"><label htmlFor="snapshot-channel-id">Channel ID</label>
+                <input id="snapshot-channel-id" value={groupId ? (link?.channelId ?? '') : manualId} readOnly={!!groupId} disabled={working}
+                    onChange={event => setManualId(event.target.value)} placeholder={groupId && !link ? 'Looking up linked channel…' : '-100…'} />
+            </div>
+            <button className="button subtle" disabled={!canRebuild}>Queue rebuild</button>
         </form>
+        {link?.error && <div className="notice error" role="alert">{link.error}</div>}
         {error && <div className="notice error" role="alert">{error}</div>}
         {queued && <div className="notice success" role="status">{queued}</div>}
         {items.length > 0 && <div className="records-scroll"><table className="calls-table">

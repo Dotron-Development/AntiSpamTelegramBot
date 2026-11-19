@@ -147,6 +147,14 @@ export async function getSearchSnapshots(connection: Connection, signal?: AbortS
   return rows
 }
 
+export async function getSearchSnapshotChannel(connection: Connection, groupId: string, signal: AbortSignal): Promise<string> {
+  const { channelId } = JSON.parse(await request(connection, `/search-snapshots/groups/${encodeURIComponent(groupId)}/channel`, 'GET', undefined, signal))
+  if (typeof channelId !== 'string' || !channelId.startsWith('-') || !validId(channelId)) {
+    throw new Error('Invalid linked channel response.')
+  }
+  return channelId
+}
+
 export async function resetSearchSnapshot(connection: Connection, channelId: string) {
   await request(connection, `/search-snapshots/${encodeURIComponent(channelId)}/reset`, 'POST')
 }
