@@ -19,7 +19,7 @@ resource "azurerm_private_endpoint" "data_storage_pe" {
   subnet_id                     = azurerm_subnet.subnet2_private_endpoints[0].id
   location                      = var.location
   resource_group_name           = azurerm_resource_group.rg.name
-  custom_network_interface_name = "nic-data-storage-pe-${var.environment_prefix}"
+  custom_network_interface_name = "nic-data-storage-pe-${var.environment_prefix}-tables"
 
   private_service_connection {
     name                           = "sc-data-storage-${var.environment_prefix}"
@@ -67,11 +67,12 @@ resource "azurerm_private_dns_zone_virtual_network_link" "data_storage_queue" {
 }
 
 resource "azurerm_private_endpoint" "data_storage_queue" {
-  count               = var.disable_public_access ? 1 : 0
-  name                = "pe-data-storage-queue-${var.environment_prefix}"
-  subnet_id           = azurerm_subnet.subnet2_private_endpoints[0].id
-  location            = var.location
-  resource_group_name = azurerm_resource_group.rg.name
+  count                         = var.disable_public_access ? 1 : 0
+  name                          = "pe-data-storage-queue-${var.environment_prefix}"
+  subnet_id                     = azurerm_subnet.subnet2_private_endpoints[0].id
+  location                      = var.location
+  resource_group_name           = azurerm_resource_group.rg.name
+  custom_network_interface_name = "nic-data-storage-pe-${var.environment_prefix}-queue"
 
   private_service_connection {
     name                           = "sc-data-storage-queue-${var.environment_prefix}"
@@ -104,11 +105,12 @@ resource "azurerm_private_dns_zone_virtual_network_link" "data_storage_blob" {
 }
 
 resource "azurerm_private_endpoint" "data_storage_blob" {
-  count               = var.disable_public_access ? 1 : 0
-  name                = "pe-data-storage-blob-${var.environment_prefix}"
-  subnet_id           = azurerm_subnet.subnet2_private_endpoints[0].id
-  location            = var.location
-  resource_group_name = azurerm_resource_group.rg.name
+  count                         = var.disable_public_access ? 1 : 0
+  name                          = "pe-data-storage-blob-${var.environment_prefix}"
+  subnet_id                     = azurerm_subnet.subnet2_private_endpoints[0].id
+  location                      = var.location
+  resource_group_name           = azurerm_resource_group.rg.name
+  custom_network_interface_name = "nic-data-storage-pe-${var.environment_prefix}-blob"
 
   private_service_connection {
     name                           = "sc-data-storage-blob-${var.environment_prefix}"

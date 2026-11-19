@@ -123,6 +123,11 @@ Edit [dev.tfvars](src/infrastructure/environments/dev.tfvars) and [prod.tfvars](
 - `disable_public_access`, according to the environment's network requirements.
 - Optional `function_alert_emails`, `command_cooldown` and `spam_restriction_timeout`.
 
+The data storage private endpoint NICs use `nic-data-storage-pe-<environment>-tables`,
+`nic-data-storage-pe-<environment>-queue`, and `nic-data-storage-pe-<environment>-blob`.
+Applying a NIC name change replaces the associated private endpoint. Review the
+Terraform plan and schedule a maintenance window if existing endpoints are affected.
+
 Function failure alerts evaluate failed Application Insights requests every five
 minutes over a five-minute window. This query does not support Azure Monitor's
 one-minute evaluation frequency.
