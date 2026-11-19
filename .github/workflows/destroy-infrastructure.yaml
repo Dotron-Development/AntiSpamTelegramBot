@@ -19,7 +19,7 @@ env:
 jobs:
   approve-infrastructure-destroy:
     name: Approve infrastructure destroy
-    if: inputs.environment == 'ppr' || inputs.environment == 'prod'
+    if: inputs.environment != 'dev'
     runs-on: ubuntu-latest
     permissions: {}
     environment: ${{ format('{0}-connectivity', inputs.environment) }}

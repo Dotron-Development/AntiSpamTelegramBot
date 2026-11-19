@@ -40,7 +40,7 @@ env:
 jobs:
   approve-runner-connectivity:
     name: Approve runner connectivity changes
-    if: inputs.environment == 'ppr' || inputs.environment == 'prod'
+    if: inputs.environment != 'dev'
     runs-on: ubuntu-latest
     permissions: {}
     environment: ${{ format('{0}-connectivity', inputs.environment) }}
@@ -148,7 +148,7 @@ jobs:
   approve-infrastructure-apply:
     name: Approve infrastructure apply
     needs: plan-infrastructure
-    if: inputs.environment == 'ppr' || inputs.environment == 'prod'
+    if: inputs.environment != 'dev'
     runs-on: ubuntu-latest
     permissions: {}
     environment: ${{ format('{0}-apply', inputs.environment) }}
