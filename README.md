@@ -33,7 +33,7 @@ Check Azure AI model availability and quota in the configured region before depl
 
 ## 4. Configure GitHub Environments
 
-In repository **Settings > Environments**, create `dev` and `prod`. For each environment, configure:
+In repository **Settings > Environments**, create `dev`, `ppr`, and `prod`. For each environment, configure:
 
 | Secret | Value |
 | --- | --- |
@@ -53,9 +53,11 @@ Configure these environment variables:
 | `REVIEW_USER_OBJECT_IDS` | Non-empty JSON array of permitted moderators' Entra user Object IDs, for example `["<USER_OBJECT_ID>"]`. |
 | `REVIEW_FRONTEND_ORIGINS` | Optional JSON array of additional exact frontend origins. Defaults to `["http://localhost:5173"]`; use `[]` for only the deployed website. |
 
-For each supported deployment environment other than `dev` (currently `ppr` and `prod`), create two approval-only GitHub Environments: `<env>-connectivity` and `<env>-apply`. On each, restrict deployment to `main`, add **Required reviewers**, disable administrator bypass, and set the **environment** variable `TERRAFORM_APPROVAL_CONFIGURED=true` only after those rules are in place. Do not set this variable at repository or organization scope. These four environments do not need Azure credentials. Keep the existing `ppr` and `prod` credential environments for secrets and Azure OIDC, restrict them to `main`, and disable administrator bypass. Once the approval-only environments are configured and the updated release and destroy workflows are live on `main`, remove **Required reviewers** from the credential environments. This removes extra approval prompts for Functions, the review SPA, Key Vault reference configuration, and runner endpoint cleanup. `ppr` and `prod` destroy still requires approval through `<env>-connectivity` before any Terraform changes. `dev` has no approval gates.
+On `ppr` and `prod`, restrict deployments to `main`, add **Required reviewers**, and disable administrator bypass before running release or destroy. Keep Azure credentials in these same environments. GitHub approval applies to jobs that reference the protected environment, including runner connectivity changes, Terraform plan and apply, destroy, Key Vault configuration, Functions, the review SPA, and runner endpoint cleanup. Expect multiple prompts as jobs become ready. Leave `dev` without required reviewers for automatic deployments.
 
-The `ppr` and `prod` release waits for approval before temporary runner connectivity is changed, then prints the Terraform plan in the Plan job log and waits again before applying the saved plan. `dev` plans and applies automatically. Plan and Apply use separate runner temp directories named by workflow run ID and attempt. Apply downloads the plain Terraform plan by artifact ID, not by runner path. The plan artifact is not encrypted and may contain sensitive values; restrict access to workflow runs and artifacts accordingly. The artifact expires after two days, so restart the workflow if it expires. If a release stops after establishing temporary runner connectivity, verify and clean up the temporary endpoints before leaving the environment idle.
+Once the updated workflows are on `main`, start a new run rather than rerunning an older one, which uses the original workflow revision. The old `<env>-connectivity` and `<env>-apply` environments and their `TERRAFORM_APPROVAL_CONFIGURED` variables are no longer used by new runs.
+
+Review the Terraform plan in the Plan job log before approving Apply. Plan and Apply use separate runner temp directories named by workflow run ID and attempt. Apply downloads the plain Terraform plan by artifact ID, not by runner path. The plan artifact is not encrypted and may contain sensitive values; restrict access to workflow runs and artifacts accordingly. The artifact expires after two days, so restart the workflow if it expires. If a release stops after establishing temporary runner connectivity, verify and clean up the temporary endpoints before leaving the environment idle.
 
 When updating Terraform providers, run `terraform providers lock -platform=linux_amd64 -platform=windows_amd64` from `src/infrastructure` and commit the resulting lock file. CI initializes Terraform with a read-only lock file for Plan and Apply.
 
