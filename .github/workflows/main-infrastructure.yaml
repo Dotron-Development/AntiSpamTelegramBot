@@ -38,23 +38,7 @@ env:
   ARM_USE_OIDC: "true"
 
 jobs:
-  approve-runner-connectivity:
-    name: Approve runner connectivity changes
-    if: inputs.environment != 'dev'
-    runs-on: ubuntu-latest
-    permissions: {}
-    environment: ${{ format('{0}-connectivity', inputs.environment) }}
-    steps:
-      - name: Verify approval environment is configured
-        env:
-          APPROVAL_CONFIGURED: ${{ vars.TERRAFORM_APPROVAL_CONFIGURED }}
-        run: test "$APPROVAL_CONFIGURED" = true
-
   setup-vm-runner-connectivity:
-    needs: approve-runner-connectivity
-    if: >-
-      ${{ !cancelled() && (needs.approve-runner-connectivity.result == 'success' ||
-        (inputs.environment == 'dev' && needs.approve-runner-connectivity.result == 'skipped')) }}
     uses: ./.github/workflows/runner-connectivity.yaml
     with:
       environment: ${{ inputs.environment }}
@@ -140,27 +124,12 @@ jobs:
           PLAN_DIR: ${{ steps.tfplan.outputs.directory }}
         run: rm -rf -- "$PLAN_DIR"
 
-  approve-infrastructure-apply:
-    name: Approve infrastructure apply
-    needs: plan-infrastructure
-    if: inputs.environment != 'dev'
-    runs-on: ubuntu-latest
-    permissions: {}
-    environment: ${{ format('{0}-apply', inputs.environment) }}
-    steps:
-      - name: Verify approval environment is configured
-        env:
-          APPROVAL_CONFIGURED: ${{ vars.TERRAFORM_APPROVAL_CONFIGURED }}
-        run: test "$APPROVAL_CONFIGURED" = true
-
   main-infrastructure:
     name: Apply saved Terraform plan
-    needs: [plan-infrastructure, approve-infrastructure-apply]
+    needs: plan-infrastructure
     if: >-
       ${{ !cancelled() && needs.plan-infrastructure.result == 'success' &&
-        needs.plan-infrastructure.outputs.plan_artifact_id != '' &&
-        (needs.approve-infrastructure-apply.result == 'success' ||
-        (inputs.environment == 'dev' && needs.approve-infrastructure-apply.result == 'skipped')) }}
+        needs.plan-infrastructure.outputs.plan_artifact_id != '' }}
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
     defaults:

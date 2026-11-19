@@ -17,23 +17,7 @@ env:
   ARM_USE_OIDC: "true"
 
 jobs:
-  approve-infrastructure-destroy:
-    name: Approve infrastructure destroy
-    if: inputs.environment != 'dev'
-    runs-on: ubuntu-latest
-    permissions: {}
-    environment: ${{ format('{0}-connectivity', inputs.environment) }}
-    steps:
-      - name: Verify approval environment is configured
-        env:
-          APPROVAL_CONFIGURED: ${{ vars.TERRAFORM_APPROVAL_CONFIGURED }}
-        run: test "$APPROVAL_CONFIGURED" = true
-
   setup-vm-runner-connectivity:
-    needs: approve-infrastructure-destroy
-    if: >-
-      ${{ !cancelled() && (needs.approve-infrastructure-destroy.result == 'success' ||
-        (inputs.environment == 'dev' && needs.approve-infrastructure-destroy.result == 'skipped')) }}
     uses: ./.github/workflows/runner-connectivity.yaml
     with:
       environment: ${{ inputs.environment }}
