@@ -3,7 +3,10 @@
 ### List published blob names, sizes and timestamps
 GET {{baseUrl}}/api/review/search-snapshots
 
-### Queue a rebuild (202 Accepted)
+### Look up the source channel linked to a discussion group
+GET {{baseUrl}}/api/review/search-snapshots/groups/-1009876543210/channel
+
+### Queue a rebuild by source channel ID (202 Accepted)
 POST {{baseUrl}}/api/review/search-snapshots/-1001234567890/reset
 
 ### Reject an invalid ID (400 Bad Request)

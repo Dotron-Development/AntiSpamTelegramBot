@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { ArrowRight, LoaderCircle, RefreshCw } from 'lucide-react'
+import { ArrowRight, LoaderCircle } from 'lucide-react'
 import type { ReviewChat } from '../api/client'
 import type { QueueQuery } from '../lib/workspace'
+import { ChatPicker } from './ChatPicker'
 
 export function QueryForm({ chats, chatId, endpoint, busy, chatsLoading, loading, onChatChange, onRefresh, onSubmit,
     submitLabel = 'Load queue', itemLabel = 'messages' }: {
@@ -14,15 +15,8 @@ export function QueryForm({ chats, chatId, endpoint, busy, chatsLoading, loading
         event.preventDefault()
         onSubmit({ chatId: chatId.trim(), pageSize })
     }} noValidate>
-        <div className="chat-field"><label htmlFor="chat-id">Chat</label>
-            <div className="chat-picker"><select id="chat-id" value={chatId} disabled={busy}
-                onChange={event => onChatChange(event.target.value)}>
-                <option value="">{chatsLoading ? 'All chats (loading catalog...)' : 'All chats'}</option>
-                {chats.map(chat => <option key={chat.chatId} value={chat.chatId}>{chat.name} ({chat.chatId})</option>)}
-            </select><button type="button" className="icon-button" title="Refresh chats" aria-label="Refresh chats"
-                disabled={busy} onClick={() => void onRefresh()}>
-                    <RefreshCw size={16} className={chatsLoading ? 'spin' : ''} /></button></div>
-        </div>
+        <ChatPicker chats={chats} chatId={chatId} busy={busy} chatsLoading={chatsLoading}
+            onChatChange={onChatChange} onRefresh={onRefresh} />
         <div className="page-size"><label htmlFor="page-size">Page size</label>
             <select id="page-size" value={pageSize} onChange={event => setPageSize(Number(event.target.value))}>
                 {[25, 50, 100, 250].map(size => <option key={size} value={size}>{size} {itemLabel}</option>)}

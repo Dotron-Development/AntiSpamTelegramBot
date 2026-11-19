@@ -1172,6 +1172,29 @@ public class ReviewFunctionsTests
         Assert.Empty(fixture.History);
     }
 
+    [Theory]
+    [InlineData("supergroup", -1009876543210, HttpStatusCode.OK)]
+    [InlineData("supergroup", null, HttpStatusCode.UnprocessableEntity)]
+    [InlineData("channel", -1009876543210, HttpStatusCode.UnprocessableEntity)]
+    public async Task ResolvesSnapshotChannelOnlyFromLinkedDiscussionGroups(string chatType, long? linkedChatId, HttpStatusCode expected)
+    {
+        using var fixture = new Fixture();
+        fixture.Telegram.ChatInfo = JsonSerializer.Serialize(new { id = -100, type = chatType, linked_chat_id = linkedChatId });
+
+        var response = await fixture.SnapshotFunctions.ResolveSearchSnapshotChannel(fixture.Request(), -100, default);
+
+        Assert.Equal(expected, response.StatusCode);
+        var call = Assert.Single(fixture.Telegram.Calls);
+        Assert.Equal("getchat", call.Method);
+        Assert.Equal(-100, call.Body.GetProperty("chat_id").GetInt64());
+        response.Body.Position = 0;
+        using var payload = await JsonDocument.ParseAsync(response.Body);
+        if (expected == HttpStatusCode.OK)
+            Assert.Equal("-1009876543210", payload.RootElement.GetProperty("channelId").GetString());
+        else
+            Assert.Contains("linked channel", payload.RootElement.GetProperty("error").GetString());
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly ServiceProvider services = new ServiceCollection()
@@ -1199,6 +1222,7 @@ public class ReviewFunctionsTests
         public TaskCompletionSource SpamChecked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public (long? ChatId, int PageSize, string? Token)? Query { get; private set; }
         public ReviewFunctions Functions { get; }
+        public SnapshotReviewFunctions SnapshotFunctions { get; }
         public AntiSpamBotWebHook Webhook { get; }
         public DetectorStub Detector { get; } = new();
         public CommandStub Commands { get; } = new();
@@ -1301,6 +1325,7 @@ public class ReviewFunctionsTests
                 CommandCooldown = TimeSpan.FromMinutes(5)
             });
             Functions = new ReviewFunctions(chatsRepository, probablySpamRepository, spamHashRepository, bot, botConfig);
+            SnapshotFunctions = new SnapshotReviewFunctions(null!, null!, bot);
             HistoryFunctions = new HistoryReviewFunctions(HistoryRepository, CreateRepository<ICommandCallsRepository>());
             var processor = new SpamMessageProcessor(NullLogger<SpamMessageProcessor>.Instance,
                 Detector, HistoryRepository, probablySpamRepository, messageCountRepository, spamHashRepository,
@@ -1335,6 +1360,7 @@ public class ReviewFunctionsTests
         public List<(string Method, JsonElement Body)> Calls { get; } = [];
         public int? DeleteErrorCode { get; set; }
         public string? DeleteErrorDescription { get; set; }
+        public string ChatInfo { get; set; } = "{\"id\":-100,\"type\":\"supergroup\",\"title\":\"Test\",\"permissions\":{\"can_send_messages\":true}}";
         private int nextMessageId = 99;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -1356,7 +1382,7 @@ public class ReviewFunctionsTests
             {
                 "restrictchatmember" or "deletemessage" => "true",
                 "getfile" => "{\"file_id\":\"photo\",\"file_unique_id\":\"unique\",\"file_path\":\"photos/test.jpg\"}",
-                "getchat" => "{\"id\":-100,\"type\":\"supergroup\",\"title\":\"Test\",\"permissions\":{\"can_send_messages\":true}}",
+                "getchat" => ChatInfo,
                 _ => $"{{\"message_id\":{nextMessageId++},\"date\":0,\"chat\":{{\"id\":-100,\"type\":\"supergroup\"}}}}"
             };
             return new HttpResponseMessage(HttpStatusCode.OK)

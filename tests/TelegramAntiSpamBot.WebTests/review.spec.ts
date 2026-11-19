@@ -158,6 +158,38 @@ async function openWorkspace(page: Page, { mockChats = true, loadQueue = true }:
   }
 }
 
+test('rebuilds the linked channel snapshot from the discussion group picker', async ({ page }) => {
+  const channelId = '-1009876543210'
+  const resets: string[] = []
+  await mockAuthentication(page)
+  await page.route('**/api/review/search-snapshots', route => route.fulfill({ json: [] }))
+  await page.route(`**/api/review/search-snapshots/groups/${chatId}/channel`, route => route.fulfill({ json: { channelId } }))
+  await page.route('**/api/review/search-snapshots/*/reset', route => {
+    expect(route.request().method()).toBe('POST')
+    resets.push(new URL(route.request().url()).pathname)
+    return route.fulfill({ status: 202 })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Search snapshots' }).click()
+  const group = page.getByLabel('Discussion group')
+  const channel = page.getByLabel('Channel ID')
+  const rebuild = page.getByRole('button', { name: 'Queue rebuild' })
+  await expect(rebuild).toBeDisabled()
+  await group.selectOption({ label: `Test group (${chatId})` })
+  await expect(channel).toHaveValue(channelId)
+  await expect(channel).not.toBeEditable()
+  await rebuild.click()
+  await expect(page.getByRole('status')).toContainText(`Rebuild queued for ${channelId}`)
+  await group.selectOption('')
+  await channel.fill('-1005555555555')
+  await rebuild.click()
+  await expect(page.getByRole('status')).toContainText('Rebuild queued for -1005555555555')
+  expect(resets).toEqual([
+    `/api/review/search-snapshots/${channelId}/reset`,
+    '/api/review/search-snapshots/-1005555555555/reset',
+  ])
+})
+
 test('connects after authentication, paginates, and does not persist access tokens in workspace storage', async ({ page }) => {
   const queries: string[] = []
   await page.route(apiRoute, async route => {

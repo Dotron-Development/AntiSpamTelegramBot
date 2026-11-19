@@ -127,7 +127,8 @@ function App() {
                 <button className="icon-button" title="Dismiss notification" aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={16} /></button>
             </div>}
 
-            {view === 'snapshots' ? <SearchSnapshots connection={connection} />
+            {view === 'snapshots' ? <SearchSnapshots connection={connection} chats={chats.chats}
+                chatsLoading={chats.loading} onRefreshChats={chats.refresh} />
                 : view === 'mention' ? <MentionPreview connection={connection} chats={chats.chats} chatId={chats.chatId}
                     chatsLoading={chats.loading} onChatChange={chats.setChatId} busy={locked}
                     onBusyChange={setMentionGenerating} onCopy={copy} />
