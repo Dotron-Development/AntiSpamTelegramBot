@@ -93,22 +93,41 @@ jobs:
             -target=azurerm_private_endpoint.data_storage_runner_pe \
             -target=azurerm_private_dns_a_record.keyvault_a_record \
             -target=azurerm_private_dns_a_record.data_storage_a_record
-          terraform show -json connectivity.tfplan | python3 -c '
-          import json, sys
-          allowed = {
-              "time_sleep.kv_dns_propagation": [["delete"]],
-              "time_sleep.data_storage_dns_propagation": [["delete"]],
-              "azurerm_private_endpoint.kv_runner_pe": [["delete"]],
-              "azurerm_private_endpoint.data_storage_runner_pe": [["delete"]],
-              "azurerm_private_dns_a_record.keyvault_a_record": [["update"]],
-              "azurerm_private_dns_a_record.data_storage_a_record": [["update"]],
-          }
-          for item in json.load(sys.stdin).get("resource_changes", []):
-              actions = item["change"]["actions"]
-              address = item["address"].removesuffix("[0]")
-              if actions not in [["no-op"], ["read"]] and actions not in allowed.get(address, []):
-                  sys.exit("Cleanup refused an unexpected infrastructure change: " + address)
-          '
+
+      - name: Verify runner connectivity cleanup plan
+        if: ${{ !inputs.enable_runner_endpoints }}
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { resolve } = require('node:path');
+            const { exitCode, stdout } = await exec.getExecOutput(
+              'terraform', ['show', '-json', 'connectivity.tfplan'],
+              { cwd: resolve(process.env.GITHUB_WORKSPACE, 'src', 'infrastructure'), silent: true, ignoreReturnCode: true }
+            );
+            if (exitCode !== 0) throw new Error(`terraform show failed (exit ${exitCode})`);
+
+            let plan;
+            try {
+              plan = JSON.parse(stdout);
+            } catch {
+              throw new Error('Could not parse the Terraform cleanup plan');
+            }
+
+            const allowed = new Map([
+              ['time_sleep.kv_dns_propagation', 'delete'],
+              ['time_sleep.data_storage_dns_propagation', 'delete'],
+              ['azurerm_private_endpoint.kv_runner_pe', 'delete'],
+              ['azurerm_private_endpoint.data_storage_runner_pe', 'delete'],
+              ['azurerm_private_dns_a_record.keyvault_a_record', 'update'],
+              ['azurerm_private_dns_a_record.data_storage_a_record', 'update'],
+            ]);
+            for (const { address, change: { actions } } of plan.resource_changes ?? []) {
+              const expected = allowed.get(address.endsWith('[0]') ? address.slice(0, -3) : address);
+              if (Array.isArray(actions) && actions.length === 1 &&
+                  (actions[0] === 'no-op' || actions[0] === 'read' ||
+                   (expected !== undefined && actions[0] === expected))) continue;
+              throw new Error(`Cleanup refused an unexpected infrastructure change: ${address}`);
+            }
 
       - name: Apply runner connectivity plan
         run: terraform apply connectivity.tfplan
