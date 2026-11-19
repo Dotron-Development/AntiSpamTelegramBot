@@ -883,7 +883,7 @@ test('table views handle empty pages, errors and retry without mutating data', a
   await expect(page.getByRole('alert')).toHaveCount(0)
 })
 
-test('mention preview sends question and only explicit reply context without Telegram actions', async ({ page }) => {
+test('mention preview sends question and optional reply context without chat history by default', async ({ page }) => {
   const requests: unknown[] = []
   await page.route('**/api/review/mention', route => {
     expect(route.request().method()).toBe('POST')
@@ -892,7 +892,7 @@ test('mention preview sends question and only explicit reply context without Tel
   })
   await openWorkspace(page, { loadQueue: false })
   await page.getByRole('tab', { name: 'Test mention', exact: true }).click()
-  await expect(page.getByLabel('Chat', { exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('Chat context', { exact: true })).toBeVisible()
   await page.getByLabel('Question', { exact: true }).fill('have any comments on that?')
   await page.getByLabel('Question author (optional)', { exact: true }).fill('Ben')
   await page.getByLabel('Include Telegram reply context').check()
@@ -911,6 +911,21 @@ test('mention preview sends question and only explicit reply context without Tel
   await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Mention answer' })).toBeVisible()
   expect(requests[1]).toEqual({ question: 'have any comments on that?', fromName: 'Ben' })
+})
+
+test('mention preview sends the selected chat for history context', async ({ page }) => {
+  let requestBody: unknown
+  await page.route('**/api/review/mention', route => {
+    requestBody = route.request().postDataJSON()
+    return route.fulfill({ contentType: 'application/json', body: '{"answer":"Context-aware answer."}' })
+  })
+  await openWorkspace(page, { loadQueue: false })
+  await page.getByRole('tab', { name: 'Test mention', exact: true }).click()
+  await page.getByLabel('Chat context', { exact: true }).selectOption(chatId)
+  await page.getByLabel('Question', { exact: true }).fill('What happened earlier?')
+  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Mention answer' })).toContainText('Context-aware answer.')
+  expect(requestBody).toEqual({ question: 'What happened earlier?', chatId })
 })
 
 test('mention preview handles failures and allows an explicit retry of a bare mention', async ({ page }) => {

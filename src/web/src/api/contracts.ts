@@ -109,6 +109,7 @@ export interface TablePage<T> {
 
 export interface MentionPreviewRequest {
   question: string
+  chatId?: string
   fromName?: string
   fromUsername?: string
   replyTo?: { name?: string; username?: string; text: string }

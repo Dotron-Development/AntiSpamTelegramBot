@@ -23,6 +23,15 @@ public sealed class MentionReviewFunctions(
             return await Error(request, HttpStatusCode.BadRequest, "Expected a valid mention preview JSON request.", cancellationToken);
         }
 
+        long? chatId = null;
+        if (input?.ChatId is { } chatValue)
+        {
+            if (!long.TryParse(chatValue, out var parsedChatId) || parsedChatId == 0)
+                return await Error(request, HttpStatusCode.BadRequest,
+                    "chatId must be a non-zero integer when provided.", cancellationToken);
+            chatId = parsedChatId;
+        }
+
         if (input?.Question is null || input.Question.Length > 4096 ||
             !ValidAuthor(input.FromName, input.FromUsername) ||
             (input.ReplyTo is { } reply &&
@@ -31,10 +40,13 @@ public sealed class MentionReviewFunctions(
                 "question and replyTo.text must be strings of at most 4096 characters; names at most 200 and usernames at most 64.",
                 cancellationToken);
 
+        MentionConversation? conversation = chatId is { } selectedChatId
+            ? new MentionConversation(selectedChatId, 0, DateTimeOffset.UtcNow, null)
+            : null;
         var mentionRequest = new MentionRequest(input.Question, Author(input.FromName, input.FromUsername),
             input.ReplyTo is { } replyTo
                 ? new HistoryMessageReply(0, Author(replyTo.Name, replyTo.Username), replyTo.Text!)
-                : null);
+                : null, conversation);
         MentionResponse generated;
         try
         {
@@ -71,6 +83,7 @@ public sealed class MentionReviewFunctions(
         return response;
     }
 
-    private sealed record PreviewRequest(string? Question, string? FromName, string? FromUsername, PreviewReply? ReplyTo);
+    private sealed record PreviewRequest(string? Question, string? FromName, string? FromUsername, PreviewReply? ReplyTo,
+        string? ChatId);
     private sealed record PreviewReply(string? Name, string? Username, string? Text);
 }

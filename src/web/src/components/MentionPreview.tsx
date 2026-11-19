@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { Copy, LoaderCircle, Sparkles } from 'lucide-react'
 import { previewMention } from '../api/client'
-import type { Connection } from '../api/client'
+import type { Connection, ReviewChat } from '../api/client'
 import { errorText } from '../lib/workspace'
 
 type Values = {
@@ -10,8 +10,9 @@ type Values = {
     includeReply: boolean; replyName: string; replyUsername: string; replyText: string
 }
 
-export function MentionPreview({ connection, busy, onBusyChange, onCopy }: {
+export function MentionPreview({ connection, chats, chatId, chatsLoading, onChatChange, busy, onBusyChange, onCopy }: {
     connection: Connection; busy: boolean; onBusyChange: (busy: boolean) => void;
+    chats: ReviewChat[]; chatId: string; chatsLoading: boolean; onChatChange: (chatId: string) => void;
     onCopy: (text: string) => Promise<void>
 }) {
     const { register, handleSubmit, control, formState: { isSubmitting } } = useForm<Values>({
@@ -35,6 +36,7 @@ export function MentionPreview({ connection, busy, onBusyChange, onCopy }: {
         try {
             const result = await previewMention(connection, {
                 question: values.question.trim(),
+                ...(chatId ? { chatId } : {}),
                 fromName: optional(values.fromName), fromUsername: optional(values.fromUsername),
                 ...(values.includeReply ? { replyTo: {
                     name: optional(values.replyName), username: optional(values.replyUsername), text: values.replyText,
@@ -50,9 +52,17 @@ export function MentionPreview({ connection, busy, onBusyChange, onCopy }: {
     }
 
     return <section className="mention-preview" aria-label="Mention command test">
-        <p className="mention-description">Test @botname without posting to Telegram or consuming command cooldown. Only an explicit reply is used as context; chat history is not read.</p>
+        <p className="mention-description">Test @botname without posting to Telegram or consuming command cooldown. Select a chat to let the agent retrieve relevant history when it needs context.</p>
         <form onSubmit={event => { void handleSubmit(generate)(event) }} onChange={() => { setAnswer(null); setError('') }}>
             <fieldset className="mention-fields" disabled={locked}>
+                <div className="mention-chat">
+                    <label htmlFor="mention-chat">Chat context</label>
+                    <select id="mention-chat" value={chatId} onChange={event => onChatChange(event.target.value)}>
+                        <option value="">No chat context</option>
+                        {chats.map(chat => <option key={chat.chatId} value={chat.chatId}>{chat.name} ({chat.chatId})</option>)}
+                    </select>
+                    {chatsLoading && <p className="mention-hint">Loading chats...</p>}
+                </div>
                 <label htmlFor="mention-question">Question</label>
                 <textarea id="mention-question" rows={4} maxLength={4096} placeholder="have any comments on that?"
                     aria-describedby="mention-question-hint" {...register('question')} />
