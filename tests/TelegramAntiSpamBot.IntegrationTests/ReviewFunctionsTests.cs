@@ -1329,7 +1329,7 @@ public class ReviewFunctionsTests
             HistoryFunctions = new HistoryReviewFunctions(HistoryRepository, CreateRepository<ICommandCallsRepository>());
             var processor = new SpamMessageProcessor(NullLogger<SpamMessageProcessor>.Instance,
                 Detector, HistoryRepository, probablySpamRepository, messageCountRepository, spamHashRepository,
-                spamStatsRepository, bot, new TelegramImageUrlResolver(token), botConfig);
+                spamStatsRepository, bot, botConfig);
             ICommandProcessor commands = reportCommands
                 ? new CommandProcessor([new ReportCommand(messageCountRepository,
                     processor, NullLogger<ReportCommand>.Instance)],
@@ -1366,6 +1366,8 @@ public class ReviewFunctionsTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var method = request.RequestUri!.Segments[^1].ToLowerInvariant();
+            if (request.Method == HttpMethod.Get && method == "test.jpg")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([0xff, 0xd8, 0xff, 0xd9]) };
             using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
             Calls.Add((method, document.RootElement.Clone()));
             if (method == "deletemessage" && DeleteErrorCode is { } errorCode)
@@ -1403,8 +1405,11 @@ public class ReviewFunctionsTests
         public TaskCompletionSource ClassificationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public string ImageContent { get; set; } = "OCR \"quoted\"\nsecond line";
         public string ImageDescription { get; set; } = string.Empty;
-        public Task<ImageAnalysisResult> ExtractImageText(string imageUrl) =>
-            Task.FromResult(new ImageAnalysisResult { TextOnImage = ImageContent, ImageDescription = ImageDescription });
+        public Task<ImageAnalysisResult> ExtractImageText(BinaryData jpeg)
+        {
+            Assert.Equal(new byte[] { 0xff, 0xd8, 0xff, 0xd9 }, jpeg.ToArray());
+            return Task.FromResult(new ImageAnalysisResult { TextOnImage = ImageContent, ImageDescription = ImageDescription });
+        }
         public bool IsReported { get; private set; }
         public int UserMessageCount { get; private set; }
         public Task<SpamRequestResult> IsSpamAsync(MessagePayload userMessage, int userMessagesCount, bool isReported = false)
