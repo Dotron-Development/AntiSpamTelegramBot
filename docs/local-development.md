@@ -10,7 +10,7 @@ This guide uses PowerShell on Windows. Running locally does not run Terraform or
 
 ## 1. Install the prerequisites
 
-- .NET 10 SDK and Azure Functions Core Tools v4 with .NET 10 isolated-worker support.
+- .NET 11 SDK and Azure Functions Core Tools v4 with .NET 11 isolated-worker support.
 - Node.js 24 LTS and npm.
 - Azurite (the VS Code extension or CLI) and Azure Storage Explorer to create local storage resources.
 - For real Telegram sign-in: a dedicated test bot token and your numeric Telegram user ID. For AI features, use a development Azure AI endpoint and deployment names, and sign in with `az login` using an account with inference access, or use a development API key.

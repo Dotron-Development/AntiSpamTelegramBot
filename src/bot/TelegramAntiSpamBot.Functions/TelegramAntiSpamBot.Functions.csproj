@@ -1,11 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
-    <OutputType>Exe</OutputType>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+﻿<Project Sdk="Azure.Functions.Sdk">
 
 	<ItemGroup>
 		<InternalsVisibleTo Include="TelegramAntiSpamBot.IntegrationTests" />
@@ -17,11 +10,9 @@
 		<PackageReference Include="Microsoft.ApplicationInsights.WorkerService" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" />
-		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Timer" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Queues" />
 		<PackageReference Include="Azure.Storage.Queues" />
-		<PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" />
 		<PackageReference Include="Telegram.Bot" />
 	</ItemGroup>
 	<ItemGroup>

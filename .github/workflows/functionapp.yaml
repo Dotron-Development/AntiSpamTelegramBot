@@ -26,7 +26,7 @@ permissions:
 env:
   AZURE_FUNCTIONAPP_PACKAGE_PATH: "src/bot/TelegramAntiSpamBot.Functions/published"
   WORKING_DIRECTORY: src/bot/TelegramAntiSpamBot.Functions
-  DOTNET_VERSION: "10.0.x"
+  DOTNET_VERSION: "11.0.x"
   DOTNET_INSTALL_DIR: "./.dotnet"
 
 jobs:
