@@ -74,7 +74,7 @@ variable "disable_public_access" {
 }
 
 variable "enable_runner_endpoints" {
-  description = "Create temporary runner private endpoints during deployment; disable them during cleanup."
+  description = "Create temporary runner private endpoints and shared DNS records during deployment; disable them during cleanup."
   type        = bool
   default     = true
 }
