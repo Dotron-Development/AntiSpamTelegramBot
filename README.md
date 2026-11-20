@@ -15,8 +15,10 @@ Use `dev` for testing and `prod` for production. Keep their Telegram bots, data 
 1. Create the bots through BotFather and record their tokens and usernames.
 2. Add each bot to its target groups and grant permission to receive messages, delete messages and restrict members.
 3. Configure Telegram privacy mode as needed for the bot to receive group messages.
-4. If using a moderation archive chat, add the bot there and record its chat ID.
+4. If using a moderation archive chat, add the bot there and set `TelegramBotConfiguration__ForwardSpamToChatId` to its ID. The bot forwards spam there but ignores incoming updates from that chat, including commands, edits, and channel posts. They are not recorded in history or indexed.
 5. Generate a separate webhook header value for each environment and store it as `TELEGRAM_BOT_SECRET_HEADER` in GitHub.
+
+For spam detected by the model, the bot applies moderation before saving the review record. If review storage fails, the message can already be deleted and the sender restricted.
 
 ## 3. Prepare Azure and the Runner
 
@@ -140,7 +142,9 @@ one-minute evaluation frequency.
 
 The `Vectors` repository in Persistence stores post titles and binary vector chunks in the bot's data storage account. The Search project reuses `OpenAiServicesConfiguration` for the endpoint and credentials; `OpenAiServicesConfiguration__SearchEmbeddingDeployment` selects the deployment. The index uses `text-embedding-3-large` version 1 (3,072 dimensions).
 
-The Telegram webhook queues only automatic channel forwards (and their edits) in discussion groups with text or a caption. It uses the original channel ID and post ID from `forward_origin`, not the discussion copy's IDs, so channel archive imports can use the same index keys. Forwards without a channel origin are skipped. `IndexChannelPost` reads `search-index`, batches paragraph-based fragments for embeddings, and atomically replaces the post vectors. Duplicate or stale jobs do not rewrite vectors. Failed deliveries are retried by the Functions host and move to `search-index-poison` after the retry limit; jobs, including poison messages, carry temporary source text. After indexing, the worker schedules a delayed `reset-snapshot` message. `RebuildSearchSnapshot` assembles the channel's `Vectors` partition into a checksummed binary snapshot and publishes it as `<channel-id>` (no extension) in the private `search-snapshots` container. Pending requests covered by an already-built snapshot are skipped; exhausted retries go to `reset-snapshot-poison`.
+Automatic copies of channel posts in discussion groups (including edits) bypass commands, spam checks, photo analysis, and message history. The webhook still queues them for indexing when they have a channel `forward_origin` and nonblank text or a caption, and waits for the write before acknowledging Telegram. Index keys use the original channel and post IDs, not the discussion copy's IDs. Telegram's service sender (`777000`) also bypasses moderation, but its ID alone does not qualify a message for indexing. User forwards and comments follow the normal moderation path; direct channel posts still go through the usual history processing.
+
+`IndexChannelPost` reads `search-index`, batches paragraph-based fragments for embeddings, and atomically replaces the post vectors. Duplicate or stale jobs do not rewrite vectors. Failed deliveries are retried by the Functions host and move to `search-index-poison` after the retry limit; jobs, including poison messages, carry temporary source text. After indexing, the worker schedules a delayed `reset-snapshot` message. `RebuildSearchSnapshot` assembles the channel's `Vectors` partition into a checksummed binary snapshot and publishes it as `<channel-id>` (no extension) in the private `search-snapshots` container. Pending requests covered by an already-built snapshot are skipped; exhausted retries go to `reset-snapshot-poison`.
 
 In **Search snapshots**, select a discussion group from the shared chat catalog. The bot looks up the linked source channel in Telegram and displays its ID before a rebuild can be queued. If the group is missing from the catalog, Telegram cannot look it up, or it has no linked channel, enter the source channel ID manually. You can rebuild a channel with an existing index even if it has no snapshot yet. Refresh the blob list after the worker finishes. A channel with no indexed posts does not produce a blob.
 

@@ -14,26 +14,25 @@ namespace TelegramAntiSpamBot.Functions
             {
                 var update = JsonSerializer.Deserialize<Update>(req.Body, JsonBotAPI.Options);
 
-                var message = ExtractMessageFromUpdate(update);
-                if (message is null)
+                if (update is null || ExtractMessageFromUpdate(update) is not { } message ||
+                    message.Chat.Id == botConfig.Value.ForwardSpamToChatId)
                     return req.CreateResponse(HttpStatusCode.NoContent);
-
-                if (update is not null && message.Chat.Id != botConfig.Value.ForwardSpamToChatId &&
-                    TelegramPostIndexJob.FromUpdate(update) is { } job)
-                    await indexQueue.EnqueueAsync(job, req.FunctionContext.CancellationToken);
-
-                var registerChatTask = RegisterChatAsync(update);
 
                 try
                 {
-                    if (update is not null && commandProcessor.IsCommand(update.Message?.Text))
+                    if (TelegramMessageSource.IsServiceOrAutomaticForward(message))
+                    {
+                        if (TelegramPostIndexJob.FromUpdate(update) is { } job)
+                            await indexQueue.EnqueueAsync(job, req.FunctionContext.CancellationToken);
+                    }
+                    else if (commandProcessor.IsCommand(update.Message?.Text))
                         await commandProcessor.ProcessCommand(update);
                     else
-                        await messageProcessor.ProcessMessageAsync(message, update!.Type, update.Id);
+                        await messageProcessor.ProcessMessageAsync(message, update.Type, update.Id);
                 }
                 finally
                 {
-                    await registerChatTask;
+                    await RegisterChatAsync(message.Chat);
                 }
 
                 return req.CreateResponse(HttpStatusCode.NoContent);
@@ -45,12 +44,8 @@ namespace TelegramAntiSpamBot.Functions
             }
         }
 
-        private async Task RegisterChatAsync(Update? update)
+        private async Task RegisterChatAsync(Chat chat)
         {
-            var chat = ExtractMessageFromUpdate(update)?.Chat;
-            if (chat is null || chat.Id == botConfig.Value.ForwardSpamToChatId)
-                return;
-
             try
             {
                 var name = chat.Title ?? string.Join(" ", new[] { chat.FirstName, chat.LastName }
@@ -65,7 +60,7 @@ namespace TelegramAntiSpamBot.Functions
             }
         }
 
-        private static Message? ExtractMessageFromUpdate(Update? update)
+        private static Message? ExtractMessageFromUpdate(Update update)
         {
             return update switch
             {
