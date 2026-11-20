@@ -68,7 +68,7 @@ test('DANGER clears only the selected chat history after explicit confirmation',
     return route.fulfill({ contentType: 'application/json', body: '{"messages":[],"continuationToken":null}' })
   })
   await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await openSection(page, 'Message history')
   const danger = page.getByRole('button', { name: 'DANGER: Clear chat history', exact: true })
   await expect(danger).toBeDisabled()
   await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
@@ -86,11 +86,10 @@ test('DANGER clears only the selected chat history after explicit confirmation',
     await expect.poll(() => deletions).toBe(1)
     await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled()
     await expect(dialog.getByRole('button', { name: 'Delete chat history', exact: true })).toBeDisabled()
-    await expect(page.getByRole('tab', { name: 'Review queue', exact: true })).toBeDisabled()
   } finally { release() }
   await expect(dialog).toHaveCount(0)
   await expect(page.getByRole('status')).toContainText(`Message history cleared for chat ${chatId}`)
-  await expect(page.getByRole('region', { name: 'Message history table' })).toContainText('No records loaded.')
+  await expect(page.getByRole('region', { name: 'Message history records' })).toContainText('No records loaded.')
   expect(deletions).toBe(1)
 })
 
@@ -104,7 +103,7 @@ test('failed history deletion warns about partial results and is never retried a
     return route.fulfill({ contentType: 'application/json', body: '{"messages":[],"continuationToken":null}' })
   })
   await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await openSection(page, 'Message history')
   await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
   await page.getByRole('button', { name: 'DANGER: Clear chat history', exact: true }).click()
   const dialog = page.getByRole('dialog')
@@ -127,7 +126,7 @@ for (const sdkLoaded of [false, true]) {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Open in Telegram' })).toBeVisible()
     await expect(page.getByText('Open the private chat with the bot', { exact: false })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Load queue' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Load records' })).toHaveCount(0)
     expect(apiCalls).toBe(0)
   })
 }
@@ -146,7 +145,7 @@ for (const status of [401, 403, 200]) {
       : status === 403 ? 'Access denied' : 'Review unavailable' })).toBeVisible()
     await expect(page.getByRole('alert')).toContainText(status === 401 ? 'Your Telegram launch is invalid or expired'
       : status === 403 ? 'You do not have access' : 'unexpected access response')
-    await expect(page.getByRole('button', { name: 'Load queue' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Load records' })).toHaveCount(0)
     expect(checks).toBe(1)
     expect(apiCalls).toBe(0)
   })
@@ -178,38 +177,88 @@ async function openWorkspace(page: Page, { mockChats = true, loadQueue = true }:
   await expect(page.getByLabel('Function key', { exact: false })).toHaveCount(0)
   if (loadQueue) {
     await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
-    await page.getByRole('button', { name: 'Load queue' }).click()
+    await page.getByRole('button', { name: 'Load records' }).click()
   }
 }
 
-test('rebuilds the linked channel snapshot from the discussion group picker', async ({ page }) => {
+async function openSection(page: Page, name: string) {
+  await page.getByRole('button', { name: 'Menu', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Workspace sections' }).getByRole('button', { name, exact: true }).click()
+}
+
+test('uses one shared picker and loads only the selected group snapshot', async ({ page }) => {
   const channelId = '-1009876543210'
+  const groupLookups: string[] = []
+  const queries: string[] = []
   const resets: string[] = []
-  await page.route('**/api/review/search-snapshots', route => route.fulfill({ json: [] }))
-  await page.route(`**/api/review/search-snapshots/groups/${chatId}/channel`, route => route.fulfill({ json: { channelId } }))
+  await page.route('**/api/review/search-snapshots?*', route => {
+    queries.push(new URL(route.request().url()).searchParams.get('channelId')!)
+    return route.fulfill({ json: queries.length === 1 ? [] : [
+      { name: channelId, sizeBytes: 1048576, lastModified: '2026-10-31T12:00:00Z' },
+      { name: '-1002222222222', sizeBytes: 2097152, lastModified: '2026-10-31T12:00:00Z' },
+    ] })
+  })
+  await page.route(`**/api/review/search-snapshots/groups/${chatId}/channel`, route => {
+    groupLookups.push(new URL(route.request().url()).pathname)
+    return route.fulfill({ json: { channelId } })
+  })
   await page.route('**/api/review/search-snapshots/*/reset', route => {
     expect(route.request().method()).toBe('POST')
     resets.push(new URL(route.request().url()).pathname)
     return route.fulfill({ status: 202 })
   })
   await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Search snapshots' }).click()
-  const group = page.getByLabel('Discussion group')
-  const channel = page.getByLabel('Channel ID')
-  const rebuild = page.getByRole('button', { name: 'Queue rebuild' })
-  await expect(rebuild).toBeDisabled()
-  await group.selectOption({ label: `Test group (${chatId})` })
-  await expect(channel).toHaveValue(channelId)
-  await expect(channel).not.toBeEditable()
-  await rebuild.click()
-  await expect(page.getByRole('status')).toContainText(`Rebuild queued for ${channelId}`)
-  await group.selectOption('')
-  await channel.fill('-1005555555555')
-  await rebuild.click()
-  await expect(page.getByRole('status')).toContainText('Rebuild queued for -1005555555555')
-  expect(resets).toEqual([
-    `/api/review/search-snapshots/${channelId}/reset`,
-    '/api/review/search-snapshots/-1005555555555/reset',
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
+  await openSection(page, 'Snapshots')
+  await expect(page.getByRole('combobox')).toHaveCount(1)
+  await expect(page.getByLabel('Discussion group')).toHaveValue(chatId)
+  await expect(page.getByRole('textbox')).toHaveCount(0)
+  expect(groupLookups).toEqual([])
+  expect(queries).toEqual([])
+  const load = page.getByRole('button', { name: 'Load snapshot' })
+  await load.click()
+  await expect(page.getByText('No snapshot published yet.')).toBeVisible()
+  await page.getByRole('button', { name: 'Queue rebuild' }).click()
+  await expect(page.getByRole('status')).toContainText('Rebuild queued.')
+  await load.click()
+  await expect(page.getByText('1.00 MiB', { exact: false })).toBeVisible()
+  await expect(page.getByText('2.00 MiB', { exact: false })).toHaveCount(0)
+  expect(queries).toEqual([channelId, channelId])
+  expect(resets).toEqual([`/api/review/search-snapshots/${channelId}/reset`])
+})
+
+test('requires a chat and clears stale cards and continuation when switching chats', async ({ page }) => {
+  const otherChat = '-1005555555555'
+  const queries: URL[] = []
+  await page.route(apiRoute, route => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/chats')) {
+      const other = { ChatId: Number(otherChat), Name: 'Other group', LastSeenUtc: '2026-10-25T00:00:00Z' }
+      return route.fulfill({ json: { Chats: [...JSON.parse(chatPage).Chats, other], ContinuationToken: null } })
+    }
+    queries.push(url)
+    const body = url.searchParams.get('chatId') === chatId ? firstPage : lastPage.replace(chatId, otherChat)
+    return route.fulfill({ contentType: 'application/json', body })
+  })
+  await openWorkspace(page, { mockChats: false, loadQueue: false })
+  const chat = page.getByLabel('Chat', { exact: true })
+  const load = page.getByRole('button', { name: 'Load records' })
+  await expect(chat).toBeEnabled()
+  await expect(load).toBeDisabled()
+  await expect(page.getByLabel('Page size')).toHaveCount(0)
+  await chat.selectOption(chatId)
+  expect(queries).toHaveLength(0)
+  await load.click()
+  await expect(page.getByRole('heading', { name: 'Alice Smith' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Load more' })).toBeVisible()
+  await chat.selectOption(otherChat)
+  await expect(page.getByRole('heading', { name: 'Alice Smith' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0)
+  expect(queries).toHaveLength(1)
+  await load.click()
+  await expect(page.getByRole('heading', { name: 'Bob Jones' })).toBeVisible()
+  expect(queries.map(url => [...url.searchParams])).toEqual([
+    [['chatId', chatId], ['pageSize', '100']], [['chatId', otherChat], ['pageSize', '100']],
   ])
 })
 
@@ -224,7 +273,7 @@ test('connects after authentication, paginates, and does not persist initData in
   })
   await openWorkspace(page)
   await expect(page.getByRole('heading', { name: 'Alice Smith' })).toBeVisible()
-  await expect(page.locator('.metadata')).toContainText(userId)
+  await expect(page.getByRole('listitem').first()).toContainText(userId)
   await expect(page.locator(`[title="${ticks}"]`)).toContainText('1 Jan 2025, 00:00')
   await expect(page.locator('.message-text').first()).toHaveText('Hello team!\n<em>Not HTML</em>')
   await expect(page.locator('.message-text em')).toHaveCount(0)
@@ -232,7 +281,7 @@ test('connects after authentication, paginates, and does not persist initData in
   await page.getByRole('button', { name: 'Load more', exact: true }).click()
   await expect(page.locator('.message-row')).toHaveCount(2)
   expect(new URL(queries[1]).searchParams.get('continuationToken')).toBe('next+/= page')
-  expect(new URL(queries[0]).searchParams.get('pageSize')).toBe('50')
+  expect(queries.map(url => new URL(url).searchParams.get('pageSize'))).toEqual(['100', '100'])
   expect(new URL(queries[0]).origin).toBe('https://review.example.test')
   expect(new URL(queries[0]).pathname).toBe('/api/review/messages')
   const storage = await page.evaluate(() => ({ local: { ...localStorage }, session: { ...sessionStorage } }))
@@ -241,7 +290,7 @@ test('connects after authentication, paginates, and does not persist initData in
   await page.reload()
   await expect(page.getByLabel('Chat', { exact: true })).toHaveValue(chatId)
   await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
-  await page.getByRole('button', { name: 'Load queue' }).click()
+  await page.getByRole('button', { name: 'Load records' }).click()
   await expect(page.locator('.message-row')).toHaveCount(1)
 })
 
@@ -262,7 +311,7 @@ test('parses agreed chat and message contracts without losing integer precision'
   await openWorkspace(page, { mockChats: false })
   await expect(page.getByLabel('Chat', { exact: true })).toHaveValue(chatId)
   await expect(page.getByRole('heading', { name: 'Alice Smith' })).toBeVisible()
-  await expect(page.locator('.metadata')).toContainText(userId)
+  await expect(page.getByRole('listitem').first()).toContainText(userId)
   await expect(page.locator(`[title="${ticks}"]`)).toContainText('1 Jan 2025, 00:00')
   await page.getByRole('button', { name: 'Load more', exact: true }).click()
   await expect(page.locator('.message-row')).toHaveCount(2)
@@ -271,113 +320,28 @@ test('parses agreed chat and message contracts without losing integer precision'
   expect(messageTokens).toEqual([null, 'next+/= page'])
 })
 
-test('not-spam returns a decision, then restrictions can be removed independently', async ({ page }) => {
+test('not spam submits one decision and removes only the reviewed card', async ({ page }) => {
   const mutations: { path: string; body: string | null }[] = []
   await page.route(apiRoute, async route => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ contentType: 'application/json', body: firstPage })
+      const body = `{"Messages":[${messageJSON},${secondMessageJSON}],"ContinuationToken":null}`
+      await route.fulfill({ contentType: 'application/json', body })
     } else {
       mutations.push({ path: new URL(route.request().url()).pathname, body: route.request().postData() })
       await route.fulfill({ status: 204 })
     }
   })
   await openWorkspace(page)
-  await page.getByRole('button', { name: 'Not spam', exact: true }).click()
+  const cards = page.getByRole('list', { name: 'Pending messages' }).getByRole('listitem')
+  await expect(cards).toHaveCount(2)
+  await cards.filter({ hasText: 'Alice Smith' }).getByRole('button', { name: 'Not spam', exact: true }).click()
   expect(mutations).toHaveLength(0)
   await page.getByRole('button', { name: 'Confirm not spam', exact: true }).click()
-  await expect(page.locator('.message-row')).toHaveCount(0)
-  await expect(page.getByRole('status')).toContainText('Saved text returned to chat')
+  await expect(cards).toHaveCount(1)
+  await expect(cards.first()).toContainText('Bob Jones')
+  await expect(page.getByRole('status')).toContainText('Marked as not spam.')
   expect(mutations).toEqual([{ path: `/api/review/messages/${chatId}/7`, body: '{"isSpam":false}' }])
-  await page.getByRole('region', { name: 'Last review' }).getByRole('button', { name: 'Remove restrictions' }).click()
-  await expect(page.getByRole('dialog').getByLabel('User ID', { exact: true })).toHaveValue(userId)
-  await page.getByRole('dialog').getByRole('button', { name: 'Remove restrictions', exact: true }).click()
-  await expect(page.getByRole('status')).toContainText(`Restrictions removed for user ${userId}`)
-  expect(mutations[1].path).toBe(`/api/review/restrictions/${chatId}/${userId}`)
-  expect(mutations[1].body).toBeFalsy()
-})
-
-test('batch spam collects every filtered page first and reports sequential progress without duplicates', async ({ page }) => {
-  const queries: URL[] = []
-  const mutations: string[] = []
-  const releases: (() => void)[] = []
-  await page.route(apiRoute, async route => {
-    const url = new URL(route.request().url())
-    if (route.request().method() === 'GET') {
-      queries.push(url)
-      const token = url.searchParams.get('continuationToken')
-      const body = token === null ? firstPage : token === 'next+/= page'
-        ? '{"Messages":[],"ContinuationToken":"last"}'
-        : `{"Messages":[${messageJSON},${secondMessageJSON}],"ContinuationToken":null}`
-      return route.fulfill({ contentType: 'application/json', body })
-    }
-    mutations.push(url.pathname)
-    expect(route.request().postDataJSON()).toEqual({ isSpam: true })
-    expect(queries.slice(1).map(query => query.searchParams.get('continuationToken'))).toEqual([null, 'next+/= page', 'last'])
-    await new Promise<void>(resolve => { releases.push(resolve) })
-    return route.fulfill({ status: 204 })
-  })
-  await openWorkspace(page)
-  await page.getByLabel('Chat', { exact: true }).selectOption('')
-  await page.getByRole('button', { name: 'Mark all as spam', exact: true }).click()
-  const dialog = page.getByRole('dialog')
-  await expect(dialog).toContainText(`Chat ${chatId}`)
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-  expect(mutations).toHaveLength(0)
-  await page.getByRole('button', { name: 'Mark all as spam', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true }).click()
-  try {
-    await expect.poll(() => mutations.length).toBe(1)
-    await expect(dialog.getByRole('status')).toContainText('0/2')
-    await expect(page.getByRole('tab', { name: 'Message history', exact: true })).toBeDisabled()
-    releases[0]()
-    await expect.poll(() => mutations.length).toBe(2)
-    await expect(dialog.getByRole('status')).toContainText('1/2')
-    await expect(page.locator('.message-row')).toHaveCount(0)
-    releases[1]()
-    await expect(dialog.getByRole('status')).toContainText('2/2')
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
-    await expect(page.getByRole('status')).toContainText('Marked 2 messages as spam')
-    await expect(page.getByRole('button', { name: 'Load more', exact: true })).toHaveCount(0)
-    expect(mutations).toEqual([`/api/review/messages/${chatId}/7`, `/api/review/messages/${chatId}/8`])
-    expect(queries.every(query => query.searchParams.get('chatId') === chatId)).toBe(true)
-  } finally { releases.forEach(release => release()) }
-})
-
-test('batch spam sends no decisions if a later queue page fails', async ({ page }) => {
-  let mutations = 0
-  await page.route(apiRoute, route => {
-    if (route.request().method() !== 'GET') { mutations++; return route.fulfill({ status: 204 }) }
-    const token = new URL(route.request().url()).searchParams.get('continuationToken')
-    return token ? route.fulfill({ status: 503 }) : route.fulfill({ contentType: 'application/json', body: firstPage })
-  })
-  await openWorkspace(page)
-  await page.getByRole('button', { name: 'Mark all as spam', exact: true }).click()
-  const dialog = page.getByRole('dialog')
-  await dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true }).click()
-  await expect(dialog.getByRole('alert')).toContainText('No spam decisions were sent')
-  await expect(dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true })).toBeDisabled()
-  expect(mutations).toBe(0)
-  await expect(page.locator('.message-row')).toHaveCount(1)
-})
-
-test('batch spam stops on the first decision error and preserves completed progress', async ({ page }) => {
-  const mutations: string[] = []
-  const third = secondMessageJSON.replace('"MessageId":8', '"MessageId":9')
-  await page.route(apiRoute, route => {
-    if (route.request().method() === 'GET')
-      return route.fulfill({ contentType: 'application/json', body: `{"Messages":[${messageJSON},${secondMessageJSON},${third}],"ContinuationToken":null}` })
-    mutations.push(new URL(route.request().url()).pathname)
-    return route.fulfill({ status: mutations.length === 2 ? 503 : 204 })
-  })
-  await openWorkspace(page)
-  await page.getByRole('button', { name: 'Mark all as spam', exact: true }).click()
-  const dialog = page.getByRole('dialog')
-  await dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true }).click()
-  await expect(dialog.getByRole('alert')).toContainText('Batch stopped at 1/3')
-  await expect(dialog.getByRole('status')).toContainText('1/3')
-  await expect(page.locator('.message-row')).toHaveCount(2)
-  expect(mutations).toEqual([`/api/review/messages/${chatId}/7`, `/api/review/messages/${chatId}/8`])
-  await expect(dialog.getByRole('button', { name: 'Confirm mark all as spam', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Remove restrictions' })).toHaveCount(0)
 })
 
 test('spam confirms once and does not implicitly remove restrictions', async ({ page }) => {
@@ -396,7 +360,7 @@ test('spam confirms once and does not implicitly remove restrictions', async ({ 
   expect(bodies).toHaveLength(0)
   await page.getByRole('button', { name: 'Spam', exact: true }).click()
   await page.getByRole('button', { name: 'Confirm spam', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'All clear for now' })).toBeVisible()
+  await expect(page.getByText('No records found.')).toBeVisible()
   expect(bodies).toEqual([{ isSpam: true }])
 })
 
@@ -417,7 +381,7 @@ for (const status of [401, 403]) {
     await expect(page.getByRole('alert')).toContainText(status === 401
       ? 'reopen it from the menu in the private bot chat' : 'You do not have access')
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Load queue' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Load records' })).toHaveCount(0)
     await page.getByRole('button', { name: 'Close Mini App' }).click()
     await expect(page.locator('html')).toHaveAttribute('data-telegram-closed', 'true')
     expect(checks).toBe(1)
@@ -445,9 +409,9 @@ test('continues after an empty page with a continuation token', async ({ page })
   await page.route(apiRoute, route => route.fulfill({ contentType: 'application/json',
     body: ++calls === 1 ? '{"Messages":[],"ContinuationToken":"next"}' : emptyPage }))
   await openWorkspace(page)
-  await expect(page.getByRole('heading', { name: 'More messages available' })).toBeVisible()
+  await expect(page.getByText('No records found.')).toBeVisible()
   await page.getByRole('button', { name: 'Load more' }).click()
-  await expect(page.getByRole('heading', { name: 'All clear for now' })).toBeVisible()
+  await expect(page.getByText('No records found.')).toBeVisible()
 })
 
 test('renders desktop and mobile without horizontal overflow or clipped action labels', async ({ page }, testInfo) => {
@@ -457,7 +421,12 @@ test('renders desktop and mobile without horizontal overflow or clipped action l
   for (const width of [1440, 768, 375, 320]) {
     await page.setViewportSize({ width, height: 900 })
     await page.evaluate(() => document.fonts.ready)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    const overflow = await page.evaluate(() => ({
+      width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+      elements: [...document.querySelectorAll('#root *')].filter(element => element.getBoundingClientRect().right > innerWidth)
+        .map(element => `${element.tagName}.${element.className}`),
+    }))
+    expect(overflow.scrollWidth, JSON.stringify(overflow)).toBeLessThanOrEqual(width)
     expect(await page.locator('.button').evaluateAll(buttons => buttons.filter(button =>
       button.getBoundingClientRect().width > 0 && button.scrollWidth > button.clientWidth + 1,
     ).map(button => button.textContent))).toEqual([])
@@ -520,23 +489,21 @@ test('browser calls a separate Function origin directly with CORS preflight', { 
   const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`
   try {
     await page.goto('/', { waitUntil: 'commit' })
-    await page.evaluate(async ({ endpoint, initData, chatId, userId }) => {
+    await page.evaluate(async ({ endpoint, initData, chatId }) => {
       const modulePath = '/src/api/client.ts'
       const api = await import(modulePath)
       const connection = { endpoint, initData, onAccessFailure() {} }
       await api.checkReviewAccess(connection, new AbortController().signal)
       await api.getChats(connection, null)
-      const result = await api.getMessages(connection, chatId, 50, null)
-      await api.reviewMessage(connection, result.messages[0], false)
-      await api.removeRestrictions(connection, chatId, userId)
-    }, { endpoint, initData, chatId, userId })
+      const result = await api.getMessages(connection, chatId, null, new AbortController().signal)
+      await api.reviewMessage(connection, result.rows[0], false)
+    }, { endpoint, initData, chatId })
     const origin = 'http://127.0.0.1:5179'
     expect(received).toEqual([
       { url: '/api/review/access', key: authorization, method: 'GET', body: '', origin },
-      { url: '/api/review/chats?pageSize=1000', key: authorization, method: 'GET', body: '', origin },
-      { url: `/api/review/messages?chatId=${chatId}&pageSize=50`, key: authorization, method: 'GET', body: '', origin },
+      { url: '/api/review/chats?pageSize=100', key: authorization, method: 'GET', body: '', origin },
+      { url: `/api/review/messages?chatId=${chatId}&pageSize=100`, key: authorization, method: 'GET', body: '', origin },
       { url: `/api/review/messages/${chatId}/7`, key: authorization, method: 'POST', body: '{"isSpam":false}', origin },
-      { url: `/api/review/restrictions/${chatId}/${userId}`, key: authorization, method: 'POST', body: '', origin },
     ])
     expect(preflights.some(headers => headers.includes('authorization'))).toBe(true)
     expect(preflights.some(headers => headers.includes('content-type'))).toBe(true)
@@ -552,7 +519,7 @@ test('API_URL from the test environment overrides a previously remembered endpoi
   })
   await page.route(apiRoute, route => route.fulfill({ contentType: 'application/json', body: emptyPage }))
   await openWorkspace(page)
-  await expect(page.getByRole('heading', { name: 'All clear for now' })).toBeVisible()
+  await expect(page.getByText('No records found.')).toBeVisible()
 })
 
 test('network failures include an English CORS diagnostic', async ({ page }) => {
@@ -575,7 +542,7 @@ test('loads all chat pages, including empty pages, and refreshes names', async (
   await openWorkspace(page, { mockChats: false })
   await expect(page.getByLabel('Chat', { exact: true })).toHaveValue(chatId)
   expect(tokens).toEqual([null, 'opaque+/='])
-  await page.getByRole('button', { name: 'Refresh chats', exact: true }).click()
+  await openSection(page, 'Refresh chats')
   await expect.poll(() => tokens.length).toBe(3)
   await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
 })
@@ -590,224 +557,13 @@ test('empty catalog and catalog errors do not automatically load message queues'
   await openWorkspace(page, { mockChats: false, loadQueue: false })
   await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
   await expect(page.getByLabel('Chat', { exact: true })).toHaveValue('')
-  await page.getByRole('button', { name: 'Refresh chats', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Load records' })).toBeDisabled()
+  await openSection(page, 'Refresh chats')
   await expect(page.getByRole('alert')).toContainText('Request failed (HTTP 503).')
   expect(calls).toBe(2)
 })
 
-test('restriction form validates IDs without requests and preserves trimmed 64-bit values', async ({ page }) => {
-  const mutations: string[] = []
-  await page.route(apiRoute, route => {
-    if (route.request().method() === 'GET') return route.fulfill({ contentType: 'application/json', body: firstPage })
-    mutations.push(new URL(route.request().url()).pathname)
-    return route.fulfill({ status: 204 })
-  })
-  await openWorkspace(page)
-  await expect(page.getByRole('heading', { name: 'Alice Smith' })).toBeVisible()
-  await page.locator('.page-heading').getByRole('button', { name: 'Remove restrictions' }).click()
-  const dialog = page.getByRole('dialog')
-  const chat = dialog.getByLabel('Chat ID', { exact: true })
-  const user = dialog.getByLabel('User ID', { exact: true })
-  const submit = dialog.getByRole('button', { name: 'Remove restrictions', exact: true })
-  await chat.fill('0')
-  await user.fill('')
-  await submit.click()
-  await expect(chat).toHaveAttribute('aria-invalid', 'true')
-  await expect(user).toHaveAttribute('aria-invalid', 'true')
-  await expect(dialog.getByRole('alert')).toHaveCount(2)
-  expect(mutations).toEqual([])
-  await chat.fill(` ${chatId} `)
-  for (const invalid of ['-1', '9223372036854775808', '1.5']) {
-    await user.fill(invalid)
-    await submit.click()
-    await expect(user).toHaveAttribute('aria-invalid', 'true')
-    expect(mutations).toEqual([])
-  }
-  await user.fill(` ${userId} `)
-  await submit.click()
-  await expect(dialog).toHaveCount(0)
-  expect(mutations).toEqual([`/api/review/restrictions/${chatId}/${userId}`])
-})
-
-test('reopening restrictions clears edited defaults and field/API errors', async ({ page }) => {
-  let mutations = 0
-  await page.route(apiRoute, route => {
-    if (route.request().method() === 'GET') return route.fulfill({ contentType: 'application/json', body: firstPage })
-    mutations++
-    return route.fulfill({ status: 500 })
-  })
-  await openWorkspace(page)
-  await expect(page.getByRole('heading', { name: 'Alice Smith' })).toBeVisible()
-  const open = page.locator('.page-heading').getByRole('button', { name: 'Remove restrictions' })
-  const dialog = page.getByRole('dialog')
-  await open.click()
-  await dialog.getByLabel('User ID', { exact: true }).fill('44')
-  await dialog.getByRole('button', { name: 'Remove restrictions', exact: true }).click()
-  await expect(dialog.getByRole('alert')).toContainText('Request failed')
-  expect(mutations).toBe(1)
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await open.click()
-  await expect(dialog.getByLabel('Chat ID', { exact: true })).toHaveValue(chatId)
-  await expect(dialog.getByLabel('User ID', { exact: true })).toHaveValue(userId)
-  await expect(dialog.getByRole('alert')).toHaveCount(0)
-  await dialog.getByLabel('User ID', { exact: true }).fill('0')
-  await dialog.getByRole('button', { name: 'Remove restrictions', exact: true }).click()
-  await expect(dialog.getByRole('alert')).toContainText('positive user ID')
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await open.click()
-  await expect(dialog.getByLabel('User ID', { exact: true })).toHaveValue(userId)
-  await expect(dialog.getByRole('alert')).toHaveCount(0)
-  expect(mutations).toBe(1)
-})
-
-test('restriction submission locks the form and cannot be cancelled or submitted twice', async ({ page }) => {
-  let mutations = 0
-  let complete!: () => void
-  const pending = new Promise<void>(resolve => { complete = resolve })
-  await page.route(apiRoute, async route => {
-    if (route.request().method() === 'GET') return route.fulfill({ contentType: 'application/json', body: firstPage })
-    mutations++
-    await pending
-    return route.fulfill({ status: 204 })
-  })
-  await openWorkspace(page)
-  await expect(page.getByRole('heading', { name: 'Alice Smith' })).toBeVisible()
-  await page.locator('.page-heading').getByRole('button', { name: 'Remove restrictions' }).click()
-  const dialog = page.getByRole('dialog')
-  try {
-    await dialog.getByRole('button', { name: 'Remove restrictions', exact: true }).click()
-    await expect.poll(() => mutations).toBe(1)
-    await expect(dialog.getByLabel('User ID', { exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Close dialog', exact: true })).toBeDisabled()
-    await page.keyboard.press('Escape')
-    await expect(dialog).toBeVisible()
-    await dialog.locator('form').evaluate(form => {
-      (form as HTMLFormElement).requestSubmit()
-      ;(form as HTMLFormElement).requestSubmit()
-    })
-  } finally { complete() }
-  await expect(dialog).toHaveCount(0)
-  expect(mutations).toBe(1)
-})
-
-test('pagination uses the submitted page size and keeps the selected message', async ({ page }) => {
-  const sizes: string[] = []
-  await page.route(apiRoute, route => {
-    sizes.push(new URL(route.request().url()).searchParams.get('pageSize')!)
-    return route.fulfill({ contentType: 'application/json', body: sizes.length === 1 ? firstPage : lastPage })
-  })
-  await openWorkspace(page, { loadQueue: false })
-  await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
-  await page.getByLabel('Page size').selectOption('25')
-  await page.getByRole('button', { name: 'Load queue' }).click()
-  await expect(page.getByRole('heading', { name: 'Alice Smith' })).toBeVisible()
-  await page.getByLabel('Page size').selectOption('100')
-  await page.getByRole('button', { name: 'Load more', exact: true }).click()
-  await expect(page.locator('.message-row')).toHaveCount(2)
-  await expect(page.getByRole('heading', { name: 'Alice Smith' })).toBeVisible()
-  expect(sizes).toEqual(['25', '25'])
-  await page.getByRole('button', { name: /Bob Jones/ }).click()
-  await expect(page.getByRole('heading', { name: 'Bob Jones' })).toBeVisible()
-  await page.getByRole('button', { name: 'Refresh queue', exact: true }).click()
-  await expect(page.locator('.message-row')).toHaveCount(1)
-  expect(sizes).toEqual(['25', '25', '25'])
-})
-
-test('all-chat queue is loaded by button, paginates and distinguishes identical message IDs', async ({ page }) => {
-  const otherChat = '-1009876543210'
-  const thirdChat = '-1005555555555'
-  const bob = messageJSON.replace(chatId, otherChat).replace('Alice Smith', 'Bob Jones')
-  const carol = messageJSON.replace(chatId, thirdChat).replace('Alice Smith', 'Carol Adams')
-  const queries: URL[] = []
-  const mutations: string[] = []
-  await page.route(apiRoute, route => {
-    const request = route.request()
-    if (request.method() === 'POST') {
-      mutations.push(new URL(request.url()).pathname)
-      return route.fulfill({ status: 204 })
-    }
-    queries.push(new URL(request.url()))
-    const body = queries.length === 1
-      ? `{"Messages":[${messageJSON},${bob}],"ContinuationToken":"global+/="}`
-      : `{"Messages":[${messageJSON},${carol}],"ContinuationToken":null}`
-    return route.fulfill({ contentType: 'application/json', body })
-  })
-  await openWorkspace(page, { loadQueue: false })
-  await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
-  await expect(page.getByLabel('Chat', { exact: true })).toHaveValue('')
-  expect(queries).toEqual([])
-  await page.getByLabel('Page size').selectOption('25')
-  await page.getByRole('button', { name: 'Load queue' }).click()
-  await expect(page.locator('.message-row')).toHaveCount(2)
-  await expect(page.locator('.queue-context')).toHaveText('All chats')
-  await page.getByRole('button', { name: /Bob Jones/ }).click()
-  await expect(page.getByRole('heading', { name: 'Bob Jones' })).toBeVisible()
-  await expect(page.locator('.message-row[aria-pressed="true"]')).toHaveCount(1)
-  await expect(page.locator('.metadata')).toContainText(otherChat)
-  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
-  await page.getByLabel('Page size').selectOption('100')
-  await page.getByRole('button', { name: 'Load more', exact: true }).click()
-  await expect(page.locator('.message-row')).toHaveCount(3)
-  await expect(page.locator('.message-author')).toHaveText(['Alice Smith', 'Bob Jones', 'Carol Adams'])
-  await expect(page.getByRole('heading', { name: 'Bob Jones' })).toBeVisible()
-  expect(queries.map(url => url.searchParams.has('chatId'))).toEqual([false, false])
-  expect(queries.map(url => url.searchParams.get('pageSize'))).toEqual(['25', '25'])
-  expect(queries[1].searchParams.get('continuationToken')).toBe('global+/=')
-  await page.getByRole('button', { name: 'Spam', exact: true }).click()
-  await page.getByRole('button', { name: 'Confirm spam', exact: true }).click()
-  await expect(page.locator('.message-row')).toHaveCount(2)
-  await expect(page.locator('.message-author')).toHaveText(['Alice Smith', 'Carol Adams'])
-  expect(mutations).toEqual([`/api/review/messages/${otherChat}/7`])
-  await page.getByRole('region', { name: 'Last review' }).getByRole('button', { name: 'Remove restrictions' }).click()
-  await expect(page.getByRole('dialog').getByLabel('Chat ID', { exact: true })).toHaveValue(otherChat)
-  await page.getByRole('dialog').getByRole('button', { name: 'Remove restrictions', exact: true }).click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
-  expect(mutations[1]).toBe(`/api/review/restrictions/${otherChat}/${userId}`)
-  await page.getByRole('button', { name: 'Refresh queue', exact: true }).click()
-  await expect.poll(() => queries.length).toBe(3)
-  await expect(page.getByRole('button', { name: 'Load queue' })).toBeEnabled()
-  expect(queries[2].searchParams.has('chatId')).toBe(false)
-  await page.getByRole('button', { name: 'Load queue' }).click()
-  await expect.poll(() => queries.length).toBe(4)
-  await expect(page.getByRole('button', { name: 'Load queue' })).toBeEnabled()
-  expect(queries[3].searchParams.get('chatId')).toBe(chatId)
-  expect(queries[3].searchParams.get('pageSize')).toBe('100')
-  await page.getByLabel('Chat', { exact: true }).selectOption('')
-  await page.getByRole('button', { name: 'Load queue' }).click()
-  await expect.poll(() => queries.length).toBe(5)
-  await expect(page.getByRole('button', { name: 'Load queue' })).toBeEnabled()
-  await page.reload()
-  await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
-  await expect(page.getByLabel('Chat', { exact: true })).toHaveValue('')
-  expect(queries).toHaveLength(5)
-})
-
-for (const catalogFailure of [false, true]) {
-  test(`all-chat queue works with ${catalogFailure ? 'a failed' : 'an empty'} chat catalog`, async ({ page }) => {
-    let messages = 0
-    await page.route(apiRoute, route => {
-      if (new URL(route.request().url()).pathname.endsWith('/chats')) {
-        return catalogFailure ? route.fulfill({ status: 500 })
-          : route.fulfill({ contentType: 'application/json', body: '{"Chats":[],"ContinuationToken":null}' })
-      }
-      messages++
-      expect(new URL(route.request().url()).searchParams.has('chatId')).toBe(false)
-      return route.fulfill({ contentType: 'application/json', body: emptyPage })
-    })
-    await openWorkspace(page, { mockChats: false, loadQueue: false })
-    await expect(page.getByRole('button', { name: 'Load queue' })).toBeEnabled()
-    expect(messages).toBe(0)
-    await page.getByRole('button', { name: 'Load queue' }).click()
-    await expect(page.getByRole('heading', { name: 'All clear for now' })).toBeVisible()
-    await expect(page.locator('.detail-empty')).toContainText('All chats')
-    expect(messages).toBe(1)
-    await page.locator('.page-heading').getByRole('button', { name: 'Remove restrictions' }).click()
-    await expect(page.getByRole('dialog').getByLabel('Chat ID', { exact: true })).toHaveValue('')
-  })
-}
-
-test('command calls tab filters, paginates, refreshes and stays read-only', async ({ page }, testInfo) => {
+test('command calls filters, paginates, refreshes and stays read-only', async ({ page }, testInfo) => {
   const queries: URL[] = []
   await page.route('**/api/review/command-calls?*', route => {
     expect(route.request().method()).toBe('GET')
@@ -820,28 +576,32 @@ test('command calls tab filters, paginates, refreshes and stays read-only', asyn
     }) })
   })
   await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Command calls', exact: true }).click()
+  await openSection(page, 'Command calls')
   await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
   await page.getByRole('button', { name: 'Load records' }).click()
-  const table = page.getByRole('region', { name: 'Command calls table' })
-  await expect(table.locator('tbody tr')).toHaveCount(1)
+  const table = page.getByRole('region', { name: 'Command calls records' })
+  await expect(table.getByRole('listitem')).toHaveCount(1)
   await expect(table).toContainText('/report')
   await expect(table).toContainText('31 Oct 2026')
   expect(queries[0].searchParams.get('chatId')).toBe(chatId)
-  expect(queries[0].searchParams.get('pageSize')).toBe('50')
+  expect(queries[0].searchParams.get('pageSize')).toBe('100')
   await page.getByRole('button', { name: 'Load more', exact: true }).click()
-  await expect(table.locator('tbody tr')).toHaveCount(2)
+  await expect(table.getByRole('listitem')).toHaveCount(2)
   expect(queries[1].searchParams.get('continuationToken')).toBe('next+/= page')
-  await page.getByRole('button', { name: 'Refresh records' }).click()
-  await expect(table.locator('tbody tr')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Load records' }).click()
+  await expect(table.getByRole('listitem')).toHaveCount(1)
   expect(queries[2].searchParams.get('continuationToken')).toBeNull()
   await page.screenshot({ path: testInfo.outputPath('calls-desktop.png'), fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
-  await expect(page.getByRole('tab', { name: 'Message history' })).toBeVisible()
+  const menu = page.getByRole('button', { name: 'Menu', exact: true })
+  await menu.click()
+  await expect(page.getByRole('navigation').getByRole('button', { name: 'Message history' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveAttribute('aria-expanded', 'false')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('calls-mobile.png'), fullPage: true })
-  await page.getByRole('tab', { name: 'Review queue', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Load queue', exact: true })).toBeVisible()
+  await openSection(page, 'Review queue')
+  await expect(page.getByRole('button', { name: 'Load records', exact: true })).toBeVisible()
 })
 
 test('message history preserves numeric precision, plain text and reply context', async ({ page }, testInfo) => {
@@ -856,10 +616,10 @@ test('message history preserves numeric precision, plain text and reply context'
     return route.fulfill({ contentType: 'application/json', body })
   })
   await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await openSection(page, 'Message history')
   await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
   await page.getByRole('button', { name: 'Load records' }).click()
-  const table = page.getByRole('region', { name: 'Message history table' })
+  const table = page.getByRole('region', { name: 'Message history records' })
   await expect(table).toContainText(userId)
   await expect(table.locator(`[title="${ticks}"]`)).toContainText('1 Jan 2025, 00:00')
   await table.locator('summary').first().click()
@@ -870,9 +630,10 @@ test('message history preserves numeric precision, plain text and reply context'
   await expect(table.getByRole('region', { name: 'User text', exact: true })).toContainText('Hello team!\n<em>Not HTML</em>')
   expect(queries[0].searchParams.get('chatId')).toBe(chatId)
   await page.getByRole('button', { name: 'Load more', exact: true }).click()
-  await expect(table.locator('tbody tr')).toHaveCount(2)
+  await expect(table.getByRole('listitem')).toHaveCount(2)
   await expect(table).toContainText('Unknown author')
   expect(queries[1].searchParams.get('continuationToken')).toBe('history+/=')
+  expect(queries.map(url => url.searchParams.get('pageSize'))).toEqual(['100', '100'])
   await page.screenshot({ path: testInfo.outputPath('history-desktop.png'), fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -892,10 +653,11 @@ test('message history displays typed payload fields separately and handles image
     ],"continuationToken":null}`,
   }))
   await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await openSection(page, 'Message history')
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
   await page.getByRole('button', { name: 'Load records' }).click()
-  const table = page.getByRole('region', { name: 'Message history table' })
-  const rows = table.locator('tbody tr')
+  const table = page.getByRole('region', { name: 'Message history records' })
+  const rows = table.getByRole('listitem')
   await expect(rows).toHaveCount(6)
   await expect(rows.first()).toContainText(userId)
   await expect(rows.first().locator(`[title="${ticks}"]`)).toContainText('1 Jan 2025, 00:00')
@@ -940,24 +702,25 @@ test('message history distinguishes edited messages and channel posts with safe 
     }),
   }))
   await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Message history', exact: true }).click()
+  await openSection(page, 'Message history')
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
   await page.getByRole('button', { name: 'Load records' }).click()
-  const table = page.getByRole('region', { name: 'Message history table' })
+  const table = page.getByRole('region', { name: 'Message history records' })
   await expect(table.locator('.history-update-type')).toHaveText([
     'Message', 'Edited message', 'Channel post', 'Edited channel post', 'Message', 'Message', 'Message', 'Message',
   ])
   await expect(table.locator('details[open]')).toHaveCount(0)
-  const rows = table.locator('tbody tr')
+  const rows = table.getByRole('listitem')
   await expect(rows.nth(4).locator('summary')).toHaveText('Legacy message')
   await rows.nth(1).locator('summary').click()
   await expect(rows.nth(1).getByRole('region', { name: 'User text', exact: true })).toContainText('Record 2')
   await expect(rows.nth(1).locator('blockquote')).toHaveText('Unknown author · #1Original question')
-  await page.getByRole('button', { name: 'Refresh records' }).click()
-  await expect(table.locator('tbody tr')).toHaveCount(8)
+  await page.getByRole('button', { name: 'Load records' }).click()
+  await expect(table.getByRole('listitem')).toHaveCount(8)
   await expect(rows.nth(3).locator('.history-update-type')).toHaveText('Edited channel post')
 })
 
-test('table views handle empty pages, errors and retry without mutating data', async ({ page }) => {
+test('record lists handle empty pages, errors and retry without mutating data', async ({ page }) => {
   let attempts = 0
   await page.route('**/api/review/command-calls?*', route => {
     attempts++
@@ -966,99 +729,13 @@ test('table views handle empty pages, errors and retry without mutating data', a
     return route.fulfill({ contentType: 'application/json', body: '{"calls":[],"continuationToken":null}' })
   })
   await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Command calls', exact: true }).click()
+  await openSection(page, 'Command calls')
+  await page.getByLabel('Chat', { exact: true }).selectOption(chatId)
   await page.getByRole('button', { name: 'Load records' }).click()
-  await expect(page.getByRole('region', { name: 'Command calls table' })).toContainText('No records found.')
-  await page.getByRole('button', { name: 'Refresh records' }).click()
+  await expect(page.getByRole('region', { name: 'Command calls records' })).toContainText('No records found.')
+  await page.getByRole('button', { name: 'Load records' }).click()
   await expect(page.getByRole('alert')).toContainText('Storage unavailable')
   await page.getByRole('button', { name: 'Load records' }).click()
-  await expect(page.getByRole('region', { name: 'Command calls table' })).toContainText('No records found.')
+  await expect(page.getByRole('region', { name: 'Command calls records' })).toContainText('No records found.')
   await expect(page.getByRole('alert')).toHaveCount(0)
-})
-
-test('mention preview sends question and optional reply context without chat history by default', async ({ page }) => {
-  const requests: unknown[] = []
-  await page.route('**/api/review/mention', route => {
-    expect(route.request().method()).toBe('POST')
-    requests.push(route.request().postDataJSON())
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ answer: '**A comment!**\n<em>Not HTML</em>' }) })
-  })
-  await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Test mention', exact: true }).click()
-  await expect(page.getByLabel('Chat context', { exact: true })).toBeVisible()
-  await page.getByLabel('Question', { exact: true }).fill('have any comments on that?')
-  await page.getByLabel('Question author (optional)', { exact: true }).fill('Ben')
-  await page.getByLabel('Include Telegram reply context').check()
-  await page.getByLabel('Reply author (optional)', { exact: true }).fill('Alice')
-  await page.getByLabel('Reply author username (optional)', { exact: true }).fill('alice')
-  await page.getByLabel('Reply text or caption', { exact: true }).fill('Democrats won today')
-  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Mention answer' })).toContainText('**A comment!**')
-  await expect(page.getByRole('region', { name: 'Mention answer' }).locator('em')).toHaveCount(0)
-  expect(requests).toEqual([{
-    question: 'have any comments on that?', fromName: 'Ben',
-    replyTo: { name: 'Alice', username: 'alice', text: 'Democrats won today' },
-  }])
-  await page.getByLabel('Include Telegram reply context').uncheck()
-  await expect(page.getByRole('region', { name: 'Mention answer' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Mention answer' })).toBeVisible()
-  expect(requests[1]).toEqual({ question: 'have any comments on that?', fromName: 'Ben' })
-})
-
-test('mention preview sends the selected chat for history context', async ({ page }) => {
-  let requestBody: unknown
-  await page.route('**/api/review/mention', route => {
-    requestBody = route.request().postDataJSON()
-    return route.fulfill({ contentType: 'application/json', body: '{"answer":"Context-aware answer."}' })
-  })
-  await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Test mention', exact: true }).click()
-  await page.getByLabel('Chat context', { exact: true }).selectOption(chatId)
-  await page.getByLabel('Question', { exact: true }).fill('What happened earlier?')
-  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Mention answer' })).toContainText('Context-aware answer.')
-  expect(requestBody).toEqual({ question: 'What happened earlier?', chatId })
-})
-
-test('mention preview handles failures and allows an explicit retry of a bare mention', async ({ page }) => {
-  let attempts = 0
-  await page.route('**/api/review/mention', route => {
-    attempts++
-    expect(route.request().postDataJSON()).toEqual({ question: '' })
-    return route.fulfill(attempts === 1
-      ? { status: 502, contentType: 'application/json', body: '{"error":"Unable to generate mention preview."}' }
-      : { contentType: 'application/json', body: '{"answer":"Listening."}' })
-  })
-  await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Test mention', exact: true }).click()
-  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('Unable to generate mention preview.')
-  expect(attempts).toBe(1)
-  await expect(page.getByRole('button', { name: 'Generate answer', exact: true })).toBeEnabled()
-  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Mention answer' })).toContainText('Listening.')
-  await expect(page.getByRole('alert')).toHaveCount(0)
-  expect(attempts).toBe(2)
-})
-
-test('mention preview locks fields and navigation while generating', async ({ page }) => {
-  let release!: () => void
-  const gate = new Promise<void>(resolve => { release = resolve })
-  let attempts = 0
-  await page.route('**/api/review/mention', async route => {
-    attempts++
-    await gate
-    await route.fulfill({ contentType: 'application/json', body: '{"answer":"Done."}' })
-  })
-  await openWorkspace(page, { loadQueue: false })
-  await page.getByRole('tab', { name: 'Test mention', exact: true }).click()
-  await page.getByRole('button', { name: 'Generate answer', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Generating...', exact: true })).toBeDisabled()
-  await expect(page.getByLabel('Question', { exact: true })).toBeDisabled()
-  await expect(page.getByRole('tab', { name: 'Message history', exact: true })).toBeDisabled()
-  release()
-  await expect(page.getByRole('region', { name: 'Mention answer' })).toContainText('Done.')
-  await expect(page.getByLabel('Question', { exact: true })).toBeEnabled()
-  expect(attempts).toBe(1)
 })

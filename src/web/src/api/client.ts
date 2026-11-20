@@ -1,5 +1,7 @@
-import { parseApiError, parseReviewChatPage, parseReviewMessagePage, parseCommandCallPage, parseHistoryPage, parseMentionPreview } from './contracts'
-import type { MentionPreviewRequest, ReviewChatPage, ReviewMessage, ReviewMessageRequest, ReviewPage } from './contracts'
+import { parseApiError, parseReviewChatPage, parseReviewMessagePage, parseCommandCallPage, parseHistoryPage } from './contracts'
+import type { ReviewChatPage, ReviewMessage, ReviewMessageRequest } from './contracts'
+
+const PAGE_SIZE = 100
 
 export type { ReviewChat, ReviewChatPage, ReviewMessage, MessageFrom, ReviewMessageReplyTo, ReviewPage } from './contracts'
 export type { CommandCall, HistoryMessage, TablePage } from './contracts'
@@ -113,35 +115,28 @@ export async function checkReviewAccess(connection: Connection, signal: AbortSig
 }
 
 export async function getChats(connection: Connection, token: string | null, signal?: AbortSignal): Promise<ReviewChatPage> {
-  const query = new URLSearchParams({ pageSize: '1000' })
+  const query = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
   if (token) query.set('continuationToken', token)
   return parseReviewChatPage(await request(connection, `/chats?${query}`, 'GET', undefined, signal))
 }
 
-export async function getMessages(connection: Connection, chatId: string, pageSize: number,
-  token: string | null, signal?: AbortSignal): Promise<ReviewPage> {
-  const query = new URLSearchParams()
-  if (chatId) query.set('chatId', chatId)
-  query.set('pageSize', String(pageSize))
-  if (token) query.set('continuationToken', token)
-  return parseReviewMessagePage(await request(connection, `/messages?${query}`, 'GET', undefined, signal))
-}
-
-function tableQuery(chatId: string, pageSize: number, token: string | null): URLSearchParams {
-  const query = new URLSearchParams({ pageSize: String(pageSize) })
-  if (chatId) query.set('chatId', chatId)
+function pageQuery(chatId: string, token: string | null): URLSearchParams {
+  const query = new URLSearchParams({ chatId, pageSize: String(PAGE_SIZE) })
   if (token) query.set('continuationToken', token)
   return query
 }
 
-export async function getCommandCalls(connection: Connection, chatId: string, pageSize: number,
-  token: string | null, signal?: AbortSignal) {
-  return parseCommandCallPage(await request(connection, `/command-calls?${tableQuery(chatId, pageSize, token)}`, 'GET', undefined, signal))
+export async function getMessages(connection: Connection, chatId: string, token: string | null, signal: AbortSignal) {
+  const page = parseReviewMessagePage(await request(connection, `/messages?${pageQuery(chatId, token)}`, 'GET', undefined, signal))
+  return { rows: page.messages, continuationToken: page.continuationToken }
 }
 
-export async function getHistory(connection: Connection, chatId: string, pageSize: number,
-  token: string | null, signal?: AbortSignal) {
-  return parseHistoryPage(await request(connection, `/history?${tableQuery(chatId, pageSize, token)}`, 'GET', undefined, signal))
+export async function getCommandCalls(connection: Connection, chatId: string, token: string | null, signal: AbortSignal) {
+  return parseCommandCallPage(await request(connection, `/command-calls?${pageQuery(chatId, token)}`, 'GET', undefined, signal))
+}
+
+export async function getHistory(connection: Connection, chatId: string, token: string | null, signal: AbortSignal) {
+  return parseHistoryPage(await request(connection, `/history?${pageQuery(chatId, token)}`, 'GET', undefined, signal))
 }
 
 export async function clearChatHistory(connection: Connection, chatId: string) {
@@ -149,38 +144,38 @@ export async function clearChatHistory(connection: Connection, chatId: string) {
   await request(connection, `/history/${chatId}`, 'DELETE', undefined, undefined, 120_000)
 }
 
-export async function previewMention(connection: Connection, body: MentionPreviewRequest, signal?: AbortSignal) {
-  return parseMentionPreview(await request(connection, '/mention', 'POST', body, signal, 120_000))
-}
-
 export async function reviewMessage(connection: Connection, message: ReviewMessage, isSpam: boolean) {
   const body: ReviewMessageRequest = { isSpam }
   await request(connection, `/messages/${message.chatId}/${message.messageId}`, 'POST', body)
 }
 
-export async function removeRestrictions(connection: Connection, chatId: string, userId: string) {
-  await request(connection, `/restrictions/${chatId}/${userId}`, 'POST')
-}
 export interface SearchSnapshot {
   name: string
   sizeBytes: number
   lastModified: string
 }
 
-export async function getSearchSnapshots(connection: Connection, signal?: AbortSignal): Promise<SearchSnapshot[]> {
-  const rows: SearchSnapshot[] = JSON.parse(await request(connection, '/search-snapshots', 'GET', undefined, signal))
+async function getSearchSnapshots(connection: Connection, channelId: string, signal: AbortSignal): Promise<SearchSnapshot[]> {
+  const query = new URLSearchParams({ channelId })
+  const rows: SearchSnapshot[] = JSON.parse(await request(connection, `/search-snapshots?${query}`, 'GET', undefined, signal))
   if (!Array.isArray(rows) || rows.some(row => !row || typeof row.name !== 'string' ||
     !Number.isSafeInteger(row.sizeBytes) || row.sizeBytes < 0 || typeof row.lastModified !== 'string' ||
     !Number.isFinite(Date.parse(row.lastModified)))) throw new Error('Invalid snapshot list response.')
   return rows
 }
 
-export async function getSearchSnapshotChannel(connection: Connection, groupId: string, signal: AbortSignal): Promise<string> {
+async function getSearchSnapshotChannel(connection: Connection, groupId: string, signal: AbortSignal): Promise<string> {
   const { channelId } = JSON.parse(await request(connection, `/search-snapshots/groups/${encodeURIComponent(groupId)}/channel`, 'GET', undefined, signal))
   if (typeof channelId !== 'string' || !channelId.startsWith('-') || !validId(channelId)) {
     throw new Error('Invalid linked channel response.')
   }
   return channelId
+}
+
+export async function getGroupSnapshot(connection: Connection, groupId: string, signal: AbortSignal) {
+  const channelId = await getSearchSnapshotChannel(connection, groupId, signal)
+  const snapshots = await getSearchSnapshots(connection, channelId, signal)
+  return { rows: [{ channelId, snapshot: snapshots.find(snapshot => snapshot.name === channelId) }], continuationToken: null }
 }
 
 export async function resetSearchSnapshot(connection: Connection, channelId: string) {

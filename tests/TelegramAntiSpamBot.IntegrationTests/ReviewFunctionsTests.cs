@@ -1341,6 +1341,37 @@ public class ReviewFunctionsTests
             Assert.Contains("linked channel", payload.RootElement.GetProperty("error").GetString());
     }
 
+    [Theory]
+    [InlineData("-1009876543210", true, HttpStatusCode.OK)]
+    [InlineData("-1009876543210", false, HttpStatusCode.OK)]
+    [InlineData("0", false, HttpStatusCode.BadRequest)]
+    public async Task ListsOnlyTheRequestedSnapshot(string channelId, bool published, HttpStatusCode expected)
+    {
+        using var fixture = new Fixture();
+        if (published)
+            fixture.PublishedSnapshot = new SnapshotBlob(channelId, 128, DateTimeOffset.UtcNow);
+
+        var response = await fixture.SnapshotFunctions.ListSearchSnapshots(fixture.Request(query: $"?channelId={channelId}"), default);
+
+        Assert.Equal(expected, response.StatusCode);
+        if (expected != HttpStatusCode.OK)
+        {
+            Assert.Null(fixture.SnapshotLookup);
+            return;
+        }
+        Assert.Equal(channelId, fixture.SnapshotLookup);
+        response.Body.Position = 0;
+        using var payload = await JsonDocument.ParseAsync(response.Body);
+        if (published)
+        {
+            var blob = Assert.Single(payload.RootElement.EnumerateArray());
+            Assert.Equal(channelId, blob.GetProperty("name").GetString());
+            Assert.Equal(128, blob.GetProperty("sizeBytes").GetInt64());
+        }
+        else
+            Assert.Empty(payload.RootElement.EnumerateArray());
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly ServiceProvider services = new ServiceCollection()
@@ -1370,6 +1401,8 @@ public class ReviewFunctionsTests
         public (long? ChatId, int PageSize, string? Token)? Query { get; private set; }
         public ReviewFunctions Functions { get; }
         public SnapshotReviewFunctions SnapshotFunctions { get; }
+        public SnapshotBlob? PublishedSnapshot { get; set; }
+        public string? SnapshotLookup { get; private set; }
         public AntiSpamBotWebHook Webhook { get; }
         public DetectorStub Detector { get; } = new();
         public CommandStub Commands { get; } = new();
@@ -1415,6 +1448,9 @@ public class ReviewFunctionsTests
                         SavedChats.Add((ReviewChat)arguments[0]!);
                         ChatSaveStarted.TrySetResult();
                         return ChatSaveTask;
+                    case nameof(IPostSnapshotRepository.FindAsync):
+                        SnapshotLookup = (string)arguments[0]!;
+                        return Task.FromResult(PublishedSnapshot);
                     case nameof(IChatsRepository.GetReviewChatsAsync):
                         ChatQuery = ((int)arguments[0]!, (string?)arguments[1]);
                         return Task.FromResult(new ReviewChatPage([new ReviewChat(-100, "Test", DateTimeOffset.UtcNow)], "next-chat"));
@@ -1476,7 +1512,8 @@ public class ReviewFunctionsTests
                 CommandCooldown = TimeSpan.FromMinutes(5)
             });
             Functions = new ReviewFunctions(chatsRepository, probablySpamRepository, spamHashRepository, bot, botConfig);
-            SnapshotFunctions = new SnapshotReviewFunctions(null!, null!, bot);
+            var snapshotBuilder = new PostSnapshotBuilder(null!, CreateRepository<IPostSnapshotRepository>());
+            SnapshotFunctions = new SnapshotReviewFunctions(snapshotBuilder, null!, bot);
             HistoryFunctions = new HistoryReviewFunctions(HistoryRepository, CreateRepository<ICommandCallsRepository>());
             var processor = new SpamMessageProcessor(NullLogger<SpamMessageProcessor>.Instance,
                 Detector, HistoryRepository, probablySpamRepository, messageCountRepository, spamHashRepository,

@@ -23,7 +23,7 @@ The default is `http://localhost:7071`. An HTTPS URL such as `https://your-funct
 
 Configure the bot's [menu button](https://core.telegram.org/bots/webapps#launching-mini-apps-from-the-menu-button) to point to the frontend HTTPS URL. In the **private chat with the bot**, tap the menu button to open the panel. The app sends Telegram's raw signed `initData` unchanged in `Authorization: tma …` to `GET /api/review/access`. The API verifies the signature, the launch age and the moderator allowlist. The workspace opens only after HTTP 204. The layout follows Telegram's light/dark theme and respects the client and device safe areas.
 
-Leave **Chat** set to **All chats** and click **Load queue** to load a page across all chat partitions. Select a chat only to filter the queue. There is no automatic message loading on startup. The last successfully loaded filter is remembered; a fresh workspace defaults to **All chats**. **Refresh chats** reloads the list and updated names, and can retry a failed initial catalog request. An empty or failed catalog does not prevent loading the all-chat queue. To change connection settings, edit `.env`, restart Vite, and reload the page.
+Open **Menu** to switch sections or refresh the chat catalog. Select a chat and tap the upload icon to load or reload its records. There is no automatic loading or all-chat view. The same selection is shared across sections and remembered locally. Changing it clears previously loaded results. The review queue, history and command calls request 100 records per page. **Load more** follows the server’s continuation token, including after an empty page.
 
 You need an already running Functions host with the review endpoints. Network restrictions and authentication still apply. Connecting to a deployed Function requires those endpoints to have been deployed separately.
 
@@ -33,27 +33,22 @@ Review and history authors share the `MessageFrom` model: ID, name and username.
 
 ## History and Command Calls
 
-**Message history** and **Command calls** have optional chat filtering, refresh and continuation-token pagination. History includes original UTC timestamps, author information, and expandable sections for user text/captions, image description and image text, alongside existing reply context. History `content.payload` contains optional, nullable `userMessage`, `imageDescription` and `imageText` fields; when the payload is absent, legacy `content.text` is shown as user text. Each history record's `updateType` is a Telegram enum name (`Message`, `EditedMessage`, `ChannelPost` or `EditedChannelPost`), displayed as Message, Edited message, Channel post or Edited channel post even when collapsed. Missing, null or unrecognized update types default to Message for legacy compatibility. Command calls show the latest admitted timestamp per chat and command, not every invocation. IDs and ticks remain lossless strings. These endpoints return camelCase JSON, unlike the existing queue/catalog contracts.
+**Message history** and **Command calls** use the shared chat selector and show records as cards. History includes original UTC timestamps, author information, and expandable sections for user text/captions, image description and image text, alongside existing reply context. History `content.payload` contains optional, nullable `userMessage`, `imageDescription` and `imageText` fields; when the payload is absent, legacy `content.text` is shown as user text. Each history record's `updateType` is a Telegram enum name (`Message`, `EditedMessage`, `ChannelPost` or `EditedChannelPost`), displayed as Message, Edited message, Channel post or Edited channel post even when collapsed. Missing, null or unrecognized update types default to Message for legacy compatibility. Command calls show the latest admitted timestamp per chat and command, not every invocation. IDs and ticks remain lossless strings. These endpoints return camelCase JSON, unlike the existing queue/catalog contracts.
 
 In **Message history**, select a specific chat to enable the red **DANGER: Clear chat history** action. It calls `DELETE /api/review/history/{chatId}` only after a confirmation dialog and typing `DANGER`. It deletes all stored history for that chat, not just the loaded page; other chats, the review queue and Telegram messages are untouched. The loaded history view is reset after success. This cannot be undone, is not atomic across batches, and is never retried automatically. If it fails or times out, deletion may be partial: close the dialog and reload history before deciding whether to try again. New messages can arrive during or after deletion. **Command calls** remains read-only.
 
 The catalog is loaded automatically on startup, following all continuation pages. It starts empty and fills as the bot receives new or edited messages. The backend creates its `Chats` table on the first successful write; the Function identity must have permission to create it. The configured moderation archive chat is excluded. Existing review entries are not used to backfill chat names.
 
-## Test mention command
+## Snapshots
 
-Open **Test mention** to try `@botname` without selecting a chat or posting to Telegram. Enter the text after the bot name in **Question**; an empty question tests a bare mention. The question author's name and username are optional. Enable **Include Telegram reply context** to supply only the explicit reply's author and text/caption. No preceding chat history is read, and disabling the checkbox omits reply context even if its fields were previously filled.
-
-**Generate answer** calls `POST /api/review/mention` using the same AI service and embedded prompt as Telegram. It does not check or consume command cooldown or write to `CommandsCall`. The inline result displays safe, copyable Markdown source; Telegram formatting is applied only when the actual command posts a message. Fields and navigation are locked during generation. Failures preserve the input and allow a manual retry; there are no automatic retries. The new backend endpoint must be deployed before the form can generate an answer. The same Telegram launch authorization and CORS requirements apply.
+In **Snapshots**, select a discussion group in the same picker and tap the upload icon. The bot resolves its linked channel and loads only that channel’s snapshot metadata. **Queue rebuild** works even if a snapshot has not yet been published; load the snapshot again after the worker finishes.
 
 ## Review
 
-- Select a message to see its original text/caption, image transcription, sender name and `@nick` when available, sender ID, and original UTC date.
-- **Spam** confirms spam and removes the queue entry after the API succeeds.
-- **Mark all as spam** uses the loaded queue's chat filter, not an unsubmitted chat selection. After confirmation, it reads all pages before sending any decisions, then calls the existing single-message endpoint sequentially with `isSpam: true`, showing `1/10`, `2/10`, etc. Duplicate chat/message pairs are processed once. Completed messages disappear from the UI. Any loading error prevents all decisions; a decision error stops the batch immediately without retries and shows the completed count. Refresh before retrying an uncertain outcome. Keep the page open until the batch finishes; new arrivals after the queue was collected require a refresh and are not automatically included.
-- **Not spam** returns the saved text and image transcription to Telegram, not the original image, only while the original message is within the configured spam restriction timeout (three hours by default). Older messages are classified as safe and removed from the queue without being republished. It does not remove restrictions.
-- **Remove restrictions** is independent of the review decision. It remains available in the last-decision row, or through the page-level action with editable chat and user IDs.
-- **Load more** follows the server's continuation token, including after an empty page. It and **Refresh queue** use the submitted chat filter/page size, even if the form has since changed. The counter reflects loaded pending messages, not the total on the server. Entries follow Azure Table Storage partition/row-key order, not date order; **All chats** does not mean the chronologically latest messages. `Page size` requests up to N entries per Azure page. Messages are identified by both chat ID and message ID, since message IDs can repeat across chats.
-- No mutation is retried automatically. After an error the outcome can be uncertain; refresh before manually retrying. A repeated not-spam decision can republish text because the API is not transactional.
+- Each card shows the message text or caption, available image transcription and reply context, sender, and original UTC date.
+- **Spam** and **Not spam** ask for confirmation and remove only the reviewed message after the API succeeds.
+- **Not spam** can return the saved text and image transcription to Telegram, not the original image, while the message is within the configured spam restriction timeout (three hours by default). Older messages are classified as safe without being republished. Neither decision changes restrictions.
+- No mutation is retried automatically. After an error the outcome can be uncertain; reload before manually retrying. A repeated not-spam decision can republish text because the API is not transactional.
 
 ## CORS and Credentials
 
@@ -64,7 +59,7 @@ which can be overridden in each environment's `.tfvars`. It is not a SPA setting
 
 There is no proxy. Allow the exact frontend origin (normally `http://localhost:5173`) in the Function's CORS settings. `http://127.0.0.1:5173` is a different origin, as is another port. The Function host must handle preflight OPTIONS requests and allow GET, POST, and DELETE with `Authorization` and `Content-Type` headers. Allow the deployed frontend origin for use in Telegram.
 
-For a local Functions host, you can start it with `func start --cors http://localhost:5173`. Remote Function URLs require HTTPS; HTTP is allowed only for loopback. Requests time out after 30 seconds (two minutes for mention previews and history deletion), do not follow redirects, and do not send cookies. Browsers do not distinguish CORS failures from many network failures, so the error message mentions both.
+For a local Functions host, you can start it with `func start --cors http://localhost:5173`. Remote Function URLs require HTTPS; HTTP is allowed only for loopback. Requests time out after 30 seconds (two minutes for history deletion), do not follow redirects, and do not send cookies. Browsers do not distinguish CORS failures from many network failures, so the error message mentions both.
 
 Every review request sends `Authorization: tma …` with the same raw `initData`. Functions accept it for up to 30 minutes from Telegram's signed `auth_date` and check the moderator allowlist on each request. The app does not put the credential in URLs or browser storage; the official Telegram SDK manages its own launch parameters. Only the chat filter is remembered by the app in local storage. Review data is not persisted.
 
@@ -76,12 +71,10 @@ The next request after expiry returns HTTP 401, closes the workspace and asks yo
 
 - [App.tsx](src/App.tsx) composes the workspace and connects its actions.
 - [api/](src/api/) contains the HTTP client and response contracts/parsers.
-- [hooks/](src/hooks/) owns chat loading, queue pagination/selection, and moderation state. Each loader cancels superseded requests and requests still pending on unmount.
-- [components/](src/components/) contains the query form, queue, message details, last decision, and dialogs.
+- [hooks/](src/hooks/) owns chat loading, list pagination, and moderation state. Each loader cancels superseded requests and requests still pending on unmount.
+- [components/](src/components/) contains the shared chat picker, record cards, and dialogs.
 - [lib/](src/lib/) contains the Telegram Web App integration, workspace types, chat preferences, and display helpers.
 - [styles/](src/styles/) contains application and global styles.
-
-The restrictions dialog uses React Hook Form for field validation and submission state. IDs stay strings and are validated with the existing 64-bit ID validator. Each opening mounts a fresh form with the current chat/user defaults, so cancelled input and errors are not carried into the next opening. API errors remain separate from field errors. The query form uses ordinary React state for its two selects. Moderation operations share a synchronous submission guard and are never retried automatically.
 
 ## Checks
 

@@ -6,10 +6,10 @@ import { Dialog } from './Dialog'
 export function DecisionDialog({ decision, error, busy, onClose, onConfirm }: {
     decision: Decision; error: string; busy: boolean; onClose: () => void; onConfirm: () => Promise<void>
 }) {
-    return <Dialog title={decision.isSpam ? 'Confirm spam' : 'Return message to chat'} onClose={onClose} busy={busy}>
+    return <Dialog title={decision.isSpam ? 'Confirm spam' : 'Confirm not spam'} onClose={onClose} busy={busy}>
         <div className={`confirmation-symbol ${decision.isSpam ? 'spam-symbol' : ''}`}>{decision.isSpam ? <ShieldX size={28} /> : <ShieldCheck size={28} />}</div>
         <p className="confirmation-title">{reviewFromLabel(decision.message.from)}<span>Message #{decision.message.messageId}</span></p>
-        <p className="confirmation-text">{decision.isSpam ? 'Confirm this message as spam?' : 'Mark as not spam and return the saved text to the chat?'}<br />Restrictions remain unchanged.</p>
+        <p className="confirmation-text">{decision.isSpam ? 'Confirm this message as spam?' : 'Mark as not spam? Recent messages may be republished as text.'}</p>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="dialog-actions"><button className="button subtle" disabled={busy} onClick={onClose}>Cancel</button>
             <button className={`button ${decision.isSpam ? 'danger' : 'primary'}`} disabled={busy || !!error} onClick={() => void onConfirm()}>

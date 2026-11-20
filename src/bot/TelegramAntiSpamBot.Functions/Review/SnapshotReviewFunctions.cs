@@ -10,8 +10,22 @@ public sealed class SnapshotReviewFunctions(PostSnapshotBuilder snapshots, Snaps
         CancellationToken cancellationToken)
     {
         var items = new List<SnapshotResponse>();
-        await foreach (var blob in snapshots.ListAsync(cancellationToken))
-            items.Add(new SnapshotResponse(blob.Name, blob.SizeBytes, blob.LastModified));
+        if (request.Query["channelId"] is { } value)
+        {
+            if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var channelId) || channelId >= 0)
+            {
+                var error = request.CreateResponse(HttpStatusCode.BadRequest);
+                await error.WriteAsJsonAsync(new { error = "A negative channel ID is required." }, Serializer, cancellationToken);
+                return error;
+            }
+            if (await snapshots.FindAsync(channelId, cancellationToken) is { } blob)
+                items.Add(new SnapshotResponse(blob.Name, blob.SizeBytes, blob.LastModified));
+        }
+        else
+        {
+            await foreach (var blob in snapshots.ListAsync(cancellationToken))
+                items.Add(new SnapshotResponse(blob.Name, blob.SizeBytes, blob.LastModified));
+        }
         var response = request.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(items, Serializer, cancellationToken);
         return response;
