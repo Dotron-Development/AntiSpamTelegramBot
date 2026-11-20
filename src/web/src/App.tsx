@@ -1,63 +1,78 @@
 import { useRef, useState } from 'react'
-import { Check, CircleAlert, History, ListChecks, ShieldCheck, Sparkles, Terminal, UnlockKeyhole, X } from 'lucide-react'
-import { clearChatHistory, getCommandCalls, getHistory, validId } from './api/client'
-import type { Connection, ReviewMessage } from './api/client'
+import { ArrowDown, Check, CircleAlert, Database, History, ListChecks, LoaderCircle, Menu, RefreshCw, ShieldCheck, Terminal, Trash2, X } from 'lucide-react'
+import { clearChatHistory, getCommandCalls, getGroupSnapshot, getHistory, getMessages, resetSearchSnapshot } from './api/client'
+import type { Connection } from './api/client'
+import { ChatPicker } from './components/ChatPicker'
 import { DecisionDialog } from './components/DecisionDialog'
 import { ClearHistoryDialog } from './components/ClearHistoryDialog'
-import { BatchSpamDialog } from './components/BatchSpamDialog'
-import { LastReview } from './components/LastReview'
-import { MessageDetails } from './components/MessageDetails'
 import { MessageQueue } from './components/MessageQueue'
-import { MentionPreview } from './components/MentionPreview'
-import { QueryForm } from './components/QueryForm'
-import { RestrictionsDialog } from './components/RestrictionsDialog'
 import { SearchSnapshots } from './components/SearchSnapshots'
 import { RecordsTable } from './components/RecordsTable'
 import { useTablePage } from './hooks/useTablePage'
 import { useChats } from './hooks/useChats'
 import { useModeration } from './hooks/useModeration'
-import { useReviewQueue } from './hooks/useReviewQueue'
-import { errorText } from './lib/workspace'
-import type { Notice, QueueQuery } from './lib/workspace'
+import { errorText, messageKey, rememberChat } from './lib/workspace'
+import type { Notice } from './lib/workspace'
 import './styles/App.css'
 
+const sections = {
+    queue: { title: 'Review queue', icon: ListChecks },
+    calls: { title: 'Command calls', icon: Terminal },
+    history: { title: 'Message history', icon: History },
+    snapshots: { title: 'Snapshots', icon: Database },
+}
+
 function App({ connection }: { connection: Connection }) {
-    const [view, setView] = useState<'queue' | 'calls' | 'history' | 'mention' | 'snapshots'>('queue')
+    const [view, setView] = useState<keyof typeof sections>('queue')
+    const [menuOpen, setMenuOpen] = useState(false)
     const [notice, setNotice] = useState<Notice | null>(null)
-    const [mentionGenerating, setMentionGenerating] = useState(false)
-    const [clearChatId, setClearChatId] = useState<string | null>(null)
+    const [clearChatId, setClearChatId] = useState('')
     const [clearError, setClearError] = useState('')
     const [clearWorking, setClearWorking] = useState(false)
+    const [rebuilding, setRebuilding] = useState(false)
     const clearInFlight = useRef(false)
+    const rebuildInFlight = useRef(false)
+    const menuButton = useRef<HTMLButtonElement>(null)
     const chats = useChats(connection, setNotice)
-    const queue = useReviewQueue(connection, setNotice)
-    const moderation = useModeration(connection, setNotice, queue.remove, queue.completeBatch)
+    const queue = useTablePage(connection, setNotice, getMessages, messageKey)
+    const moderation = useModeration(connection, setNotice, queue.remove)
     const calls = useTablePage(connection, setNotice, getCommandCalls, row => `${row.chatId}:${row.command}`)
-    const history = useTablePage(connection, setNotice, getHistory, row => `${row.chatId}:${row.messageId}`)
-    const locked = queue.loading || moderation.working || chats.loading || calls.loading || history.loading || mentionGenerating || clearWorking
-    const records = view === 'history' ? history : calls
-    const title = view === 'queue' ? 'Review queue' : view === 'calls' ? 'Command calls' : view === 'history' ? 'Message history' : view === 'snapshots' ? 'Search snapshots' : 'Test mention command'
-    const hasMore = !!queue.continuationToken
+    const history = useTablePage(connection, setNotice, getHistory, messageKey)
+    const snapshots = useTablePage(connection, setNotice, (api, groupId, _, signal) => getGroupSnapshot(api, groupId, signal), row => row.channelId)
+    const records = { queue, calls, history, snapshots }[view]
+    const group = view === 'snapshots'
+    const options = group ? chats.chats.filter(chat => chat.chatId.startsWith('-')) : chats.chats
+    const chatId = options.some(chat => chat.chatId === chats.chatId) ? chats.chatId : ''
+    const current = !!chatId && records.loadedChatId === chatId
+    const locked = records.loading || moderation.working || chats.loading || clearWorking || rebuilding
+    const snapshot = current ? snapshots.rows[0] : undefined
 
-    function load(query: QueueQuery) {
-        if (locked) return
-        if (view !== 'queue') { void records.load(query); return }
-        if (!query.chatId || validId(query.chatId)) moderation.clearLastReview()
-        void queue.load(query)
+    function selectChat(value: string) {
+        setNotice(null)
+        chats.setChatId(value)
+        rememberChat(value)
+        for (const list of [queue, calls, history, snapshots]) list.reset()
     }
 
-    function openRestrictions(message?: ReviewMessage) {
-        moderation.openRestrictions({
-            chatId: message?.chatId ?? queue.query?.chatId ?? chats.chatId,
-            userId: message?.userId ?? '',
-        })
+    function closeMenu() {
+        setMenuOpen(false)
+        menuButton.current?.focus()
     }
 
-    async function copy(value: string) {
+    async function rebuildSnapshot(channelId: string) {
+        if (rebuildInFlight.current) return
+        rebuildInFlight.current = true
+        setRebuilding(true)
+        setNotice(null)
         try {
-            await navigator.clipboard.writeText(value)
-            setNotice({ error: false, text: 'Copied to clipboard.' })
-        } catch { setNotice({ error: true, text: 'Clipboard access is unavailable.' }) }
+            await resetSearchSnapshot(connection, channelId)
+            setNotice({ error: false, text: 'Rebuild queued. Load the snapshot again when it is ready.' })
+        } catch (error) {
+            setNotice({ error: true, text: errorText(error) })
+        } finally {
+            rebuildInFlight.current = false
+            setRebuilding(false)
+        }
     }
 
     async function confirmClearHistory() {
@@ -68,7 +83,7 @@ function App({ connection }: { connection: Connection }) {
         try {
             await clearChatHistory(connection, target)
             history.reset()
-            setClearChatId(null)
+            setClearChatId('')
             setNotice({ error: false, text: `Message history cleared for chat ${target}.` })
         } catch (error) {
             setClearError(`${errorText(error)} Deletion may be partial. Close this dialog and reload history before trying again.`)
@@ -79,81 +94,60 @@ function App({ connection }: { connection: Connection }) {
     }
 
     return <div className="app">
-        <header className="topbar">
+        <header className="topbar" onKeyDown={event => { if (menuOpen && event.key === 'Escape') closeMenu() }}>
             <span className="brand">
                 <span className="brand-mark"><ShieldCheck size={23} strokeWidth={1.8} /></span>
                 <span>AntiSpam<span className="brand-divider">/</span><span className="brand-product">Review</span></span>
             </span>
-            <span className="connection-status configured"><span className="status-dot" />Telegram Mini App</span>
+            <button ref={menuButton} className="icon-button menu-toggle" type="button" aria-label="Menu"
+                aria-expanded={menuOpen} aria-controls="workspace-menu" onClick={() => setMenuOpen(value => !value)}>
+                {menuOpen ? <X size={23} /> : <Menu size={23} />}
+            </button>
+            <nav className="workspace-menu" id="workspace-menu" aria-label="Workspace sections" hidden={!menuOpen}>
+                {(Object.keys(sections) as (keyof typeof sections)[]).map(key => {
+                    const { icon: Icon, title } = sections[key]
+                    return <button type="button" key={key} aria-current={view === key ? 'page' : undefined}
+                        disabled={locked} onClick={() => { setView(key); setNotice(null); closeMenu() }}><Icon size={19} />{title}</button>
+                })}
+                <button type="button" disabled={locked} onClick={() => { closeMenu(); void chats.refresh() }}><RefreshCw size={19} />Refresh chats</button>
+            </nav>
         </header>
 
         <main>
-            <nav className="workspace-tabs" role="tablist" aria-label="Workspace sections">
-                <button role="tab" aria-selected={view === 'queue'} disabled={locked} onClick={() => { setView('queue'); setNotice(null) }}><ListChecks size={16} />Review queue</button>
-                <button role="tab" aria-selected={view === 'calls'} disabled={locked} onClick={() => { setView('calls'); setNotice(null) }}><Terminal size={16} />Command calls</button>
-                <button role="tab" aria-selected={view === 'history'} disabled={locked} onClick={() => { setView('history'); setNotice(null) }}><History size={16} />Message history</button>
-                <button role="tab" aria-selected={view === 'mention'} disabled={locked} onClick={() => { setView('mention'); setNotice(null) }}><Sparkles size={16} />Test mention</button>
-                <button role="tab" aria-selected={view === 'snapshots'} disabled={locked} onClick={() => { setView('snapshots'); setNotice(null) }}>Search snapshots</button>
-            </nav>
-            <section className="page-heading">
-                <div><div className="eyebrow">TELEGRAM MODERATION</div><h1>{title}<span className="heading-dot">.</span></h1></div>
-                {view === 'queue' && <div className="page-heading-actions"><button className="button subtle" onClick={() => openRestrictions(queue.selected ?? moderation.lastReview?.message)} disabled={locked}>
-                    <UnlockKeyhole size={16} /><span>Remove restrictions</span>
-                </button>
-                    <button className="button danger" disabled={locked || !queue.hasLoaded || !queue.query || (!queue.messages.length && !hasMore)}
-                        onClick={() => { if (queue.query) moderation.openBatch(queue.query) }}>
-                        <CircleAlert size={16} /><span>Mark all as spam</span>
-                    </button>
-                </div>}
-                {view === 'history' && <button className="button danger" disabled={locked || !validId(chats.chatId)}
-                    onClick={() => { setClearError(''); setClearChatId(chats.chatId) }}>
-                    <CircleAlert size={16} /><span>DANGER: Clear chat history</span>
-                </button>}
-            </section>
-
-            {view !== 'mention' && view !== 'snapshots' && <QueryForm chats={chats.chats} chatId={chats.chatId} endpoint={connection.endpoint}
-                busy={locked} chatsLoading={chats.loading} loading={view === 'queue' ? queue.loading : records.loading}
-                submitLabel={view === 'queue' ? 'Load queue' : 'Load records'} itemLabel={view === 'calls' ? 'calls' : 'messages'}
-                onChatChange={chats.setChatId} onRefresh={chats.refresh} onSubmit={load} />}
+            <section className="page-heading"><h1>{sections[view].title}</h1></section>
+            <ChatPicker chats={options} chatId={chatId} disabled={locked} chatsLoading={chats.loading}
+                loading={records.loading} group={group} onChatChange={selectChat}
+                onLoad={() => { if (!locked && chatId) void records.load(chatId) }} />
 
             {notice && <div className={`notice ${notice.error ? 'error' : 'success'}`} role={notice.error ? 'alert' : 'status'}>
-                {notice.error ? <CircleAlert size={17} /> : <Check size={17} />}<span>{notice.text}</span>
-                <button className="icon-button" title="Dismiss notification" aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={16} /></button>
+                {notice.error ? <CircleAlert size={18} /> : <Check size={18} />}<span>{notice.text}</span>
+                <button className="icon-button" title="Dismiss notification" aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={18} /></button>
             </div>}
 
-            {view === 'snapshots' ? <SearchSnapshots connection={connection} chats={chats.chats}
-                chatsLoading={chats.loading} onRefreshChats={chats.refresh} />
-                : view === 'mention' ? <MentionPreview connection={connection} chats={chats.chats} chatId={chats.chatId}
-                    chatsLoading={chats.loading} onChatChange={chats.setChatId} busy={locked}
-                    onBusyChange={setMentionGenerating} onCopy={copy} />
-                : view === 'queue' ? <section className="workspace" aria-label="Message review workspace">
-                <MessageQueue messages={queue.messages} selected={queue.selected} query={queue.query}
-                    loading={queue.loading} working={moderation.working} busy={locked} hasLoaded={queue.hasLoaded}
-                    hasMore={hasMore} onSelect={queue.select} onLoadMore={queue.loadMore}
-                    onRefresh={() => { if (queue.query) load(queue.query) }} />
-                <MessageDetails message={queue.selected} busy={locked} loading={queue.loading}
-                    hasLoaded={queue.hasLoaded} hasMore={hasMore} chatsLoading={chats.loading}
-                    chatId={queue.query?.chatId} onCopy={copy} onRestrictions={openRestrictions}
-                    onDecision={moderation.openDecision} />
-            </section> : <RecordsTable kind={view} calls={calls.rows} messages={history.rows} chats={chats.chats}
-                chatId={records.query?.chatId} loading={records.loading} busy={locked} hasLoaded={records.hasLoaded}
-                hasMore={!!records.continuationToken} onLoadMore={records.loadMore}
-                onRefresh={() => { if (records.query) void records.load(records.query) }} />}
+            <section aria-label={`${sections[view].title} records`} aria-busy={records.loading}>
+                {current && records.rows.length > 0 && (view === 'queue'
+                    ? <MessageQueue messages={queue.rows} disabled={locked} onDecision={moderation.open} />
+                    : group ? snapshot && <SearchSnapshots {...snapshot} disabled={locked} working={rebuilding}
+                        onRebuild={() => void rebuildSnapshot(snapshot.channelId)} />
+                        : <RecordsTable kind={view} calls={calls.rows} messages={history.rows} />)}
+                {records.loading ? <p className="list-status" role="status"><LoaderCircle size={18} className="spin" />Loading…</p>
+                    : !current || !records.hasLoaded ? <p className="list-status">No records loaded.</p>
+                        : !records.rows.length && <p className="list-status">No records found.</p>}
+                {current && records.continuationToken && <div className="list-actions">
+                    <button className="button subtle" disabled={locked} onClick={records.loadMore}><ArrowDown size={18} />Load more</button>
+                </div>}
+            </section>
 
-            {view === 'queue' && moderation.lastReview && <LastReview decision={moderation.lastReview}
-                restored={moderation.isRestored(moderation.lastReview.message)} busy={locked} onRestrictions={openRestrictions} />}
-            <footer className="app-footer"><span>AntiSpam Telegram Bot</span><span>Human review workspace<span className="footer-dot" />Mini App</span></footer>
+            {view === 'history' && <div className="list-actions">
+                <button className="button danger" disabled={locked || !chatId}
+                    onClick={() => { setClearError(''); setClearChatId(chatId) }}><Trash2 size={18} />DANGER: Clear chat history</button>
+            </div>}
         </main>
 
-        {moderation.dialog?.kind === 'decision' && <DecisionDialog decision={moderation.dialog.decision}
-            error={moderation.error} busy={moderation.working} onClose={moderation.close} onConfirm={moderation.confirm} />}
-        {moderation.dialog?.kind === 'restrictions' && <RestrictionsDialog values={moderation.dialog.values}
-            error={moderation.error} busy={moderation.working} onClose={moderation.close} onSubmit={moderation.restore} />}
-        {moderation.dialog?.kind === 'batch' && <BatchSpamDialog query={moderation.dialog.query}
-            progress={moderation.batchProgress} error={moderation.error} busy={moderation.working}
-            onClose={moderation.close} onConfirm={moderation.confirmBatch} />}
+        {moderation.decision && <DecisionDialog decision={moderation.decision} error={moderation.error}
+            busy={moderation.working} onClose={moderation.close} onConfirm={moderation.confirm} />}
         {clearChatId && <ClearHistoryDialog chatId={clearChatId} error={clearError} busy={clearWorking}
-            onClose={() => { if (!clearInFlight.current) setClearChatId(null) }} onConfirm={confirmClearHistory} />}
+            onClose={() => { if (!clearInFlight.current) setClearChatId('') }} onConfirm={confirmClearHistory} />}
     </div>
 }
 

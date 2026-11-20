@@ -4,6 +4,9 @@ public sealed class PostSnapshotBuilder(IPostVectorRepository vectors, IPostSnap
 {
     public IAsyncEnumerable<SnapshotBlob> ListAsync(CancellationToken cancellationToken) => snapshots.ListAsync(cancellationToken);
 
+    public Task<SnapshotBlob?> FindAsync(long channelId, CancellationToken cancellationToken) =>
+        snapshots.FindAsync(channelId.ToString(CultureInfo.InvariantCulture), cancellationToken);
+
     public Task RebuildAsync(SnapshotResetJob job, CancellationToken cancellationToken)
     {
         if (job.ChatId >= 0 || job.RequestedAt == default) throw new ArgumentException("Invalid channel snapshot request.", nameof(job));

@@ -82,5 +82,6 @@ public sealed class PostSnapshotTests
         }
 
         public IAsyncEnumerable<SnapshotBlob> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<SnapshotBlob?> FindAsync(string name, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

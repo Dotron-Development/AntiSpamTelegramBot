@@ -1,8 +1,8 @@
 @baseUrl = http://localhost:7009
 
-### List published blob names, sizes and timestamps
+### Get published snapshot metadata for a linked source channel
 # Use fresh signed Telegram launch data from a private environment value. Never commit it.
-GET {{baseUrl}}/api/review/search-snapshots
+GET {{baseUrl}}/api/review/search-snapshots?channelId=-1001234567890
 Authorization: tma {{$processEnv REVIEW_TELEGRAM_INIT_DATA}}
 
 ### Look up the source channel linked to a discussion group

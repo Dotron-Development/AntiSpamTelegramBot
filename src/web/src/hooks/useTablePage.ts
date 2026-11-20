@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { validId } from '../api/client'
 import type { Connection, TablePage } from '../api/client'
-import { errorText, rememberChat } from '../lib/workspace'
-import type { Notify, QueueQuery } from '../lib/workspace'
+import { errorText } from '../lib/workspace'
+import type { Notify } from '../lib/workspace'
 
 export function useTablePage<T>(connection: Connection, notify: Notify,
-    fetchPage: (connection: Connection, chatId: string, pageSize: number, token: string | null, signal?: AbortSignal) => Promise<TablePage<T>>,
+    fetchPage: (connection: Connection, chatId: string, token: string | null, signal: AbortSignal) => Promise<TablePage<T>>,
     rowKey: (row: T) => string) {
-    const [query, setQuery] = useState<QueueQuery | null>(null)
+    const [loadedChatId, setLoadedChatId] = useState('')
     const [rows, setRows] = useState<T[]>([])
     const [continuationToken, setContinuationToken] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
@@ -16,31 +15,25 @@ export function useTablePage<T>(connection: Connection, notify: Notify,
 
     useEffect(() => () => pending.current?.abort(), [])
 
-    async function load(target: QueueQuery, append = false) {
-        if (target.chatId && !validId(target.chatId)) {
-            notify({ error: true, text: 'Select a valid chat from the list.' })
-            return
-        }
+    async function load(chatId: string, token: string | null = null) {
         pending.current?.abort()
         const controller = new AbortController()
         pending.current = controller
         setLoading(true)
         notify(null)
-        if (!append) {
+        if (!token) {
             setRows([])
             setContinuationToken(null)
             setHasLoaded(false)
-            setQuery(target)
+            setLoadedChatId(chatId)
         }
         try {
-            const page = await fetchPage(connection, target.chatId, target.pageSize,
-                append ? continuationToken : null, controller.signal)
+            const page = await fetchPage(connection, chatId, token, controller.signal)
             if (controller.signal.aborted) return
-            setRows(previous => Array.from(new Map((append ? [...previous, ...page.rows] : page.rows)
+            setRows(previous => Array.from(new Map((token ? [...previous, ...page.rows] : page.rows)
                 .map(row => [rowKey(row), row])).values()))
             setContinuationToken(page.continuationToken)
             setHasLoaded(true)
-            rememberChat(target.chatId)
         } catch (error) {
             if (!controller.signal.aborted) notify({ error: true, text: errorText(error) })
         } finally {
@@ -49,16 +42,22 @@ export function useTablePage<T>(connection: Connection, notify: Notify,
     }
 
     function loadMore() {
-        if (query && continuationToken && !loading) void load(query, true)
+        if (loadedChatId && continuationToken && !loading) void load(loadedChatId, continuationToken)
     }
 
     function reset() {
         pending.current?.abort()
         setRows([])
+        setLoadedChatId('')
         setContinuationToken(null)
         setLoading(false)
         setHasLoaded(false)
     }
 
-    return { rows, query, continuationToken, loading, hasLoaded, load, loadMore, reset }
+    function remove(row: T) {
+        const key = rowKey(row)
+        setRows(previous => previous.filter(item => rowKey(item) !== key))
+    }
+
+    return { rows, loadedChatId, continuationToken, loading, hasLoaded, load, loadMore, reset, remove }
 }

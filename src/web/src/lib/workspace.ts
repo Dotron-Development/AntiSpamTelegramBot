@@ -1,10 +1,8 @@
 import { messageDate } from '../api/client'
 import type { ReviewMessage, MessageFrom } from '../api/client'
 
-export interface QueueQuery { chatId: string; pageSize: number }
 export interface Notice { error: boolean; text: string }
 export interface Decision { message: ReviewMessage; isSpam: boolean }
-export interface RestrictionValues { chatId: string; userId: string }
 export type Notify = (notice: Notice | null) => void
 
 const settingsKey = 'antispam-review.settings'
@@ -25,7 +23,7 @@ export function rememberChat(chatId: string) {
 
 export const errorText = (error: unknown) => error instanceof Error ? error.message : 'An unexpected error occurred.'
 
-export function messageKey(message: ReviewMessage): string {
+export function messageKey(message: Pick<ReviewMessage, 'chatId' | 'messageId'>): string {
     return `${message.chatId}:${message.messageId}`
 }
 
@@ -39,8 +37,4 @@ export function reviewFromLabel(from: MessageFrom): string {
     const username = from.username?.trim()
     if (name && username) return `${name} @${username}`
     return name || (username ? `@${username}` : 'Unknown sender')
-}
-
-export function initials(name: string): string {
-    return name.trim().split(/\s+/).slice(0, 2).map(part => Array.from(part)[0]).join('').toUpperCase() || '?'
 }

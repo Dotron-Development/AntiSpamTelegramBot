@@ -12,6 +12,19 @@ internal sealed class BlobPostSnapshotRepository(BlobContainerClient container) 
                 yield return new SnapshotBlob(blob.Name, size, modified);
     }
 
+    public async Task<SnapshotBlob?> FindAsync(string name, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var properties = (await container.GetBlobClient(name).GetPropertiesAsync(cancellationToken: cancellationToken)).Value;
+            return new SnapshotBlob(name, properties.ContentLength, properties.LastModified);
+        }
+        catch (RequestFailedException e) when (e.Status == 404 && e.ErrorCode == "BlobNotFound")
+        {
+            return null;
+        }
+    }
+
     public async Task PublishAsync(string name, DateTimeOffset requestedAt, Func<Stream, CancellationToken, Task<bool>> write,
         CancellationToken cancellationToken)
     {
