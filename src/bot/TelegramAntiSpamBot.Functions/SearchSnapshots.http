@@ -1,13 +1,18 @@
 @baseUrl = http://localhost:7009
 
 ### List published blob names, sizes and timestamps
+# Use fresh signed Telegram launch data from a private environment value. Never commit it.
 GET {{baseUrl}}/api/review/search-snapshots
+Authorization: tma {{$processEnv REVIEW_TELEGRAM_INIT_DATA}}
 
 ### Look up the source channel linked to a discussion group
 GET {{baseUrl}}/api/review/search-snapshots/groups/-1009876543210/channel
+Authorization: tma {{$processEnv REVIEW_TELEGRAM_INIT_DATA}}
 
 ### Queue a rebuild by source channel ID (202 Accepted)
 POST {{baseUrl}}/api/review/search-snapshots/-1001234567890/reset
+Authorization: tma {{$processEnv REVIEW_TELEGRAM_INIT_DATA}}
 
 ### Reject an invalid ID (400 Bad Request)
 POST {{baseUrl}}/api/review/search-snapshots/0/reset
+Authorization: tma {{$processEnv REVIEW_TELEGRAM_INIT_DATA}}

@@ -1,6 +1,6 @@
 # AntiSpam Review
 
-Local React + TypeScript workspace for the Azure Functions review API. The interface is in English. Requests go directly from the browser to the Function; its CORS configuration must allow the frontend origin.
+React + TypeScript Telegram Mini App for the Azure Functions review API. The interface is in English. Requests go directly from the browser to the Function; its CORS configuration must allow the frontend origin.
 
 ## Run
 
@@ -11,23 +11,17 @@ npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173`. Vite fails if this port is occupied so the address stays consistent with the registered Entra redirect URI. Keep the server bound to loopback.
+Vite serves `http://localhost:5173` and fails if the port is occupied. Opening the URL in a regular browser only shows launch instructions. Workspaces do not have a local auth bypass; use the [Playwright tests](../../tests/TelegramAntiSpamBot.WebTests/README.md) for mocked browser development or use a test bot and a reachable HTTPS frontend for an actual Telegram launch.
 
-Create or edit `.env` with the Function URL and public Entra configuration:
+The only frontend build setting is the existing `API_URL`, configured in `.env` or the build environment:
 
 ```dotenv
 API_URL=http://localhost:7071
-TENANT_ID=<Directory tenant ID>
-CLIENT_ID=<Application client ID>
-API_SCOPE=api://<Application client ID>/Review.Access
-REDIRECT_URI=http://localhost:5173
 ```
 
-An Azure URL such as `https://your-function.azurewebsites.net` is also accepted, with or without trailing `/api`. Restart Vite after changing `.env`. These settings are embedded at dev-server startup/build time, not read at runtime by the static bundle. They are public identifiers, not secrets. `.env` is ignored by Git. Never configure a client secret in the frontend. `FUNCTION_KEY` is no longer read or embedded.
+The default is `http://localhost:7071`. An HTTPS URL such as `https://your-function.azurewebsites.net` is also accepted, with or without a trailing `/api`. Use the Function base URL, not a review route or a URL with query parameters. Restart Vite or rebuild the static bundle after changing it.
 
-Opening the site automatically redirects to Microsoft sign-in when there is no account. There is no login button. The workspace mounts only after sign-in, a `Moderator` role check, and successful API access-token acquisition. Errors and missing roles keep the workspace closed without a redirect loop. Sign out is available in the header. MSAL keeps its session in session storage and silently renews tokens when possible; interaction-required renewal redirects to sign-in. Use a Function base URL, not a full review route or a URL containing `?code=...`.
-
-Follow the [Entra registration guide](../../docs/entra-id-setup.md) and [Functions Easy Auth guide](../../docs/functions-easy-auth.md). Configure the tenant, client ID and explicit user allowlist in Easy Auth; Functions does not read the frontend `.env` or perform Entra JWT validation. The UI requires `Moderator`, but API access is enforced by the platform's user and client allowlists, not by the UI role check. Review triggers now use Anonymous host authorization and rely on Easy Auth; verify platform protection before deploying them to any environment. Older deployed packages may still require Function keys and return 401 until Functions is redeployed. Local hosts do not run Easy Auth, so bind them to loopback.
+Configure the bot's [menu button](https://core.telegram.org/bots/webapps#launching-mini-apps-from-the-menu-button) to point to the frontend HTTPS URL. In the **private chat with the bot**, tap the menu button to open the panel. The app sends Telegram's raw signed `initData` unchanged in `Authorization: tma …` to `GET /api/review/access`. The API verifies the signature, the launch age and the moderator allowlist. The workspace opens only after HTTP 204. The layout follows Telegram's light/dark theme and respects the client and device safe areas.
 
 Leave **Chat** set to **All chats** and click **Load queue** to load a page across all chat partitions. Select a chat only to filter the queue. There is no automatic message loading on startup. The last successfully loaded filter is remembered; a fresh workspace defaults to **All chats**. **Refresh chats** reloads the list and updated names, and can retry a failed initial catalog request. An empty or failed catalog does not prevent loading the all-chat queue. To change connection settings, edit `.env`, restart Vite, and reload the page.
 
@@ -49,7 +43,7 @@ The catalog is loaded automatically on startup, following all continuation pages
 
 Open **Test mention** to try `@botname` without selecting a chat or posting to Telegram. Enter the text after the bot name in **Question**; an empty question tests a bare mention. The question author's name and username are optional. Enable **Include Telegram reply context** to supply only the explicit reply's author and text/caption. No preceding chat history is read, and disabling the checkbox omits reply context even if its fields were previously filled.
 
-**Generate answer** calls `POST /api/review/mention` using the same AI service and embedded prompt as Telegram. It does not check or consume command cooldown or write to `CommandsCall`. The inline result displays safe, copyable Markdown source; Telegram formatting is applied only when the actual command posts a message. Fields and navigation are locked during generation. Failures preserve the input and allow a manual retry; there are no automatic retries. The new backend endpoint must be deployed before the form can generate an answer. Existing Easy Auth and CORS protections apply.
+**Generate answer** calls `POST /api/review/mention` using the same AI service and embedded prompt as Telegram. It does not check or consume command cooldown or write to `CommandsCall`. The inline result displays safe, copyable Markdown source; Telegram formatting is applied only when the actual command posts a message. Fields and navigation are locked during generation. Failures preserve the input and allow a manual retry; there are no automatic retries. The new backend endpoint must be deployed before the form can generate an answer. The same Telegram launch authorization and CORS requirements apply.
 
 ## Review
 
@@ -68,23 +62,15 @@ The shared restriction/republishing timeout is configured on Functions as
 for example `03:00:00`. Terraform supplies it from `spam_restriction_timeout`,
 which can be overridden in each environment's `.tfvars`. It is not a SPA setting.
 
-There is no proxy. Allow the exact frontend origin (normally `http://localhost:5173`) in the Function's CORS settings. `http://127.0.0.1:5173` is a different origin, as is another port. The Function host must handle preflight OPTIONS requests and allow GET/POST with `Authorization` and `Content-Type` headers. Terraform manages deployed Function CORS, automatically including the deployed SPA origin and the configured additional origins.
+There is no proxy. Allow the exact frontend origin (normally `http://localhost:5173`) in the Function's CORS settings. `http://127.0.0.1:5173` is a different origin, as is another port. The Function host must handle preflight OPTIONS requests and allow GET, POST, and DELETE with `Authorization` and `Content-Type` headers. Allow the deployed frontend origin for use in Telegram.
 
-For a local Functions host, you can start it with `func start --cors http://localhost:5173`. Remote Function URLs require HTTPS; HTTP is allowed only for loopback. Requests time out after 30 seconds (two minutes for mention previews), do not follow redirects, and do not send cookies. Browsers do not distinguish CORS failures from many network failures, so the error message mentions both.
+For a local Functions host, you can start it with `func start --cors http://localhost:5173`. Remote Function URLs require HTTPS; HTTP is allowed only for loopback. Requests time out after 30 seconds (two minutes for mention previews and history deletion), do not follow redirects, and do not send cookies. Browsers do not distinguish CORS failures from many network failures, so the error message mentions both.
 
-Each API request obtains an access token through MSAL and sends it in `Authorization: Bearer ...`. No Function key or ID token is sent to review endpoints. The application does not copy tokens into its own storage or query strings. Only the chat filter is remembered in local storage; review messages are not persisted. Use a trusted browser profile. Client-side role checks are only a UI gate: configure Easy Auth to enforce API access. Easy Auth does not run in the local Functions host. Static HTML/JS remains public; no sensitive data is included before login.
+Every review request sends `Authorization: tma …` with the same raw `initData`. Functions accept it for up to 30 minutes from Telegram's signed `auth_date` and check the moderator allowlist on each request. The app does not put the credential in URLs or browser storage; the official Telegram SDK manages its own launch parameters. Only the chat filter is remembered by the app in local storage. Review data is not persisted.
 
-`npm run build` generates a static bundle; `npm run preview` serves it locally. Its origin must be registered as a SPA redirect URI, configured as `REDIRECT_URI`, and allowed by Function CORS.
+The next request after expiry returns HTTP 401, closes the workspace and asks you to reopen the Mini App from the private bot chat. An empty HTTP 403 from the access guard also closes the workspace and shows access denied. Operations are never retried automatically. Check the current queue or history before repeating a moderation action that may have been interrupted.
 
-## Azure Hosting
-
-Terraform creates an Azure Static Web App on the `Free` plan for each environment, in West Europe. Static assets are globally distributed; there is no paid SPA App Service plan or Node.js server. Both release workflows invoke [staticwebapp.yaml](../../.github/workflows/staticwebapp.yaml) after deploying infrastructure and Functions. Node.js 24 is used only to build the frontend. [staticwebapp.config.json](public/staticwebapp.config.json) is copied into `dist` and provides SPA navigation fallback.
-
-Terraform's `review_spa_build_settings` JSON supplies `API_URL`, `CLIENT_ID`, `API_SCOPE` and `REDIRECT_URI`. The build job takes `TENANT_ID` directly from the existing `ARM_TENANT_ID` secret, keeping it out of cross-job outputs that GitHub would drop because of secret masking. The job validates all five settings before lint/build, then uploads and deploys `dist`. The deployment token is retrieved through Azure login and masked; it is never included in the bundle or Terraform outputs. Changing the build settings requires rebuilding the SPA; Static Web Apps application settings do not configure static JavaScript at runtime.
-
-Before the first sign-in, add the Terraform output `review_static_web_app_url` to the existing registration's SPA redirect URIs. MSAL and Functions Easy Auth remain unchanged: the browser calls the separate Function API directly, with its new SPA origin automatically allowed by CORS. No Static Web Apps built-in authentication or linked backend is required. Static assets remain public; the API is protected by Functions. Free has quotas and no SLA; Functions costs are separate.
-
-The next Terraform apply replaces the old Linux Web App and its dedicated `B1` plan. Review the plan; the panel will be unavailable until the static bundle is deployed and the new Entra redirect URI is registered. After verifying sign-in and API access, remove the old SPA redirect URI. See the [hosting and Easy Auth configuration](../../docs/functions-easy-auth.md) for deployment permissions and migration checks. No Function key or client secret belongs in the SPA.
+`npm run build` generates a static bundle; `npm run preview` serves it locally. For Telegram, host `dist` over HTTPS, allow its origin in the review API's CORS settings, and set the bot menu URL to that origin. Azure Static Web Apps can serve the public static assets; the review API runs separately and must enforce authorization. [staticwebapp.config.json](public/staticwebapp.config.json) provides SPA navigation fallback.
 
 ## Source structure
 
@@ -92,7 +78,7 @@ The next Terraform apply replaces the old Linux Web App and its dedicated `B1` p
 - [api/](src/api/) contains the HTTP client and response contracts/parsers.
 - [hooks/](src/hooks/) owns chat loading, queue pagination/selection, and moderation state. Each loader cancels superseded requests and requests still pending on unmount.
 - [components/](src/components/) contains the query form, queue, message details, last decision, and dialogs.
-- [lib/](src/lib/) contains shared workspace types, environment configuration, chat preferences, and display helpers.
+- [lib/](src/lib/) contains the Telegram Web App integration, workspace types, chat preferences, and display helpers.
 - [styles/](src/styles/) contains application and global styles.
 
 The restrictions dialog uses React Hook Form for field validation and submission state. IDs stay strings and are validated with the existing 64-bit ID validator. Each opening mounts a fresh form with the current chat/user defaults, so cancelled input and errors are not carried into the next opening. API errors remain separate from field errors. The query form uses ordinary React state for its two selects. Moderation operations share a synchronous submission guard and are never retried automatically.

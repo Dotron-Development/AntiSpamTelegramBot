@@ -26,7 +26,6 @@ variables {
   keyvault_administrator_object_id = "33333333-3333-3333-3333-333333333333"
   telegram_bot_token               = "test-token"
   telegram_bot_secret_header       = "test-header"
-  review_user_object_ids           = ["44444444-4444-4444-4444-444444444444"]
 }
 
 run "planning_with_unknown_spa_origin" {
@@ -129,7 +128,39 @@ run "planning_without_additional_origins" {
   }
 
   assert {
+    condition = (
+      azurerm_function_app_flex_consumption.function_app.app_settings["ReviewTelegram__ModeratorIds"] == "" &&
+      azurerm_function_app_flex_consumption.function_app.https_only &&
+      length(azurerm_function_app_flex_consumption.function_app.auth_settings_v2) == 0
+    )
+    error_message = "Review must default to an empty allowlist, require HTTPS and have no platform authentication."
+  }
+
+  assert {
     condition     = length(azurerm_function_app_flex_consumption.function_app.site_config[0].cors) == 1 && !azurerm_function_app_flex_consumption.function_app.site_config[0].cors[0].support_credentials
     error_message = "CORS must remain configured without allowing cookie credentials when no additional origins are supplied."
   }
+}
+
+run "planning_with_telegram_moderators" {
+  command = plan
+
+  variables {
+    review_telegram_moderator_ids = "123456789,4503599627370495"
+  }
+
+  assert {
+    condition     = azurerm_function_app_flex_consumption.function_app.app_settings["ReviewTelegram__ModeratorIds"] == "123456789,4503599627370495"
+    error_message = "Forward the exact Telegram allowlist to the Functions environment."
+  }
+}
+
+run "rejecting_invalid_telegram_moderators" {
+  command = plan
+
+  variables {
+    review_telegram_moderator_ids = "123456789,0"
+  }
+
+  expect_failures = [var.review_telegram_moderator_ids]
 }

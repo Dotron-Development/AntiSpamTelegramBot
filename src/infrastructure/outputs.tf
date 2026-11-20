@@ -18,12 +18,7 @@ output "review_static_web_app_url" {
   value = local.review_static_web_app_origin
 }
 
-output "review_spa_build_settings" {
-  description = "Public build-time settings for the review SPA; tenant is supplied within the build job."
-  value = jsonencode({
-    API_URL      = "https://${azurerm_function_app_flex_consumption.function_app.default_hostname}"
-    CLIENT_ID    = var.review_client_id
-    API_SCOPE    = "api://${var.review_client_id}/Review.Access"
-    REDIRECT_URI = local.review_static_web_app_origin
-  })
+output "review_api_url" {
+  description = "Public Functions origin used to build the Telegram Mini App."
+  value       = "https://${azurerm_function_app_flex_consumption.function_app.default_hostname}"
 }

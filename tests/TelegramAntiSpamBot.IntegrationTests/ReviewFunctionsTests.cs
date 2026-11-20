@@ -602,16 +602,26 @@ public class ReviewFunctionsTests
         Assert.Empty(fixture.HashDecisions);
     }
 
-    [Theory]
-    [InlineData(nameof(ReviewFunctions.GetChats))]
-    [InlineData(nameof(ReviewFunctions.GetMessages))]
-    [InlineData(nameof(ReviewFunctions.Review))]
-    [InlineData(nameof(ReviewFunctions.RemoveRestrictions))]
-    public void AllReviewEndpointsDelegateAuthenticationToEasyAuth(string methodName)
+    [Fact]
+    public void OnlyWebhookBypassesTelegramReviewAuthorization()
     {
-        var trigger = typeof(ReviewFunctions).GetMethod(methodName)!.GetParameters()[0]
-            .GetCustomAttribute<HttpTriggerAttribute>();
-        Assert.Equal(AuthorizationLevel.Anonymous, trigger!.AuthLevel);
+        var httpFunctions = typeof(ReviewFunctions).Assembly.GetTypes()
+            .SelectMany(type => type.GetMethods())
+            .Select(method => (Function: method.GetCustomAttribute<FunctionAttribute>(),
+                Trigger: method.GetParameters().Select(parameter => parameter.GetCustomAttribute<HttpTriggerAttribute>())
+                    .FirstOrDefault(trigger => trigger is not null)))
+            .Where(entry => entry.Function is not null && entry.Trigger is not null)
+            .ToArray();
+
+        var bypassed = httpFunctions.Where(entry => !ReviewAuthorizationMiddleware.RequiresTelegramAuthorization(entry.Function!.Name, ["httpTrigger"]))
+            .Select(entry => entry.Trigger!.Route ?? entry.Function!.Name)
+            .Order(StringComparer.Ordinal);
+
+        Assert.Equal(["AntiSpamBotWebHook"], bypassed);
+        Assert.Contains(httpFunctions, entry => entry.Trigger!.Route == "review/access" &&
+            entry.Function!.Name == nameof(ReviewAccessFunctions.CheckTelegramReviewAccess));
+        Assert.Contains(httpFunctions, entry => entry.Trigger!.Route == "review/history/{chatId:long}");
+        Assert.False(ReviewAuthorizationMiddleware.RequiresTelegramAuthorization("Timer", ["timerTrigger"]));
     }
 
     [Fact]

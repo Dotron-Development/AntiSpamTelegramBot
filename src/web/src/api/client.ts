@@ -4,9 +4,17 @@ import type { MentionPreviewRequest, ReviewChatPage, ReviewMessage, ReviewMessag
 export type { ReviewChat, ReviewChatPage, ReviewMessage, MessageFrom, ReviewMessageReplyTo, ReviewPage } from './contracts'
 export type { CommandCall, HistoryMessage, TablePage } from './contracts'
 
+export type AccessFailure = 'reopen' | 'denied'
+
 export interface Connection {
   endpoint: string
-  getAccessToken: () => Promise<string>
+  initData: string
+  onAccessFailure: (failure: AccessFailure) => void
+}
+
+export const accessMessages: Record<AccessFailure, string> = {
+  reopen: 'Your Telegram launch is invalid or expired. Close this Mini App and reopen it from the menu in the private bot chat.',
+  denied: 'You do not have access to the review workspace.',
 }
 
 export class ApiError extends Error {
@@ -44,17 +52,15 @@ export function messageDate(ticks: string): Date | null {
   }
 }
 
-async function request(connection: Connection, path: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown,
-  signal?: AbortSignal, timeout = 30_000): Promise<string> {
-  const endpoint = normalizeEndpoint(connection.endpoint)
-  const api = endpoint.endsWith('/api') ? endpoint : `${endpoint}/api`
-  const accessToken = await connection.getAccessToken()
-  let response: Response
+async function fetchReview(connection: Connection, path: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown,
+  signal?: AbortSignal, timeout = 30_000): Promise<Response> {
+  const base = normalizeEndpoint(connection.endpoint)
+  const api = base.endsWith('/api') ? base : `${base}/api`
   try {
-    response = await fetch(`${api}/review${path}`, {
+    return await fetch(`${api}/review${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `tma ${connection.initData}`,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -67,21 +73,43 @@ async function request(connection: Connection, path: string, method: 'GET' | 'PO
     if (signal?.aborted) throw error
     throw new Error('Could not reach the Function or the request timed out. Check its URL, network access, and CORS settings.')
   }
+}
+
+async function request(connection: Connection, path: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown,
+  signal?: AbortSignal, timeout?: number): Promise<string> {
+  return readReviewResponse(await fetchReview(connection, path, method, body, signal, timeout), connection)
+}
+
+async function readReviewResponse(response: Response, connection: Connection): Promise<string> {
+  if (response.status === 401) failAccess(connection, 401, 'reopen')
   const text = await response.text()
+  // The access guard returns an empty 403; action-specific errors can include a body.
+  if (response.status === 403 && text === '') failAccess(connection, 403, 'denied')
   if (!response.ok) {
     let detail = ''
     try {
       detail = parseApiError(text).error
     } catch {}
     const defaults: Record<number, string> = {
-      401: 'Your session is invalid or expired. Sign out and sign in again.',
-      403: 'Access denied. Check your Moderator role and API permission.',
+      403: 'Access denied for this review action.',
       404: 'The message or API route was not found.',
       409: 'The Function could not complete this action.',
     }
     throw new ApiError(response.status, detail || defaults[response.status] || `Request failed (HTTP ${response.status}).`)
   }
   return text
+}
+
+function failAccess(connection: Connection, status: number, failure: AccessFailure): never {
+  connection.onAccessFailure(failure)
+  throw new ApiError(status, accessMessages[failure])
+}
+
+export async function checkReviewAccess(connection: Connection, signal: AbortSignal): Promise<void> {
+  const response = await fetchReview(connection, '/access', 'GET', undefined, signal)
+  if (response.status === 204) return
+  await readReviewResponse(response, connection)
+  throw new ApiError(response.status, 'The review API returned an unexpected access response.')
 }
 
 export async function getChats(connection: Connection, token: string | null, signal?: AbortSignal): Promise<ReviewChatPage> {

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
-import { Check, CircleAlert, History, ListChecks, LogOut, ShieldCheck, Sparkles, Terminal, UnlockKeyhole, X } from 'lucide-react'
+import { Check, CircleAlert, History, ListChecks, ShieldCheck, Sparkles, Terminal, UnlockKeyhole, X } from 'lucide-react'
 import { clearChatHistory, getCommandCalls, getHistory, validId } from './api/client'
-import type { ReviewMessage } from './api/client'
+import type { Connection, ReviewMessage } from './api/client'
 import { DecisionDialog } from './components/DecisionDialog'
 import { ClearHistoryDialog } from './components/ClearHistoryDialog'
 import { BatchSpamDialog } from './components/BatchSpamDialog'
@@ -17,12 +17,11 @@ import { useTablePage } from './hooks/useTablePage'
 import { useChats } from './hooks/useChats'
 import { useModeration } from './hooks/useModeration'
 import { useReviewQueue } from './hooks/useReviewQueue'
-import { connection, errorText } from './lib/workspace'
+import { errorText } from './lib/workspace'
 import type { Notice, QueueQuery } from './lib/workspace'
-import { currentAccount, signOut } from './lib/auth'
 import './styles/App.css'
 
-function App() {
+function App({ connection }: { connection: Connection }) {
     const [view, setView] = useState<'queue' | 'calls' | 'history' | 'mention' | 'snapshots'>('queue')
     const [notice, setNotice] = useState<Notice | null>(null)
     const [mentionGenerating, setMentionGenerating] = useState(false)
@@ -81,16 +80,11 @@ function App() {
 
     return <div className="app">
         <header className="topbar">
-            <a className="brand" href="/" aria-label="AntiSpam review home">
+            <span className="brand">
                 <span className="brand-mark"><ShieldCheck size={23} strokeWidth={1.8} /></span>
                 <span>AntiSpam<span className="brand-divider">/</span><span className="brand-product">Review</span></span>
-            </a>
-            <div className="topbar-actions">
-                <span className="connection-status configured">
-                    <span className="status-dot" />{currentAccount()?.name || 'Moderator'}
-                </span>
-                <button className="icon-button" title="Sign out" aria-label="Sign out" onClick={() => { void signOut() }}><LogOut size={16} /></button>
-            </div>
+            </span>
+            <span className="connection-status configured"><span className="status-dot" />Telegram Mini App</span>
         </header>
 
         <main>
@@ -148,7 +142,7 @@ function App() {
 
             {view === 'queue' && moderation.lastReview && <LastReview decision={moderation.lastReview}
                 restored={moderation.isRestored(moderation.lastReview.message)} busy={locked} onRestrictions={openRestrictions} />}
-            <footer className="app-footer"><span>AntiSpam Telegram Bot</span><span>Human review workspace<span className="footer-dot" />Local session</span></footer>
+            <footer className="app-footer"><span>AntiSpam Telegram Bot</span><span>Human review workspace<span className="footer-dot" />Mini App</span></footer>
         </main>
 
         {moderation.dialog?.kind === 'decision' && <DecisionDialog decision={moderation.dialog.decision}

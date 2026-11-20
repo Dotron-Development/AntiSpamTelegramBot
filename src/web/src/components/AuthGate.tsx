@@ -1,39 +1,62 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { LogOut, ShieldCheck } from 'lucide-react'
-import { configurationError, currentAccount, getAccessToken, initializeAuth, signIn, signOut } from '../lib/auth'
+import { ShieldCheck } from 'lucide-react'
+import { accessMessages, checkReviewAccess } from '../api/client'
+import type { AccessFailure, Connection } from '../api/client'
+import { getTelegramWebApp } from '../lib/auth'
+import { errorText } from '../lib/workspace'
 
-export function AuthGate({ children }: { children: ReactNode }) {
-    const [ready, setReady] = useState(false)
-    const [error, setError] = useState<string | null>(configurationError)
+type AccessState = { kind: 'starting' } | { kind: AccessFailure } |
+    { kind: 'failed'; message: string } | { kind: 'ready'; connection: Connection }
+
+export function AuthGate({ children }: { children: (connection: Connection) => ReactNode }) {
+    const webApp = getTelegramWebApp()
+    const initData = webApp?.initData
+    const [state, setState] = useState<AccessState>({ kind: 'starting' })
 
     useEffect(() => {
-        let active = true
-        void initializeAuth().then(async () => {
-            if (!active) return
-            if (!currentAccount()) {
-                await signIn()
-                return
+        const controller = new AbortController()
+        const { signal } = controller
+        // Let StrictMode's setup/cleanup probe finish before making the access check.
+        void Promise.resolve().then(async () => {
+            if (signal.aborted || !webApp) return
+            webApp.ready()
+            if (!initData) return
+            webApp.expand()
+            let accessFailure: AccessFailure | undefined
+            const connection: Connection = {
+                endpoint: import.meta.env.API_URL,
+                initData,
+                onAccessFailure(failure) {
+                    if (signal.aborted || accessFailure) return
+                    accessFailure = failure
+                    setState({ kind: failure })
+                },
             }
-            if (currentAccount()?.idTokenClaims?.roles?.includes('Moderator')) await getAccessToken()
-            if (active) setReady(true)
+            try {
+                await checkReviewAccess(connection, signal)
+                if (!signal.aborted) setState({ kind: 'ready', connection })
+            } catch (error) {
+                if (!signal.aborted && !accessFailure) setState({ kind: 'failed', message: errorText(error) })
+            }
         })
-            .catch((failure: unknown) => { if (active) setError(failure instanceof Error ? failure.message : 'Sign-in failed.') })
-        return () => { active = false }
-    }, [])
+        return () => controller.abort()
+    }, [initData, webApp])
 
-    const account = ready ? currentAccount() : null
-    const moderator = account?.idTokenClaims?.roles?.includes('Moderator') === true
-    if (account && moderator) return children
-
+    if (initData && state.kind === 'ready') return children(state.connection)
+    const title = !initData ? 'Open in Telegram' : state.kind === 'reopen' ? 'Reopen in Telegram'
+        : state.kind === 'denied' ? 'Access denied' : state.kind === 'failed' ? 'Review unavailable' : 'Checking review access'
     return <div className="app">
         <header className="topbar"><span className="brand"><ShieldCheck size={23} />AntiSpam / Review</span></header>
         <main>
-            <section className="page-heading"><h1>{account ? 'Access denied' : error ? 'Sign-in unavailable' : 'Signing in'}</h1></section>
-            {error && <div className="notice error" role="alert">{error}</div>}
-            {account && <div className="notice error" role="alert">Your account does not have the Moderator role.</div>}
-            {!account && !error && <p role="status">Redirecting to Microsoft sign-in...</p>}
-            {account && <button className="button subtle" onClick={() => { void signOut() }}><LogOut size={16} />Sign out</button>}
+            <section className="page-heading"><h1>{title}</h1></section>
+            {!initData ? <p>Open the private chat with the bot in Telegram and tap its menu button to launch the review panel.</p>
+                : state.kind === 'reopen' ? <div className="notice error" role="alert">{accessMessages.reopen} Check the queue or history before repeating any action.</div>
+                : state.kind === 'denied' ? <div className="notice error" role="alert">{accessMessages.denied}</div>
+                : state.kind === 'failed' ? <div className="notice error" role="alert">{state.message} Close and reopen the Mini App from the bot menu.</div>
+                : <p role="status">Connecting to the review API…</p>}
+            {initData && state.kind !== 'starting' &&
+                <button className="button subtle" onClick={() => webApp?.close()}>Close Mini App</button>}
         </main>
     </div>
 }

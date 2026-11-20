@@ -2,8 +2,10 @@
 @chatId = -1001234567890
 
 ### DANGER: permanently delete all stored message history for this chat only.
-# Deployed Functions require an Entra access token. Local hosts do not run Easy Auth.
+# Use fresh signed Telegram launch data from a private environment value. Never commit it.
 DELETE {{baseUrl}}/api/review/history/{{chatId}}
+Authorization: tma {{$processEnv REVIEW_TELEGRAM_INIT_DATA}}
 
 ### Invalid chat ID: returns 400 without deleting history.
 DELETE {{baseUrl}}/api/review/history/0
+Authorization: tma {{$processEnv REVIEW_TELEGRAM_INIT_DATA}}
