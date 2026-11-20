@@ -18,11 +18,13 @@ resource "azurerm_private_endpoint" "kv_runner_pe" {
   tags = local.tags
 }
 
-resource "azurerm_private_dns_zone_virtual_network_link" "keyvault_runner_vnet_link" {
-  count               = var.disable_public_access ? 1 : 0
-  name                = "vnl-runner-${local.kv_name}-${var.environment_prefix}"
-  virtual_network_id  = data.azurerm_virtual_network.github_runner_vnet.id
-  private_dns_zone_id = azurerm_private_dns_zone.private_dns[0].id
+resource "azurerm_private_dns_a_record" "keyvault_runner" {
+  count               = var.disable_public_access && var.enable_runner_endpoints ? 1 : 0
+  name                = azurerm_key_vault.kv.name
+  private_dns_zone_id = data.azurerm_private_dns_zone.runner["privatelink.vaultcore.azure.net"].id
+  ttl                 = 300
+  records             = [azurerm_private_endpoint.kv_runner_pe[0].private_service_connection[0].private_ip_address]
+  tags                = local.tags
 
-  tags = local.tags
+  depends_on = [data.azurerm_private_dns_zone_virtual_network_link.runner]
 }

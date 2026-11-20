@@ -120,8 +120,8 @@ jobs:
             -target=time_sleep.data_storage_dns_propagation \
             -target=azurerm_private_endpoint.kv_runner_pe \
             -target=azurerm_private_endpoint.data_storage_runner_pe \
-            -target=azurerm_private_dns_a_record.keyvault_a_record \
-            -target=azurerm_private_dns_a_record.data_storage_a_record
+            -target=azurerm_private_dns_a_record.keyvault_runner \
+            -target=azurerm_private_dns_a_record.data_storage_runner
 
       - name: Verify runner connectivity cleanup plan
         if: ${{ steps.connectivity.outputs.required == 'true' && !inputs.enable_runner_endpoints }}
@@ -147,8 +147,8 @@ jobs:
               ['time_sleep.data_storage_dns_propagation', 'delete'],
               ['azurerm_private_endpoint.kv_runner_pe', 'delete'],
               ['azurerm_private_endpoint.data_storage_runner_pe', 'delete'],
-              ['azurerm_private_dns_a_record.keyvault_a_record', 'update'],
-              ['azurerm_private_dns_a_record.data_storage_a_record', 'update'],
+              ['azurerm_private_dns_a_record.keyvault_runner', 'delete'],
+              ['azurerm_private_dns_a_record.data_storage_runner', 'delete'],
             ]);
             for (const { address, change: { actions } } of plan.resource_changes ?? []) {
               const expected = allowed.get(address.endsWith('[0]') ? address.slice(0, -3) : address);

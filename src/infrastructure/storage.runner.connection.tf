@@ -17,11 +17,13 @@ resource "azurerm_private_endpoint" "data_storage_runner_pe" {
   tags = local.tags
 }
 
-resource "azurerm_private_dns_zone_virtual_network_link" "data_storage_runner_vnet_link" {
-  count               = var.disable_public_access ? 1 : 0
-  name                = "vnl-runner-data-storage-${var.environment_prefix}"
-  virtual_network_id  = data.azurerm_virtual_network.github_runner_vnet.id
-  private_dns_zone_id = azurerm_private_dns_zone.data_storage_private_dns[0].id
+resource "azurerm_private_dns_a_record" "data_storage_runner" {
+  count               = var.disable_public_access && var.enable_runner_endpoints ? 1 : 0
+  name                = azurerm_storage_account.data_storage.name
+  private_dns_zone_id = data.azurerm_private_dns_zone.runner["privatelink.table.core.windows.net"].id
+  ttl                 = 300
+  records             = [azurerm_private_endpoint.data_storage_runner_pe[0].private_service_connection[0].private_ip_address]
+  tags                = local.tags
 
-  tags = local.tags
+  depends_on = [data.azurerm_private_dns_zone_virtual_network_link.runner]
 }

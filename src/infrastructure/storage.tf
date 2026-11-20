@@ -19,11 +19,12 @@ resource "time_sleep" "data_storage_dns_propagation" {
   count           = var.disable_public_access && var.enable_runner_endpoints ? 1 : 0
   create_duration = "300s"
 
-  depends_on = [
-    azurerm_private_endpoint.data_storage_runner_pe,
-    azurerm_private_dns_a_record.data_storage_a_record,
-    azurerm_private_dns_zone_virtual_network_link.data_storage_runner_vnet_link,
-  ]
+  triggers = {
+    record_id = azurerm_private_dns_a_record.data_storage_runner[0].id
+    address   = one(azurerm_private_dns_a_record.data_storage_runner[0].records)
+  }
+
+  depends_on = [azurerm_private_dns_a_record.data_storage_a_record]
 }
 
 # azurerm_storage_table uses SharedKey auth for GetTableACL even when storage_use_azuread = true,

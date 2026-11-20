@@ -17,6 +17,30 @@ mock_provider "azurerm" {
       id = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/rg-runners/providers/Microsoft.Network/virtualNetworks/vnet-runners/subnets/runner"
     }
   }
+
+  mock_data "azurerm_private_dns_zone_virtual_network_link" {
+    defaults = {
+      virtual_network_id   = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/rg-runners/providers/Microsoft.Network/virtualNetworks/vnet-runners"
+      registration_enabled = false
+      resolution_policy    = "NxDomainRedirect"
+    }
+  }
+}
+
+override_data {
+  target          = data.azurerm_private_dns_zone.runner["privatelink.vaultcore.azure.net"]
+  override_during = plan
+  values = {
+    id = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/rg-runners/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net"
+  }
+}
+
+override_data {
+  target          = data.azurerm_private_dns_zone.runner["privatelink.table.core.windows.net"]
+  override_during = plan
+  values = {
+    id = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/rg-runners/providers/Microsoft.Network/privateDnsZones/privatelink.table.core.windows.net"
+  }
 }
 
 mock_provider "time" {}
@@ -120,6 +144,83 @@ run "planning_search_foundation" {
   }
 }
 
+run "planning_shared_runner_dns" {
+  command = plan
+
+  variables {
+    disable_public_access   = true
+    enable_runner_endpoints = true
+  }
+
+  override_resource {
+    target          = azurerm_private_endpoint.kv_runner_pe[0]
+    override_during = plan
+    values = {
+      private_service_connection = { private_ip_address = "10.20.1.4" }
+    }
+  }
+
+  override_resource {
+    target          = azurerm_private_endpoint.data_storage_runner_pe[0]
+    override_during = plan
+    values = {
+      private_service_connection = { private_ip_address = "10.20.1.5" }
+    }
+  }
+
+  assert {
+    condition = (
+      one(azurerm_private_dns_a_record.keyvault_runner).private_dns_zone_id == data.azurerm_private_dns_zone.runner["privatelink.vaultcore.azure.net"].id &&
+      one(azurerm_private_dns_a_record.data_storage_runner).private_dns_zone_id == data.azurerm_private_dns_zone.runner["privatelink.table.core.windows.net"].id &&
+      one(one(azurerm_private_dns_a_record.keyvault_runner).records) == "10.20.1.4" &&
+      one(one(azurerm_private_dns_a_record.data_storage_runner).records) == "10.20.1.5" &&
+      one(one(azurerm_private_dns_a_record.keyvault_a_record).records) == "${var.vnet_address_prefix}.2.33" &&
+      one(one(azurerm_private_dns_a_record.data_storage_a_record).records) == "${var.vnet_address_prefix}.2.34"
+    )
+    error_message = "Runner DNS must publish only runner endpoint IPs in the shared zones, and Functions DNS must publish only Functions endpoint IPs."
+  }
+}
+
+run "rejecting_runner_dns_without_public_fallback" {
+  command = plan
+
+  variables {
+    disable_public_access   = true
+    enable_runner_endpoints = true
+  }
+
+  override_data {
+    target = data.azurerm_private_dns_zone_virtual_network_link.runner["privatelink.vaultcore.azure.net"]
+    values = {
+      virtual_network_id = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/rg-runners/providers/Microsoft.Network/virtualNetworks/vnet-runners"
+      resolution_policy  = "Default"
+    }
+  }
+
+  expect_failures = [data.azurerm_private_dns_zone_virtual_network_link.runner["privatelink.vaultcore.azure.net"]]
+}
+
+run "planning_runner_dns_cleanup" {
+  command = plan
+
+  variables {
+    disable_public_access   = true
+    enable_runner_endpoints = false
+  }
+
+  assert {
+    condition = (
+      length(azurerm_private_endpoint.kv_runner_pe) == 0 &&
+      length(azurerm_private_endpoint.data_storage_runner_pe) == 0 &&
+      length(azurerm_private_dns_a_record.keyvault_runner) == 0 &&
+      length(azurerm_private_dns_a_record.data_storage_runner) == 0 &&
+      length(azurerm_private_dns_zone_virtual_network_link.keyvault_vnet_link) == 1 &&
+      length(azurerm_private_dns_zone_virtual_network_link.data_storage_vnet_link) == 1
+    )
+    error_message = "Cleanup must remove temporary runner records and endpoints without removing Functions DNS links."
+  }
+}
+
 run "planning_prod_service_endpoints" {
   command = plan
 
@@ -156,9 +257,11 @@ run "planning_prod_service_endpoints" {
       length(azurerm_private_endpoint.data_storage_queue) == 0 &&
       length(azurerm_private_endpoint.data_storage_blob) == 0 &&
       length(azurerm_private_endpoint.kv_runner_pe) == 0 &&
-      length(azurerm_private_endpoint.data_storage_runner_pe) == 0
+      length(azurerm_private_endpoint.data_storage_runner_pe) == 0 &&
+      length(data.azurerm_private_dns_zone.runner) == 0 &&
+      length(data.azurerm_private_dns_zone_virtual_network_link.runner) == 0
     )
-    error_message = "Production must not provision Private Link networking, including temporary runner endpoints."
+    error_message = "Production must not provision Private Link networking or depend on shared runner DNS when using service endpoints."
   }
 }
 
