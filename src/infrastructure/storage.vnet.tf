@@ -1,5 +1,6 @@
 resource "azurerm_private_dns_zone" "data_storage_private_dns" {
-  count               = var.disable_public_access ? 1 : 0
+  # Keep the existing state address without requiring a move in targeted runner plans.
+  count               = 1
   name                = "privatelink.table.core.windows.net"
   resource_group_name = azurerm_resource_group.rg.name
   tags                = local.tags
