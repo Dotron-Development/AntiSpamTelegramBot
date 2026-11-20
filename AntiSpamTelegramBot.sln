@@ -21,6 +21,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Build", "Build", "{B8C9D0E1
 	ProjectSection(SolutionItems) = preProject
 		Directory.Build.props = Directory.Build.props
 		Directory.Packages.props = Directory.Packages.props
+		global.json = global.json
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelegramAntiSpamBot.Functions", "src\bot\TelegramAntiSpamBot.Functions\TelegramAntiSpamBot.Functions.csproj", "{ACCE27DF-CE07-4C1E-AC4B-081F8F5DA0D4}"

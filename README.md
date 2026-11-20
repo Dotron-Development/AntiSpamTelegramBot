@@ -4,7 +4,7 @@
 
 - An Azure subscription and permission to manage resources and role assignments.
 - A GitHub account with administration access to this repository.
-- .NET 10 SDK, Node.js 24 LTS, Azure CLI and Azure Functions Core Tools v4 for local development.
+- .NET 11 SDK, Node.js 24 LTS, Azure CLI and Azure Functions Core Tools v4 with .NET 11 isolated-worker support for local development.
 - Terraform 1.17.x for local infrastructure operations.
 - A separate Telegram bot for each environment, created through BotFather.
 

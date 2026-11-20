@@ -26,10 +26,12 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6.0.0
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '11.0.x'
 
       - name: Restore
-        run: dotnet restore AntiSpamTelegramBot.sln
+        run: |
+          dotnet restore AntiSpamTelegramBot.sln
+          dotnet restore src/bot/TelegramAntiSpamBot.Functions/TelegramAntiSpamBot.Functions.csproj
 
       - name: Build
         run: dotnet build AntiSpamTelegramBot.sln --configuration Release --no-restore

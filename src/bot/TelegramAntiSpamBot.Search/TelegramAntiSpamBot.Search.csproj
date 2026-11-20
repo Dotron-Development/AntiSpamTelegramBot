@@ -3,7 +3,6 @@
     <PackageReference Include="Azure.AI.OpenAI" />
     <PackageReference Include="Microsoft.ML.Tokenizers" />
     <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj" />

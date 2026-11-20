@@ -41,7 +41,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   storage_authentication_type                    = "UserAssignedIdentity"
   storage_user_assigned_identity_id              = azurerm_user_assigned_identity.functionapp_identity.id
   runtime_name                                   = "dotnet-isolated"
-  runtime_version                                = "10.0"
+  runtime_version                                = "11.0"
   instance_memory_in_mb                          = 512
   maximum_instance_count                         = 1
   virtual_network_subnet_id                      = azurerm_subnet.subnet1_functions.id
