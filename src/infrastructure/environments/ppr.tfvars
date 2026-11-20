@@ -17,5 +17,6 @@ spam_recognition = {
   version  = "2026-09-22"
   capacity = 50
 }
-forwardSpamToChatId = "-1002395980780"
-debug_ai_response   = true
+forwardSpamToChatId           = "-1002395980780"
+debug_ai_response             = true
+review_telegram_moderator_ids = "765779867"

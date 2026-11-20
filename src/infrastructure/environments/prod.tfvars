@@ -22,6 +22,7 @@ mention = {
   version  = "2026-10-26"
   capacity = 100
 }
-search_embedding_capacity = 990
-forwardSpamToChatId       = "-1002395980780"
-debug_ai_response         = true
+search_embedding_capacity     = 990
+forwardSpamToChatId           = "-1002395980780"
+debug_ai_response             = true
+review_telegram_moderator_ids = "765779867"
