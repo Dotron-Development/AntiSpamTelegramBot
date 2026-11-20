@@ -1,6 +1,7 @@
 namespace TelegramAntiSpamBot.Functions
 {
-    public class SpamMessageProcessor(ILogger<SpamMessageProcessor> logger,
+    public class SpamMessageProcessor(
+        ILogger<SpamMessageProcessor> logger,
         ISpamDetectionService detectionService,
         IMessageHistoryRepository messageHistoryRepository,
         IProbablySpamRepository probablySpamRepository,
@@ -10,131 +11,40 @@ namespace TelegramAntiSpamBot.Functions
         ITelegramBotClient bot,
         IOptions<TelegramBotConfiguration> botConfig) : IReportedMessageProcessor
     {
-        public async Task ProcessReportedAsync(Message message) =>
-            await ProcessMessageAsync(message, UpdateType.Message, 0, isReported: true);
+        private const int MaxShortMessageLength = 20;
+        private const int TrustedSenderMessageCount = 100;
+        private const int SpamProbabilityThreshold = 95;
 
-        private async Task SaveHistoryAsync(Message message, MessagePayload payload, UpdateType updateType, int updateId)
+        public async Task ProcessReportedAsync(Message message)
         {
-            if (!payload.HasContent)
+            if (TelegramMessageSource.IsServiceOrAutomaticForward(message))
                 return;
 
-            try
-            {
-                await messageHistoryRepository.SaveAsync(new HistoryMessage(
-                    message.Chat.Id, message.MessageId,
-                    message.Date.ToUniversalTime().Ticks,
-                    new HistoryMessageContent(GetMessageFrom(message),
-                        message.ReplyToMessage is { } reply
-                            ? new HistoryMessageReply(reply.MessageId, GetMessageFrom(reply),
-                                GetMessageText(reply))
-                            : null,
-                        payload), updateType switch
-                        {
-                            UpdateType.EditedMessage => HistoryUpdateType.EditedMessage,
-                            UpdateType.ChannelPost => HistoryUpdateType.ChannelPost,
-                            UpdateType.EditedChannelPost => HistoryUpdateType.EditedChannelPost,
-                            _ => HistoryUpdateType.Message
-                        }, updateId));
-            }
-            catch (Exception exception)
-            {
-                logger.LogError(exception, "Unable to save message history for chat {chatId}", message.Chat.Id);
-                throw;
-            }
+            await ProcessMessageAsync(message, UpdateType.Message, 0, isReported: true);
         }
 
         public async Task<bool> ProcessMessageAsync(Message message, UpdateType updateType, int updateId, bool isReported = false)
         {
+            Task counterWrite = Task.CompletedTask;
             try
             {
-                var isSpam = false;
                 var originalText = GetMessageText(message);
+                var image = await AnalyzePhotoAsync(message);
+                var content = new ModerationContent(originalText, image);
+                var isSpam = false;
 
-                var imageAnalysis = message.Chat.Id != botConfig.Value.ForwardSpamToChatId
-                    ? await AnalyzePhotoAsync(message)
-                    : null;
-
-                var imageText = imageAnalysis?.ToMessageContent() ?? string.Empty;
-                var messageContent = new MessagePayload(
-                    ImageDescription: NullIfEmpty(imageAnalysis?.ImageDescription),
-                    ImageText: NullIfEmpty(imageAnalysis?.TextOnImage),
-                    UserMessage: NullIfEmpty(originalText));
-
-                if (message is { From: { } fromUser }
-                    && fromUser.Id != 777000 // forwarded messages from main group (TG user)
-
-                    // database chat for spam collection
-                    // helpful for controlling of what was deleted
-                    && message.Chat.Id != botConfig.Value.ForwardSpamToChatId)
+                if (message.From is { } sender)
                 {
-                    var userMessageCount = await messageCountRepository.GetUserMessageCount(message.Chat.Id, fromUser.Id);
-                    var increaseCounterTask = isReported
-                        ? Task.CompletedTask
-                        : messageCountRepository.IncreaseMessageCount(message.Chat.Id, fromUser.Id);
+                    var priorMessageCount = await messageCountRepository.GetUserMessageCount(message.Chat.Id, sender.Id);
+                    if (!isReported)
+                        counterWrite = messageCountRepository.IncreaseMessageCount(message.Chat.Id, sender.Id);
 
-                    // Step 3. Check message content for spam
-                    if (messageContent.HasContent
-                        && (isReported || ((messageContent.ContentLength > 20 || imageAnalysis is not null) && userMessageCount < 100)))
-                    {
-                        // Step 3.1 Shortcut. if there is hashed spam message in db
-                        // Quick access
-                        var sanitizedPayload = messageContent with
-                        {
-                            ImageDescription = NullIfEmpty(MessageContentSanitizer.Sanitize(messageContent.ImageDescription ?? string.Empty)),
-                            ImageText = NullIfEmpty(MessageContentSanitizer.Sanitize(messageContent.ImageText ?? string.Empty)),
-                            UserMessage = NullIfEmpty(MessageContentSanitizer.Sanitize(messageContent.UserMessage ?? string.Empty))
-                        };
-                        var sanitizedContent = JsonSerializer.Serialize(sanitizedPayload);
-                        var contentHash = SHA256.HashData(Encoding.Unicode.GetBytes(sanitizedContent));
-                        var hex = Convert.ToHexString(contentHash);
-                        var shortcutResult = !isReported && sanitizedPayload.HasContent
-                            ? await spamHashRepository.IsSpam(hex)
-                            : ShortcutCheckResult.NotFound;
-
-                        if (shortcutResult.IsShortCut)
-                        {
-                            logger.LogInformation("Shortcut is used for spam detection. Message is spam {isSpam}", shortcutResult.IsSpam);
-
-                            if (shortcutResult.IsSpam!.Value)
-                            {
-                                await HandleSpamShort(message);
-                                return true;
-                            }
-
-                            await SaveHistoryAsync(message, messageContent, updateType, updateId);
-                            return false;
-                        }
-
-                        // Step 3.2.
-                        // Check message for spam with Open AI
-                        var spamDetectionResult = await detectionService.IsSpamAsync(messageContent, userMessageCount,
-                            isReported: isReported);
-
-                        logger.LogInformation("Spam detection result: {resultType}, probability: {probability}",
-                            spamDetectionResult.ResultType, spamDetectionResult.Probability);
-
-                        if (spamDetectionResult.ResultType == ResultType.Error)
-                        {
-                            throw new InvalidOperationException("Spam detection service returned an error.");
-                        }
-
-                        if (spamDetectionResult.Probability >= 95)
-                        {
-                            isSpam = true;
-                            await HandleSpam(message, originalText, imageText,
-                                spamDetectionResult, sanitizedPayload.HasContent ? hex : string.Empty);
-                        }
-                        else if (!isReported && sanitizedPayload.HasContent)
-                        {
-                            await spamHashRepository.SaveMessageHash(hex, false);
-                        }
-                    }
-
-                    await increaseCounterTask;
+                    if (ShouldCheckForSpam(content, priorMessageCount, isReported))
+                        isSpam = await ClassifyAndModerateAsync(message, content, priorMessageCount, isReported);
                 }
 
                 if (!isSpam && !isReported)
-                    await SaveHistoryAsync(message, messageContent, updateType, updateId);
+                    await SaveHistoryAsync(message, content.Payload, updateType, updateId);
 
                 return isSpam;
             }
@@ -143,19 +53,83 @@ namespace TelegramAntiSpamBot.Functions
                 logger.LogError("Error: {e}", e);
                 throw;
             }
+            finally
+            {
+                await counterWrite;
+            }
         }
 
-        private async Task HandleSpamShort(Message message)
+        private static bool ShouldCheckForSpam(ModerationContent content, int priorMessageCount, bool isReported)
+        {
+            if (!content.Payload.HasContent) return false;
+            if (isReported) return true;
+
+            return priorMessageCount < TrustedSenderMessageCount
+                && (content.Image is not null || content.Payload.ContentLength > MaxShortMessageLength);
+        }
+
+        private async Task<bool> ClassifyAndModerateAsync(Message message, ModerationContent content, int priorMessageCount, bool isReported)
+        {
+            var contentHash = ComputeContentHash(content.Payload);
+            var cached = !isReported && contentHash is not null
+                ? await spamHashRepository.IsSpam(contentHash)
+                : ShortcutCheckResult.NotFound;
+
+            if (cached.IsShortCut)
+            {
+                var isSpam = cached.IsSpam!.Value;
+                logger.LogInformation("Shortcut is used for spam detection. Message is spam {isSpam}", isSpam);
+                if (isSpam)
+                    await EnforceSpamDecisionAsync(message);
+                return isSpam;
+            }
+
+            var result = await detectionService.IsSpamAsync(content.Payload, priorMessageCount, isReported);
+            logger.LogInformation("Spam detection result: {resultType}, probability: {probability}", result.ResultType, result.Probability);
+            if (result.ResultType == ResultType.Error)
+                throw new InvalidOperationException("Spam detection service returned an error.");
+
+            if (result.Probability >= SpamProbabilityThreshold)
+            {
+                await EnforceSpamDecisionAsync(message);
+                await SaveReviewAndNotifyArchiveAsync(message, content, contentHash ?? string.Empty, result.Explanation);
+                return true;
+            }
+
+            if (!isReported && contentHash is not null)
+                await spamHashRepository.SaveMessageHash(contentHash, false);
+            return false;
+        }
+
+        private static string? ComputeContentHash(MessagePayload payload)
+        {
+            static string? Sanitize(string? value) => NullIfEmpty(MessageContentSanitizer.Sanitize(value ?? string.Empty));
+
+            var sanitized = payload with
+            {
+                ImageDescription = Sanitize(payload.ImageDescription),
+                ImageText = Sanitize(payload.ImageText),
+                UserMessage = Sanitize(payload.UserMessage)
+            };
+
+            if (!sanitized.HasContent) return null;
+
+            // Stored hashes use the UTF-16LE bytes of the serialized payload.
+            var json = JsonSerializer.Serialize(sanitized);
+            return Convert.ToHexString(SHA256.HashData(Encoding.Unicode.GetBytes(json)));
+        }
+
+        private async Task EnforceSpamDecisionAsync(Message message)
         {
             var chatId = message.Chat.Id;
             var messageId = message.MessageId;
             var userId = message.From!.Id;
 
-            if (botConfig.Value.ForwardSpamToChatId != null)
+            if (botConfig.Value.ForwardSpamToChatId is { } archiveChatId)
             {
                 try
                 {
-                    await bot.ForwardMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), chatId, messageId);
+                    await bot.ForwardMessage(new ChatId(archiveChatId), chatId, messageId);
                 }
                 catch (Exception e)
                 {
@@ -173,9 +147,9 @@ namespace TelegramAntiSpamBot.Functions
                 logger.LogInformation("Spam message {messageId} in chat {chatId} is already absent", messageId, chatId);
             }
 
-            var diff = DateTime.UtcNow - message.Date;
-            var t1 = spamStatsRepository.UpdateChannelSpamStats(chatId, (int)diff.TotalMilliseconds);
-            var t2 = bot.RestrictChatMember(chatId, userId, new ChatPermissions()
+            var messageAge = DateTime.UtcNow - message.Date;
+            var updateStats = spamStatsRepository.UpdateChannelSpamStats(chatId, (int)messageAge.TotalMilliseconds);
+            var restrictSender = bot.RestrictChatMember(chatId, userId, new ChatPermissions
             {
                 CanSendPhotos = false,
                 CanSendMessages = false,
@@ -193,26 +167,49 @@ namespace TelegramAntiSpamBot.Functions
                 CanPinMessages = false
             }, false, DateTime.UtcNow.Add(botConfig.Value.SpamRestrictionTimeout));
 
-            await Task.WhenAll(t1, t2);
+            await Task.WhenAll(updateStats, restrictSender);
         }
 
-        private async Task HandleSpam(Message message, string originalText, string imageText, SpamRequestResult spamDetectionResult, string hex)
+        private async Task SaveReviewAndNotifyArchiveAsync(Message message, ModerationContent content, string contentHash, string? explanation)
         {
-            var chatId = message.Chat.Id;
-            var user = message.From!;
-            var from = GetMessageFrom(message)!;
             var replyTo = message.ReplyToMessage is { } reply
                 ? new ReviewMessageReplyTo(reply.MessageId, GetMessageFrom(reply), GetMessageText(reply))
                 : null;
 
-            await probablySpamRepository.SaveReviewMessageAsync(new ReviewMessage(chatId, message.MessageId,
-                user.Id, from, replyTo, originalText, imageText, hex, message.Date.ToUniversalTime().Ticks));
+            var review = new ReviewMessage(message.Chat.Id, message.MessageId, message.From!.Id, GetMessageFrom(message)!,
+                replyTo, content.OriginalText, content.Image?.ToMessageContent() ?? string.Empty, contentHash,
+                message.Date.ToUniversalTime().Ticks);
 
-            await HandleSpamShort(message);
+            await probablySpamRepository.SaveReviewMessageAsync(review);
 
-            if (botConfig.Value.ForwardSpamToChatId != null && !string.IsNullOrEmpty(spamDetectionResult.Explanation))
+            if (botConfig.Value.ForwardSpamToChatId is { } archiveChatId && !string.IsNullOrEmpty(explanation))
+                await bot.SendMessage(new ChatId(archiveChatId), explanation);
+        }
+
+        private async Task SaveHistoryAsync(Message message, MessagePayload payload, UpdateType updateType, int updateId)
+        {
+            if (!payload.HasContent) return;
+
+            try
             {
-                await bot.SendMessage(new ChatId(botConfig.Value.ForwardSpamToChatId.Value), spamDetectionResult.Explanation);
+                var replyTo = message.ReplyToMessage is { } reply
+                    ? new HistoryMessageReply(reply.MessageId, GetMessageFrom(reply), GetMessageText(reply))
+                    : null;
+                var content = new HistoryMessageContent(GetMessageFrom(message), replyTo, payload);
+                var historyUpdateType = updateType switch
+                {
+                    UpdateType.EditedMessage => HistoryUpdateType.EditedMessage,
+                    UpdateType.ChannelPost => HistoryUpdateType.ChannelPost,
+                    UpdateType.EditedChannelPost => HistoryUpdateType.EditedChannelPost,
+                    _ => HistoryUpdateType.Message
+                };
+                await messageHistoryRepository.SaveAsync(new HistoryMessage(message.Chat.Id, message.MessageId,
+                    message.Date.ToUniversalTime().Ticks, content, historyUpdateType, updateId));
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Unable to save message history for chat {chatId}", message.Chat.Id);
+                throw;
             }
         }
 
@@ -238,7 +235,6 @@ namespace TelegramAntiSpamBot.Functions
         }
 
         private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
-
 
         private async Task<ImageAnalysisResult?> AnalyzePhotoAsync(Message message)
         {
@@ -272,5 +268,12 @@ namespace TelegramAntiSpamBot.Functions
             return null;
         }
 
+        private sealed record ModerationContent(string OriginalText, ImageAnalysisResult? Image)
+        {
+            public MessagePayload Payload { get; } = new(
+                ImageDescription: NullIfEmpty(Image?.ImageDescription),
+                ImageText: NullIfEmpty(Image?.TextOnImage),
+                UserMessage: NullIfEmpty(OriginalText));
+        }
     }
 }

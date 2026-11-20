@@ -10,13 +10,15 @@ internal static class TelegramPostIndexJob
             UpdateType.EditedMessage => update.EditedMessage,
             _ => null
         };
+
         if (message is not { IsAutomaticForward: true, ForwardOrigin: MessageOriginChannel origin } ||
             message.Chat.Type is not (ChatType.Group or ChatType.Supergroup) ||
             origin.Chat is not { Type: ChatType.Channel, Id: not 0 } || origin.MessageId <= 0)
             return null;
 
         var text = message.Text ?? message.Caption;
-        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
 
         var entities = message.Text is null ? message.CaptionEntities : message.Entities;
         var start = text.Length - text.AsSpan().TrimStart().Length;

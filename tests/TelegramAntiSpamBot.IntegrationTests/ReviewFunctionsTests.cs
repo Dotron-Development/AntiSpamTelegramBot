@@ -128,6 +128,23 @@ public class ReviewFunctionsTests
         Assert.Empty(fixture.History);
     }
 
+    [Theory]
+    [InlineData(777000, false)]
+    [InlineData(42, true)]
+    public async Task ReportCannotModerateServiceOrAutoForwardedMessages(long senderId, bool automatic)
+    {
+        using var fixture = new Fixture(reportCommands: true);
+        var update = JsonNode.Parse(ReportUpdate)!;
+        var target = update["message"]!["reply_to_message"]!;
+        target["from"]!["id"] = senderId;
+        target["is_automatic_forward"] = automatic;
+
+        await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        Assert.Null(fixture.Detector.ClassifiedPayload);
+        Assert.Null(fixture.SavedMessage);
+    }
+
     [Fact]
     public async Task ReportReanalyzesReplyPhotoWithoutCaption()
     {
@@ -600,7 +617,7 @@ public class ReviewFunctionsTests
     [Fact]
     public async Task AiSpamQueuesOriginalCaptionAndOcrWithoutCachingTrue()
     {
-        using var fixture = new Fixture();
+        using var fixture = new Fixture(archiveChatId: -200);
         fixture.Detector.Result = new SpamRequestResult(ResultType.Evaluated, 99);
 
         var response = await fixture.Webhook.Run(fixture.Request(PhotoUpdate));
@@ -623,6 +640,23 @@ public class ReviewFunctionsTests
             JsonSerializer.Serialize(sanitizedPayload)))), message.ContentHash);
         Assert.Empty(fixture.HashDecisions);
         Assert.Empty(fixture.History);
+        var forwarded = Assert.Single(fixture.Telegram.Calls, call => call.Method == "forwardmessage");
+        Assert.Equal(-200, forwarded.Body.GetProperty("chat_id").GetInt64());
+        Assert.Contains(fixture.Telegram.Calls, call => call.Method == "deletemessage");
+        Assert.Contains(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
+    }
+
+    [Fact]
+    public async Task ReviewWriteFailureDoesNotPreventSpamRemovalOrRestriction()
+    {
+        using var fixture = new Fixture
+        {
+            ReviewSaveTask = Task.FromException(new InvalidOperationException("Review storage unavailable"))
+        };
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Webhook.Run(fixture.Request(PhotoUpdate)));
+
+        Assert.Equal("Review storage unavailable", error.Message);
         Assert.Contains(fixture.Telegram.Calls, call => call.Method == "deletemessage");
         Assert.Contains(fixture.Telegram.Calls, call => call.Method == "restrictchatmember");
     }
@@ -640,6 +674,32 @@ public class ReviewFunctionsTests
         Assert.Null(fixture.SavedMessage);
         Assert.Single(fixture.History);
         Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "deletemessage");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CachedVerdictDoesNotHideCounterWriteFailure(bool spam)
+    {
+        var write = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var fixture = new Fixture
+        {
+            Shortcut = spam ? ShortcutCheckResult.Spam : ShortcutCheckResult.NotSpam,
+            CounterWrite = write.Task
+        };
+
+        var run = fixture.Webhook.Run(fixture.Request(PhotoUpdate));
+        try
+        {
+            await fixture.SpamChecked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(run.IsCompleted);
+        }
+        finally
+        {
+            write.SetException(new InvalidOperationException("Counter write failed"));
+        }
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => run);
+        Assert.Equal("Counter write failed", error.Message);
     }
 
     [Fact]
@@ -673,6 +733,24 @@ public class ReviewFunctionsTests
         Assert.DoesNotContain(fixture.Telegram.Calls, call => call.Method == "deletemessage");
     }
 
+    [Theory]
+    [InlineData(ReportUpdate)]
+    [InlineData(PhotoUpdate)]
+    public async Task WebhookAcknowledgesArchiveUpdatesWithoutProcessing(string update)
+    {
+        using var fixture = new Fixture(archiveChatId: -100);
+
+        var response = await fixture.Webhook.Run(fixture.Request(update));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(0, fixture.Commands.Calls);
+        Assert.Empty(fixture.SavedChats);
+        Assert.Empty(fixture.History);
+        Assert.Equal(0, fixture.CounterIncreases);
+        Assert.Null(fixture.Detector.ClassifiedPayload);
+        Assert.Empty(fixture.Telegram.Calls);
+    }
+
     [Fact]
     public async Task WebhookRegistersChatBeforeModeration()
     {
@@ -682,6 +760,61 @@ public class ReviewFunctionsTests
         Assert.Equal(-100, chat.ChatId);
         Assert.Equal("Test", chat.Name);
         Assert.InRange(chat.LastSeenUtc, DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow);
+    }
+
+    [Theory]
+    [InlineData("message", 777000)]
+    [InlineData("edited_message", 42)]
+    public async Task AutomaticChannelCopiesReachIndexQueueWithoutModeration(string updateKind, long senderId)
+    {
+        using var fixture = new Fixture();
+        var message = JsonNode.Parse(PhotoUpdate)!["message"]!.AsObject();
+        message["from"]!["id"] = senderId;
+        message["is_automatic_forward"] = true;
+        message["forward_origin"] = JsonNode.Parse("""{"type":"channel","date":1700000000,"chat":{"id":-200,"type":"channel"},"message_id":3}""");
+        var update = JsonSerializer.Serialize(new Dictionary<string, object> { ["update_id"] = 10, [updateKind] = message });
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Webhook.Run(fixture.Request(update)));
+
+        Assert.Equal("Missing search queue connection.", error.Message);
+        Assert.Single(fixture.SavedChats);
+        Assert.Empty(fixture.Telegram.Calls);
+        Assert.Equal(0, fixture.CounterIncreases);
+        Assert.Null(fixture.Detector.ClassifiedPayload);
+        Assert.Empty(fixture.History);
+    }
+
+    [Theory]
+    [InlineData(42, true)]
+    [InlineData(777000, false)]
+    public async Task UnindexableAutomaticOrServiceMessagesSkipCommandsAndProcessing(long senderId, bool automatic)
+    {
+        using var fixture = new Fixture();
+        var update = JsonNode.Parse(ReportUpdate)!;
+        var message = update["message"]!;
+        message["from"]!["id"] = senderId;
+        message["is_automatic_forward"] = automatic;
+
+        var response = await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(0, fixture.Commands.Calls);
+        Assert.Empty(fixture.Telegram.Calls);
+        Assert.Empty(fixture.History);
+    }
+
+    [Fact]
+    public async Task ManuallyForwardedChannelMessageStillGoesThroughModeration()
+    {
+        using var fixture = new Fixture();
+        var update = JsonNode.Parse(PhotoUpdate)!;
+        update["message"]!["forward_origin"] = JsonNode.Parse("""{"type":"channel","date":1700000000,"chat":{"id":-200,"type":"channel"},"message_id":3}""");
+
+        var response = await fixture.Webhook.Run(fixture.Request(update.ToJsonString()));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.NotNull(fixture.Detector.ClassifiedPayload);
+        Assert.NotNull(fixture.SavedMessage);
     }
 
     [Fact]
@@ -1089,14 +1222,17 @@ public class ReviewFunctionsTests
         {
             await fixture.Detector.ClassificationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Empty(fixture.History);
-            Assert.Single(fixture.SavedChats);
+            Assert.Empty(fixture.SavedChats);
             Assert.False(run.IsCompleted);
 
             classificationGate.SetResult(new SpamRequestResult(ResultType.Evaluated, 10));
             await fixture.HistorySaveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Single(fixture.History);
+            Assert.Empty(fixture.SavedChats);
             Assert.False(run.IsCompleted);
             historyGate.SetResult();
+            await fixture.ChatSaveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Single(fixture.SavedChats);
             Assert.False(run.IsCompleted);
         }
         finally
@@ -1218,6 +1354,7 @@ public class ReviewFunctionsTests
         public bool HistoryClearFails { get; set; }
         public Task HistorySaveTask { get; set; } = Task.CompletedTask;
         public Task ChatSaveTask { get; set; } = Task.CompletedTask;
+        public TaskCompletionSource ChatSaveStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource HistorySaveStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource SpamChecked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public (long? ChatId, int PageSize, string? Token)? Query { get; private set; }
@@ -1228,6 +1365,7 @@ public class ReviewFunctionsTests
         public CommandStub Commands { get; } = new();
         public ShortcutCheckResult Shortcut { get; set; } = ShortcutCheckResult.NotFound;
         public ReviewMessage? SavedMessage { get; private set; }
+        public Task ReviewSaveTask { get; init; } = Task.CompletedTask;
         public List<ReviewChat> SavedChats { get; } = [];
         public bool ChatSaveFails { get; set; }
         public (int PageSize, string? Token)? ChatQuery { get; private set; }
@@ -1235,9 +1373,10 @@ public class ReviewFunctionsTests
         public int ReporterMessageCount { get; set; } = 31;
         public int TargetMessageCount { get; set; }
         public int CounterIncreases { get; private set; }
+        public Task CounterWrite { get; init; } = Task.CompletedTask;
         public int HashChecks { get; private set; }
 
-        public Fixture(TimeSpan? spamRestrictionTimeout = null, bool reportCommands = false)
+        public Fixture(TimeSpan? spamRestrictionTimeout = null, bool reportCommands = false, long? archiveChatId = null)
         {
             object? HandleRepositoryCall(MethodInfo method, object?[] arguments)
             {
@@ -1264,6 +1403,7 @@ public class ReviewFunctionsTests
                     case nameof(IChatsRepository.SaveChatAsync):
                         if (ChatSaveFails) return Task.FromException(new InvalidOperationException("Storage unavailable"));
                         SavedChats.Add((ReviewChat)arguments[0]!);
+                        ChatSaveStarted.TrySetResult();
                         return ChatSaveTask;
                     case nameof(IChatsRepository.GetReviewChatsAsync):
                         ChatQuery = ((int)arguments[0]!, (string?)arguments[1]);
@@ -1272,7 +1412,7 @@ public class ReviewFunctionsTests
                         return Task.FromResult((long)arguments[1]! == 99 ? ReporterMessageCount : TargetMessageCount);
                     case nameof(IMessageCountRepository.IncreaseMessageCount):
                         CounterIncreases++;
-                        return Task.CompletedTask;
+                        return CounterWrite;
                     case nameof(ISpamStatsRepository.UpdateChannelSpamStats):
                         SpamStatsUpdates++;
                         return Task.CompletedTask;
@@ -1282,7 +1422,7 @@ public class ReviewFunctionsTests
                         return Task.FromResult(Shortcut);
                     case nameof(IProbablySpamRepository.SaveReviewMessageAsync):
                         SavedMessage = (ReviewMessage)arguments[0]!;
-                        return Task.CompletedTask;
+                        return ReviewSaveTask;
                     case nameof(IProbablySpamRepository.GetReviewMessageAsync):
                         Assert.Equal(-100L, arguments[0]);
                         Assert.Equal(7, arguments[1]);
@@ -1321,6 +1461,7 @@ public class ReviewFunctionsTests
                 SecretHeader = "test",
                 BotName = "@TestBot",
                 DebugAiResponse = false,
+                ForwardSpamToChatId = archiveChatId,
                 SpamRestrictionTimeout = spamRestrictionTimeout ?? TimeSpan.FromHours(3),
                 CommandCooldown = TimeSpan.FromMinutes(5)
             });
