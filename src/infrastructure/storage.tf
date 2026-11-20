@@ -23,8 +23,6 @@ resource "time_sleep" "data_storage_dns_propagation" {
     record_id = azurerm_private_dns_a_record.data_storage_runner[0].id
     address   = one(azurerm_private_dns_a_record.data_storage_runner[0].records)
   }
-
-  depends_on = [azurerm_private_dns_a_record.data_storage_a_record]
 }
 
 # azurerm_storage_table uses SharedKey auth for GetTableACL even when storage_use_azuread = true,
