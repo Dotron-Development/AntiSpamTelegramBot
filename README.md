@@ -125,6 +125,28 @@ Edit [dev.tfvars](src/infrastructure/environments/dev.tfvars) and [prod.tfvars](
 
 In `prod`, Key Vault and the data storage account use Azure service endpoints instead of Private Link. The public endpoints are enabled with the default network action set to deny; the Functions subnet and the GitHub runner subnet are allowlisted. Ensure both `Microsoft.KeyVault` and `Microsoft.Storage` service endpoints are enabled on the existing runner subnet before switching an existing deployment. Review the `prod` plan for private endpoint and DNS removal, and schedule the cutover in a maintenance window.
 
+### Shared runner DNS for Private Link
+
+For environments using Private Link, keep the Functions VNet linked to its own private DNS zones. All GitHub runners on the same VNet share one `privatelink.vaultcore.azure.net` zone and one `privatelink.table.core.windows.net` zone in the runner VNet's resource group. Environment Terraform states only manage their own temporary runner A records and private endpoints, not the shared zones or links. Grant deployment identities read access to both zones and links and permission to manage A records in the zones.
+
+Provision the shared zones and links separately from application releases. If migrating from per-environment runner links, pause releases and destroys on that runner VNet and wait for active jobs to finish. In Azure, note the existing links to the runner VNet (including their resolution policy) so they can be restored if needed. Remove **only** links to the runner VNet. Keep the Functions VNet links, application DNS zones and private endpoints. Azure cannot link both the old and new zones of the same name to the runner VNet, so do this in a maintenance window; runner access to private environments resumes when their connectivity setup creates the A records. If the link cutover fails, remove any newly created shared VNet links before restoring the old ones.
+
+Run the following in Bash with an Azure identity that manages the runner network. Set these values to match the runner VNet resource group and name in the environment configuration:
+
+```bash
+set -euo pipefail
+runner_rg=rg-github-vm-runners
+runner_vnet=vnet-github-runners
+runner_vnet_id=$(az network vnet show -g "$runner_rg" -n "$runner_vnet" --query id -o tsv)
+for zone in privatelink.vaultcore.azure.net privatelink.table.core.windows.net; do
+  az network private-dns zone create -g "$runner_rg" -n "$zone"
+  az network private-dns link vnet create -g "$runner_rg" -z "$zone" \
+    -n "vnl-$runner_vnet" -v "$runner_vnet_id" -e false --resolution-policy NxDomainRedirect
+done
+```
+
+`NxDomainRedirect` lets the runner resolve accounts that use service endpoints when they have no record in the shared zones. It does not grant network access through a firewall. Start a **new** release with the updated configuration, not a retry of the old revision. Connectivity setup updates the environment's DNS records to contain only Functions endpoint IPs; the full plan reconciles any removed legacy links. Before approving apply, check that the runner resolves the target vault and Table Storage names to their respective runner endpoint IPs and that the plan preserves the Functions VNet links where Private Link remains enabled. After cleanup, check that the shared links still exist and only the released environment's temporary records and runner endpoints are gone.
+
 The data storage private endpoint NICs use `nic-data-storage-pe-<environment>-tables`,
 `nic-data-storage-pe-<environment>-queue`, and `nic-data-storage-pe-<environment>-blob`.
 Applying a NIC name change replaces the associated private endpoint. Review the
