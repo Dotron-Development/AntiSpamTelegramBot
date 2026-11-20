@@ -2,7 +2,7 @@
 
 The existing Azure Static Web App still serves the review UI. Its only build setting is the public Functions origin (`API_URL`, from Terraform output `review_api_url`). Functions CORS includes the deployed Static Web App and configured additional origins, without browser credentials. CORS is not an access control.
 
-Set the GitHub environment variable `REVIEW_TELEGRAM_MODERATOR_IDS` to comma-separated positive decimal Telegram **user IDs** with no spaces (for example `123456789,987654321`). Terraform supplies `ReviewTelegram__ModeratorIds` to Functions. An empty or unset value denies all moderators. The backend uses the environment's existing bot token; do not add it to the frontend or introduce a new secret.
+Set `review_telegram_moderator_ids` in the corresponding Terraform file: [dev.tfvars](../src/infrastructure/environments/dev.tfvars), [ppr.tfvars](../src/infrastructure/environments/ppr.tfvars), or [prod.tfvars](../src/infrastructure/environments/prod.tfvars). Use comma-separated positive decimal Telegram **user IDs** with no spaces (for example `123456789,987654321`). Terraform supplies `ReviewTelegram__ModeratorIds` to Functions. An empty or unset value denies all moderators. The backend uses the environment's existing bot token; do not add it to the frontend or introduce a new secret.
 
 ## Review API authentication
 

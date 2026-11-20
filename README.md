@@ -52,7 +52,6 @@ Configure these environment variables:
 | --- | --- |
 | `AZ_TERRAFORM_BACKEND_STORAGEACCOUNT` | Existing Terraform backend storage account name. |
 | `AZ_TERRAFORM_BACKEND_RESOURCEGROUP` | Backend storage account's resource group. |
-| `REVIEW_TELEGRAM_MODERATOR_IDS` | Comma-separated positive decimal Telegram user IDs, e.g. `123456789,987654321`. Leave unset or empty to deny everyone. |
 | `REVIEW_FRONTEND_ORIGINS` | Optional JSON array of additional exact frontend origins. Defaults to `["http://localhost:5173"]`; use `[]` for only the deployed website. |
 
 On `ppr` and `prod`, restrict deployments to `main`, add **Required reviewers**, and disable administrator bypass before running release or destroy. Keep Azure credentials in these same environments. GitHub approval applies to jobs that reference the protected environment, including runner connectivity changes, Terraform plan and apply, destroy, Key Vault configuration, Functions, the review SPA, and runner endpoint cleanup. Expect multiple prompts as jobs become ready. Leave `dev` without required reviewers for automatic deployments.
@@ -106,7 +105,7 @@ For a fork, replace the organization, repository and their numeric IDs. Retrieve
 
 ## 6. Configure the Review Mini App
 
-The review UI is hosted on the existing Azure Static Web App. Set `REVIEW_TELEGRAM_MODERATOR_IDS` per environment using Telegram **user IDs**, not chat IDs or usernames. No new token, secret, or review-specific Entra registration is needed. Azure deployment access still uses the separate OIDC registration described above.
+The review UI is hosted on the existing Azure Static Web App. Set `review_telegram_moderator_ids` in the [environment Terraform file](src/infrastructure/environments/) using Telegram **user IDs**, not chat IDs or usernames. No new token, secret, or review-specific Entra registration is needed. Azure deployment access still uses the separate OIDC registration described above.
 
 Every review API request sends `Authorization: tma <raw Telegram initData>`. Functions verifies the Telegram signature and moderator ID on each request, accepting launch data at most 30 minutes old with up to 30 seconds of future clock skew. There is no token exchange or refresh; close and reopen the Mini App from Telegram when the launch data expires.
 

@@ -29,7 +29,6 @@ jobs:
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
     env:
-      TF_VAR_review_telegram_moderator_ids: ${{ vars.REVIEW_TELEGRAM_MODERATOR_IDS }}
       TF_VAR_review_frontend_origins: ${{ vars.REVIEW_FRONTEND_ORIGINS || '["http://localhost:5173"]' }}
     defaults:
       run:

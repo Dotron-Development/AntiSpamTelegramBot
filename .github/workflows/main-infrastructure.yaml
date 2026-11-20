@@ -56,7 +56,6 @@ jobs:
         shell: bash
         working-directory: src/infrastructure
     env:
-      TF_VAR_review_telegram_moderator_ids: ${{ vars.REVIEW_TELEGRAM_MODERATOR_IDS }}
       TF_VAR_review_frontend_origins: ${{ vars.REVIEW_FRONTEND_ORIGINS || '["http://localhost:5173"]' }}
     outputs:
       plan_artifact_id: ${{ steps.upload-plan.outputs.artifact-id }}
