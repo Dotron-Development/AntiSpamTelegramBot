@@ -221,6 +221,24 @@ run "planning_runner_dns_cleanup" {
   }
 }
 
+run "preserving_functions_service_endpoints_during_runner_setup" {
+  command = plan
+
+  variables {
+    disable_public_access               = true
+    functions_service_endpoints_override = ["Microsoft.KeyVault", "Microsoft.Storage"]
+  }
+
+  assert {
+    condition = (
+      toset([for endpoint in azurerm_subnet.subnet1_functions.service_endpoint : endpoint.service]) == toset(["Microsoft.KeyVault", "Microsoft.Storage"]) &&
+      !azurerm_key_vault.kv.public_network_access_enabled &&
+      azurerm_storage_account.data_storage.public_network_access == "Disabled"
+    )
+    error_message = "Targeted runner setup must preserve existing Functions service endpoints without enabling public access on private services."
+  }
+}
+
 run "planning_prod_service_endpoints" {
   command = plan
 

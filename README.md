@@ -145,7 +145,9 @@ for zone in privatelink.vaultcore.azure.net privatelink.table.core.windows.net; 
 done
 ```
 
-`NxDomainRedirect` lets the runner resolve accounts that use service endpoints when they have no record in the shared zones. It does not grant network access through a firewall. Start a **new** release with the updated configuration, not a retry of the old revision. Connectivity setup updates the environment's DNS records to contain only Functions endpoint IPs; the full plan reconciles any removed legacy links. Before approving apply, check that the runner resolves the target vault and Table Storage names to their respective runner endpoint IPs and that the plan preserves the Functions VNet links where Private Link remains enabled. After cleanup, check that the shared links still exist and only the released environment's temporary records and runner endpoints are gone.
+`NxDomainRedirect` lets the runner resolve accounts that use service endpoints when they have no record in the shared zones. It does not grant network access through a firewall. Start a **new** release with the updated configuration, not a retry of the old revision. Before approving apply, check that the runner resolves the target vault and Table Storage names to their respective runner endpoint IPs and that the plan preserves the Functions VNet links where Private Link remains enabled. After cleanup, check that the shared links still exist and only the released environment's temporary records and runner endpoints are gone.
+
+When switching back to service endpoints (`disable_public_access = false`), setup reads the current Azure network access setting for Key Vault and Storage separately. It restores runner private connectivity only for services that still have public network access disabled, even when a failed apply left application DNS zones behind. Shared runner VNet links are permanent and do not change in either mode.
 
 The data storage private endpoint NICs use `nic-data-storage-pe-<environment>-tables`,
 `nic-data-storage-pe-<environment>-queue`, and `nic-data-storage-pe-<environment>-blob`.
