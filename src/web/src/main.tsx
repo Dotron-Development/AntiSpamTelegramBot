@@ -6,6 +6,6 @@ import { AuthGate } from './components/AuthGate'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthGate><App /></AuthGate>
+    <AuthGate>{connection => <App connection={connection} />}</AuthGate>
   </StrictMode>,
 )

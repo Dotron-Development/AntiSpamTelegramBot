@@ -44,11 +44,12 @@ jobs:
       environment: ${{ github.event.inputs.environment }}
       resource_group_name: ${{ needs.deploy-main-infrastructure.outputs.resource_group_name }}
       static_web_app_name: ${{ needs.deploy-main-infrastructure.outputs.review_static_web_app_name }}
-      build_settings: ${{ needs.deploy-main-infrastructure.outputs.review_spa_build_settings }}
+      api_url: ${{ needs.deploy-main-infrastructure.outputs.review_api_url }}
     secrets: inherit
 
   cleanup-runner-endpoints:
-    needs: [deploy-functionapp, deploy-review-spa]
+    needs: [deploy-main-infrastructure, deploy-functionapp, deploy-review-spa]
+    if: ${{ !cancelled() }}
     uses: ./.github/workflows/cleanup-runner-endpoints.yaml
     with:
       environment: ${{ github.event.inputs.environment }}

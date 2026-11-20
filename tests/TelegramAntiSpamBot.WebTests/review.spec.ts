@@ -7,8 +7,12 @@ import { parseHistoryPage, parseReviewMessagePage } from '../../src/web/src/api/
 const chatId = '-1001234567890'
 const userId = '9007199254740993'
 const ticks = '638712864000000001'
-const fakeToken = 'test-only-not-a-real-token'
-const apiRoute = 'https://review.example.test/api/review/**'
+const initData = 'query_id=mock%2Bquery&user=%7B%22id%22%3A42%7D&auth_date=1795183171&hash=mock%2Bsignature'
+const authorization = `tma ${initData}`
+const reviewBase = 'https://review.example.test/api/review/'
+const accessRoute = `${reviewBase}access`
+const apiRoute = (url: URL) => url.href.startsWith(reviewBase) && url.href !== accessRoute
+const telegramScript = 'https://telegram.org/js/telegram-web-app.js*'
 const messageJSON = `{"ChatId":${chatId},"MessageId":7,"UserId":${userId},"From":{"Id":${userId},"Name":"Alice Smith","Username":null},"ReplyTo":null,"Message":"Hello team!\\n<em>Not HTML</em>","ImageText":"Image text: special offer","ContentHash":"HASH","MessageDateTicks":${ticks}}`
 const firstPage = `{"Messages":[${messageJSON}],"ContinuationToken":"next+/= page"}`
 const secondMessageJSON = `{"ChatId":${chatId},"MessageId":8,"UserId":43,"From":{"Id":43,"Name":"Bob Jones","Username":null},"ReplyTo":null,"Message":"Another pending message","ImageText":"","ContentHash":"HASH","MessageDateTicks":${ticks}}`
@@ -16,22 +20,24 @@ const lastPage = `{"Messages":[${secondMessageJSON}],"ContinuationToken":null}`
 const emptyPage = '{"Messages":[],"ContinuationToken":null}'
 const chatPage = `{"Chats":[{"ChatId":${chatId},"Name":"Test group","LastSeenUtc":"2026-10-25T00:00:00+00:00"}],"ContinuationToken":null}`
 
-async function mockAuthentication(page: Page, roles: string[] | null = ['Moderator'], error = false) {
-  const account = roles === null ? null : { name: 'Test moderator', idTokenClaims: { roles } }
-  await page.route('**/src/lib/auth.ts*', route => route.fulfill({
-    contentType: 'application/javascript',
-    body: `
-      export const configurationError = null;
-      export async function initializeAuth() { ${error ? 'throw new Error("Sign-in failed");' : ''} }
-      export function currentAccount() { return ${JSON.stringify(account)}; }
-      export async function signIn() { window.location.assign('https://login.example.test/authorize'); }
-      export async function signOut() {}
-      export async function getAccessToken() { return ${JSON.stringify(fakeToken)}; }
-    `,
-  }))
-}
+test.beforeEach(async ({ page }, testInfo) => {
+  if (testInfo.tags.includes('@real-network')) return
 
-test.beforeEach(async ({ page }) => { await mockAuthentication(page) })
+  await page.route(telegramScript, route => route.fulfill({
+    contentType: 'application/javascript',
+    body: `window.Telegram = { WebApp: {
+      initData: ${JSON.stringify(initData)},
+      ready() {}, expand() {}, close() { document.documentElement.dataset.telegramClosed = 'true' }
+    } };`,
+  }))
+  await page.route(accessRoute, route => {
+    const request = route.request()
+    expect(request.method()).toBe('GET')
+    expect(request.headers().authorization).toBe(authorization)
+    expect(request.postData()).toBeNull()
+    return route.fulfill({ status: 204 })
+  })
+})
 
 test('review and history share authors with lossless IDs and usernames', () => {
   const review = parseReviewMessagePage(firstPage).messages[0]
@@ -55,7 +61,7 @@ test('DANGER clears only the selected chat history after explicit confirmation',
     if (route.request().method() === 'DELETE') {
       deletions++
       expect(new URL(route.request().url()).pathname).toBe(`/api/review/history/${chatId}`)
-      expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+      expect(route.request().headers().authorization).toBe(authorization)
       await gate
       return route.fulfill({ status: 204 })
     }
@@ -110,40 +116,58 @@ test('failed history deletion warns about partial results and is never retried a
   expect(deletions).toBe(1)
 })
 
-test('redirects automatically to sign-in without mounting the workspace', async ({ page }) => {
-  await mockAuthentication(page, null)
-  let apiCalls = 0
-  let redirects = 0
-  await page.route(apiRoute, route => { apiCalls++; return route.abort() })
-  await page.route('https://login.example.test/authorize', route => {
-    redirects++
-    return route.fulfill({ contentType: 'text/html', body: '<h1>Microsoft sign-in</h1>' })
+for (const sdkLoaded of [false, true]) {
+  test(`shows launch instructions outside Telegram (SDK loaded: ${sdkLoaded})`, async ({ page }) => {
+    let apiCalls = 0
+    await page.route('**/api/review/**', route => { apiCalls++; return route.abort() })
+    await page.route(telegramScript, route => sdkLoaded ? route.fulfill({
+      contentType: 'application/javascript',
+      body: 'window.Telegram = { WebApp: { initData: "", initDataUnsafe: { user: { id: 42 } }, ready() {} } };',
+    }) : route.abort())
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Open in Telegram' })).toBeVisible()
+    await expect(page.getByText('Open the private chat with the bot', { exact: false })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Load queue' })).toHaveCount(0)
+    expect(apiCalls).toBe(0)
   })
-  await page.goto('/')
-  await expect(page).toHaveURL('https://login.example.test/authorize')
-  expect(redirects).toBe(1)
-  expect(apiCalls).toBe(0)
-})
+}
 
-test('keeps the workspace closed without Moderator or after a sign-in error', async ({ page }) => {
-  let apiCalls = 0
-  await page.route(apiRoute, route => { apiCalls++; return route.abort() })
-  await mockAuthentication(page, [])
+for (const status of [401, 403, 200]) {
+  test(`keeps the workspace closed after an unsuccessful access check (HTTP ${status})`, async ({ page }) => {
+    let checks = 0
+    let apiCalls = 0
+    await page.route(apiRoute, route => { apiCalls++; return route.abort() })
+    await page.route(accessRoute, route => {
+      checks++
+      return route.fulfill({ status })
+    })
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: status === 401 ? 'Reopen in Telegram'
+      : status === 403 ? 'Access denied' : 'Review unavailable' })).toBeVisible()
+    await expect(page.getByRole('alert')).toContainText(status === 401 ? 'Your Telegram launch is invalid or expired'
+      : status === 403 ? 'You do not have access' : 'unexpected access response')
+    await expect(page.getByRole('button', { name: 'Load queue' })).toHaveCount(0)
+    expect(checks).toBe(1)
+    expect(apiCalls).toBe(0)
+  })
+}
+
+test('does not forward raw Telegram launch data on an access redirect', async ({ page }) => {
+  const target = 'https://redirect.example.test/access'
+  let forwarded = 0
+  page.on('request', request => { if (request.url() === target) forwarded++ })
+  await page.route(target, route => route.abort())
+  await page.route(accessRoute, route => route.fulfill({ status: 307, headers: { location: target } }))
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Load queue' })).toHaveCount(0)
-  await mockAuthentication(page, null, true)
-  await page.reload()
-  await expect(page.getByRole('alert')).toContainText('Sign-in failed')
-  await expect(page.getByRole('button', { name: 'Sign in with Microsoft' })).toHaveCount(0)
-  expect(apiCalls).toBe(0)
+  await expect(page.getByRole('heading', { name: 'Review unavailable' })).toBeVisible()
+  expect(forwarded).toBe(0)
 })
 
 async function openWorkspace(page: Page, { mockChats = true, loadQueue = true }: {
   mockChats?: boolean; loadQueue?: boolean
 } = {}) {
   if (mockChats) await page.route('**/api/review/chats?*', route => {
-    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+    expect(route.request().headers().authorization).toBe(authorization)
     expect(route.request().headers()['x-functions-key']).toBeUndefined()
     return route.fulfill({ contentType: 'application/json', body: chatPage })
   })
@@ -161,7 +185,6 @@ async function openWorkspace(page: Page, { mockChats = true, loadQueue = true }:
 test('rebuilds the linked channel snapshot from the discussion group picker', async ({ page }) => {
   const channelId = '-1009876543210'
   const resets: string[] = []
-  await mockAuthentication(page)
   await page.route('**/api/review/search-snapshots', route => route.fulfill({ json: [] }))
   await page.route(`**/api/review/search-snapshots/groups/${chatId}/channel`, route => route.fulfill({ json: { channelId } }))
   await page.route('**/api/review/search-snapshots/*/reset', route => {
@@ -190,10 +213,10 @@ test('rebuilds the linked channel snapshot from the discussion group picker', as
   ])
 })
 
-test('connects after authentication, paginates, and does not persist access tokens in workspace storage', async ({ page }) => {
+test('connects after authentication, paginates, and does not persist initData in workspace storage', async ({ page }) => {
   const queries: string[] = []
   await page.route(apiRoute, async route => {
-    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+    expect(route.request().headers().authorization).toBe(authorization)
     expect(route.request().headers()['x-functions-key']).toBeUndefined()
     expect(route.request().headers()['x-review-endpoint']).toBeUndefined()
     queries.push(route.request().url())
@@ -213,7 +236,7 @@ test('connects after authentication, paginates, and does not persist access toke
   expect(new URL(queries[0]).origin).toBe('https://review.example.test')
   expect(new URL(queries[0]).pathname).toBe('/api/review/messages')
   const storage = await page.evaluate(() => ({ local: { ...localStorage }, session: { ...sessionStorage } }))
-  expect(JSON.stringify(storage)).not.toContain(fakeToken)
+  expect(JSON.stringify(storage)).not.toContain(initData)
   expect(JSON.stringify(storage)).toContain(chatId)
   await page.reload()
   await expect(page.getByLabel('Chat', { exact: true })).toHaveValue(chatId)
@@ -377,21 +400,30 @@ test('spam confirms once and does not implicitly remove restrictions', async ({ 
   expect(bodies).toEqual([{ isSpam: true }])
 })
 
-test('handles auth errors for both filtered and all-chat queues', async ({ page }) => {
-  const queries: URL[] = []
-  await page.route(apiRoute, route => {
-    queries.push(new URL(route.request().url()))
-    return route.fulfill({ status: 401, body: '' })
+for (const status of [401, 403]) {
+  test(`closes the workspace on a mutation HTTP ${status} without retrying`, async ({ page }) => {
+    let checks = 0
+    let mutations = 0
+    page.on('request', request => { if (request.url() === accessRoute) checks++ })
+    await page.route(apiRoute, route => {
+      if (route.request().method() === 'GET') return route.fulfill({ contentType: 'application/json', body: firstPage })
+      mutations++
+      expect(route.request().headers().authorization).toBe(authorization)
+      return route.fulfill({ status })
+    })
+    await openWorkspace(page)
+    await page.getByRole('button', { name: 'Spam', exact: true }).click()
+    await page.getByRole('button', { name: 'Confirm spam', exact: true }).click()
+    await expect(page.getByRole('alert')).toContainText(status === 401
+      ? 'reopen it from the menu in the private bot chat' : 'You do not have access')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Load queue' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Close Mini App' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-telegram-closed', 'true')
+    expect(checks).toBe(1)
+    expect(mutations).toBe(1)
   })
-  await openWorkspace(page)
-  await expect(page.getByRole('alert')).toContainText('Your session is invalid or expired.')
-  await page.getByLabel('Chat', { exact: true }).selectOption('')
-  await page.getByRole('button', { name: 'Load queue' }).click()
-  await expect.poll(() => queries.length).toBe(2)
-  await expect(page.getByRole('alert')).toContainText('Your session is invalid or expired.')
-  expect(queries[0].searchParams.get('chatId')).toBe(chatId)
-  expect(queries[1].searchParams.has('chatId')).toBe(false)
-})
+}
 
 test('failed mutations are not retried and show uncertain-outcome warning', async ({ page }) => {
   let mutations = 0
@@ -434,7 +466,32 @@ test('renders desktop and mobile without horizontal overflow or clipped action l
   expect(await page.evaluate(() => [...document.fonts].some(font => font.family.includes('Manrope') && font.status === 'loaded'))).toBe(true)
 })
 
-test('browser calls a separate Function origin directly with CORS preflight', async ({ page }) => {
+test('uses Telegram theme and safe-area updates in a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 680 })
+  await page.route(apiRoute, route => route.fulfill({ contentType: 'application/json', body: firstPage }))
+  await openWorkspace(page)
+  await page.evaluate(() => {
+    const style = document.documentElement.style
+    style.setProperty('--tg-color-scheme', 'dark')
+    style.setProperty('--tg-theme-bg-color', '#202a31')
+    style.setProperty('--tg-theme-text-color', '#f2f4f5')
+    style.setProperty('--tg-safe-area-inset-top', '18px')
+    style.setProperty('--tg-content-safe-area-inset-top', '24px')
+    style.setProperty('--tg-safe-area-inset-left', '12px')
+    style.setProperty('--tg-safe-area-inset-right', '12px')
+  })
+  await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark')
+  await expect(page.locator('.app')).toHaveCSS('padding-top', '42px')
+  await expect(page.locator('.topbar')).toHaveCSS('background-color', 'rgb(32, 42, 49)')
+  await expect(page.locator('.message-text').first()).toHaveCSS('color', 'rgb(242, 244, 245)')
+  await page.getByRole('button', { name: 'Spam', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toHaveCSS('top', '42px')
+  await expect(dialog).toHaveCSS('background-color', 'rgb(32, 42, 49)')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test('browser calls a separate Function origin directly with CORS preflight', { tag: '@real-network' }, async ({ page }) => {
   const received: { url: string; key: string | undefined; method: string; body: string; origin: string | undefined }[] = []
   const preflights: string[] = []
   const server = createServer(async (incoming, response) => {
@@ -451,31 +508,35 @@ test('browser calls a separate Function origin directly with CORS preflight', as
     for await (const chunk of incoming) body += chunk
     received.push({ url: incoming.url!, key: incoming.headers.authorization,
       method: incoming.method!, body, origin: incoming.headers.origin })
-    response.writeHead(incoming.method === 'GET' ? 200 : 204, { 'Content-Type': 'application/json' })
-    response.end(incoming.method === 'GET' ? incoming.url?.startsWith('/api/review/chats?') ? chatPage : firstPage : undefined)
+    if (incoming.url === '/api/review/access' || incoming.method !== 'GET') {
+      response.writeHead(204)
+      response.end()
+      return
+    }
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(incoming.url?.startsWith('/api/review/chats?') ? chatPage : firstPage)
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`
   try {
-    await openWorkspace(page, { loadQueue: false })
-    await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
-    await page.unroute('**/api/review/chats?*')
-    await page.unroute('**/src/lib/auth.ts*')
-    await page.evaluate(async ({ endpoint, token, chatId, userId }) => {
+    await page.goto('/', { waitUntil: 'commit' })
+    await page.evaluate(async ({ endpoint, initData, chatId, userId }) => {
       const modulePath = '/src/api/client.ts'
       const api = await import(modulePath)
-      const connection = { endpoint, getAccessToken: async () => token }
+      const connection = { endpoint, initData, onAccessFailure() {} }
+      await api.checkReviewAccess(connection, new AbortController().signal)
       await api.getChats(connection, null)
       const result = await api.getMessages(connection, chatId, 50, null)
       await api.reviewMessage(connection, result.messages[0], false)
       await api.removeRestrictions(connection, chatId, userId)
-    }, { endpoint, token: fakeToken, chatId, userId })
+    }, { endpoint, initData, chatId, userId })
     const origin = 'http://127.0.0.1:5179'
     expect(received).toEqual([
-      { url: '/api/review/chats?pageSize=1000', key: `Bearer ${fakeToken}`, method: 'GET', body: '', origin },
-      { url: `/api/review/messages?chatId=${chatId}&pageSize=50`, key: `Bearer ${fakeToken}`, method: 'GET', body: '', origin },
-      { url: `/api/review/messages/${chatId}/7`, key: `Bearer ${fakeToken}`, method: 'POST', body: '{"isSpam":false}', origin },
-      { url: `/api/review/restrictions/${chatId}/${userId}`, key: `Bearer ${fakeToken}`, method: 'POST', body: '', origin },
+      { url: '/api/review/access', key: authorization, method: 'GET', body: '', origin },
+      { url: '/api/review/chats?pageSize=1000', key: authorization, method: 'GET', body: '', origin },
+      { url: `/api/review/messages?chatId=${chatId}&pageSize=50`, key: authorization, method: 'GET', body: '', origin },
+      { url: `/api/review/messages/${chatId}/7`, key: authorization, method: 'POST', body: '{"isSpam":false}', origin },
+      { url: `/api/review/restrictions/${chatId}/${userId}`, key: authorization, method: 'POST', body: '', origin },
     ])
     expect(preflights.some(headers => headers.includes('authorization'))).toBe(true)
     expect(preflights.some(headers => headers.includes('content-type'))).toBe(true)
@@ -524,13 +585,13 @@ test('empty catalog and catalog errors do not automatically load message queues'
   await page.route(apiRoute, route => {
     expect(new URL(route.request().url()).pathname).toBe('/api/review/chats')
     return ++calls === 1 ? route.fulfill({ contentType: 'application/json', body: '{"Chats":[],"ContinuationToken":null}' })
-      : route.fulfill({ status: 401, body: '' })
+      : route.fulfill({ status: 503, body: '' })
   })
   await openWorkspace(page, { mockChats: false, loadQueue: false })
   await expect(page.getByLabel('Chat', { exact: true })).toBeEnabled()
   await expect(page.getByLabel('Chat', { exact: true })).toHaveValue('')
   await page.getByRole('button', { name: 'Refresh chats', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('Your session is invalid or expired.')
+  await expect(page.getByRole('alert')).toContainText('Request failed (HTTP 503).')
   expect(calls).toBe(2)
 })
 
@@ -750,7 +811,7 @@ test('command calls tab filters, paginates, refreshes and stays read-only', asyn
   const queries: URL[] = []
   await page.route('**/api/review/command-calls?*', route => {
     expect(route.request().method()).toBe('GET')
-    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+    expect(route.request().headers().authorization).toBe(authorization)
     const url = new URL(route.request().url())
     queries.push(url)
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
@@ -788,7 +849,7 @@ test('message history preserves numeric precision, plain text and reply context'
   await page.route('**/api/review/history?*', route => {
     const url = new URL(route.request().url())
     queries.push(url)
-    expect(route.request().headers().authorization).toBe(`Bearer ${fakeToken}`)
+    expect(route.request().headers().authorization).toBe(authorization)
     const body = url.searchParams.has('continuationToken')
       ? `{"messages":[{"chatId":${chatId},"messageId":8,"dateTimeTicks":${ticks},"content":{"from":null,"replyTo":null,"text":""}}],"continuationToken":null}`
       : `{"messages":[{"chatId":${chatId},"messageId":7,"dateTimeTicks":${ticks},"content":{"from":{"id":${userId},"name":"Alice Smith","username":"alice"},"text":"Hello team!\\n<em>Not HTML</em>","replyTo":{"messageId":6,"from":{"id":43,"name":"Bob Jones","username":null},"text":"Original question"}}}],"continuationToken":"history+/="}`

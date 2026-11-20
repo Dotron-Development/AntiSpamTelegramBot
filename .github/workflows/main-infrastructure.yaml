@@ -21,11 +21,11 @@ on:
         description: "The review SPA Static Web App name"
         value: ${{ jobs.main-infrastructure.outputs.review_static_web_app_name }}
       review_static_web_app_url:
-        description: "The review SPA URL and Entra SPA redirect URI"
+        description: "The Telegram Mini App HTTPS URL"
         value: ${{ jobs.main-infrastructure.outputs.review_static_web_app_url }}
-      review_spa_build_settings:
-        description: "Public SPA build settings as JSON, excluding the tenant supplied in the build job"
-        value: ${{ jobs.main-infrastructure.outputs.review_spa_build_settings }}
+      review_api_url:
+        description: "The public API origin used by the Mini App"
+        value: ${{ jobs.main-infrastructure.outputs.review_api_url }}
 
 permissions:
   id-token: write
@@ -56,7 +56,7 @@ jobs:
         shell: bash
         working-directory: src/infrastructure
     env:
-      TF_VAR_review_user_object_ids: ${{ vars.REVIEW_USER_OBJECT_IDS || '[]' }}
+      TF_VAR_review_telegram_moderator_ids: ${{ vars.REVIEW_TELEGRAM_MODERATOR_IDS }}
       TF_VAR_review_frontend_origins: ${{ vars.REVIEW_FRONTEND_ORIGINS || '["http://localhost:5173"]' }}
     outputs:
       plan_artifact_id: ${{ steps.upload-plan.outputs.artifact-id }}
@@ -143,7 +143,7 @@ jobs:
       function_app_identity_name: ${{ steps.generate-outputs.outputs.function_app_identity_name }}
       review_static_web_app_name: ${{ steps.generate-outputs.outputs.review_static_web_app_name }}
       review_static_web_app_url: ${{ steps.generate-outputs.outputs.review_static_web_app_url }}
-      review_spa_build_settings: ${{ steps.generate-outputs.outputs.review_spa_build_settings }}
+      review_api_url: ${{ steps.generate-outputs.outputs.review_api_url }}
 
     steps:
       - name: Checkout code
@@ -218,7 +218,7 @@ jobs:
           FUNCTION_APP_IDENTITY_NAME=$(terraform output -raw function_app_identity_name)
           REVIEW_STATIC_WEB_APP_NAME=$(terraform output -raw review_static_web_app_name)
           REVIEW_STATIC_WEB_APP_URL=$(terraform output -raw review_static_web_app_url)
-          REVIEW_SPA_BUILD_SETTINGS=$(terraform output -raw review_spa_build_settings)
+          REVIEW_API_URL=$(terraform output -raw review_api_url)
           if [ -z "$RESOURCE_GROUP_NAME" ] || [ -z "$FUNCTION_APP_NAME" ] || [ -z "$FUNCTION_APP_IDENTITY_NAME" ]; then
             echo "Error: RESOURCE_GROUP_NAME or FUNCTION_APP_NAME or FUNCTION_APP_IDENTITY_NAME is empty."
             exit 1
@@ -226,13 +226,13 @@ jobs:
           echo "resource_group_name=$RESOURCE_GROUP_NAME" >> $GITHUB_OUTPUT
           echo "functionapp_name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
           echo "function_app_identity_name=$FUNCTION_APP_IDENTITY_NAME" >> $GITHUB_OUTPUT
-          if [ -z "$REVIEW_STATIC_WEB_APP_NAME" ] || [ -z "$REVIEW_STATIC_WEB_APP_URL" ] || [ -z "$REVIEW_SPA_BUILD_SETTINGS" ]; then
+          if [ -z "$REVIEW_STATIC_WEB_APP_NAME" ] || [ -z "$REVIEW_STATIC_WEB_APP_URL" ] || [ -z "$REVIEW_API_URL" ]; then
             echo "Error: Review Static Web App outputs are empty."
             exit 1
           fi
           echo "review_static_web_app_name=$REVIEW_STATIC_WEB_APP_NAME" >> $GITHUB_OUTPUT
           echo "review_static_web_app_url=$REVIEW_STATIC_WEB_APP_URL" >> $GITHUB_OUTPUT
-          echo "review_spa_build_settings=$REVIEW_SPA_BUILD_SETTINGS" >> $GITHUB_OUTPUT
+          echo "review_api_url=$REVIEW_API_URL" >> $GITHUB_OUTPUT
 
   configure-key-vault-references:
     needs: main-infrastructure

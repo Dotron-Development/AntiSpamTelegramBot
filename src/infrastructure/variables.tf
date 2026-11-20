@@ -136,32 +136,20 @@ variable "debug_ai_response" {
   nullable    = true
 }
 
-variable "review_client_id" {
-  description = "Client ID of the existing Entra registration used by the review SPA and API."
+variable "review_telegram_moderator_ids" {
+  description = "Comma-separated positive Telegram user IDs for review access; empty denies everyone."
   type        = string
+  default     = ""
   nullable    = false
 
   validation {
-    condition     = can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.review_client_id))
-    error_message = "review_client_id must be an application client GUID."
-  }
-}
-
-variable "review_user_object_ids" {
-  description = "Explicit allowlist of Entra user object IDs permitted to call the review API."
-  type        = list(string)
-  nullable    = false
-
-  validation {
-    condition = (
-      length(var.review_user_object_ids) > 0 &&
-      length(join("", var.review_user_object_ids)) <= 500 &&
-      alltrue([for identity in var.review_user_object_ids : can(regex(
-        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-        identity
-      ))])
-    )
-    error_message = "Supply at least one user object GUID; the combined IDs must not exceed 500 characters."
+    condition = var.review_telegram_moderator_ids == "" || alltrue([
+      for id in split(",", var.review_telegram_moderator_ids) : try(
+        can(regex("^[0-9]+$", id)) && tonumber(id) > 0 && tonumber(id) <= 9223372036854775807,
+        false
+      )
+    ])
+    error_message = "Use comma-separated positive decimal Telegram user IDs without spaces (each must fit a signed 64-bit integer), or leave empty."
   }
 }
 

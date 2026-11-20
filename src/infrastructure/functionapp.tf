@@ -34,6 +34,7 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
   service_plan_id     = azurerm_service_plan.function_sp.id
+  https_only          = true
 
   storage_container_type                         = "blobContainer"
   storage_container_endpoint                     = "${azurerm_storage_account.function_storage.primary_blob_endpoint}${azurerm_storage_container.function_storage_container.name}"
@@ -54,26 +55,6 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
       # AzureRM suppresses CORS when distinct() makes the entire set unknown during SPA creation.
       allowed_origins     = concat([local.review_static_web_app_origin], var.review_frontend_origins)
       support_credentials = false
-    }
-  }
-
-  auth_settings_v2 {
-    auth_enabled           = true
-    require_authentication = true
-    unauthenticated_action = "Return401"
-    require_https          = true
-    excluded_paths         = ["/api/AntiSpamBotWebHook"]
-
-    active_directory_v2 {
-      client_id            = var.review_client_id
-      tenant_auth_endpoint = "https://login.microsoftonline.com/${data.azurerm_client_config.current.tenant_id}/v2.0"
-      allowed_audiences    = [var.review_client_id]
-      allowed_applications = [var.review_client_id]
-      allowed_identities   = var.review_user_object_ids
-    }
-
-    login {
-      token_store_enabled = false
     }
   }
 
@@ -105,6 +86,8 @@ resource "azurerm_function_app_flex_consumption" "function_app" {
 
     "AzureTablesConfiguration__StorageAccountUrl"     = azurerm_storage_account.data_storage.primary_table_endpoint
     "AzureTablesConfiguration__TableIdentityClientId" = azurerm_user_assigned_identity.functionapp_identity.client_id
+
+    "ReviewTelegram__ModeratorIds" = var.review_telegram_moderator_ids
 
     "TelegramBotConfiguration__ForwardSpamToChatId"    = var.forwardSpamToChatId,
     "TelegramBotConfiguration__BotName"                = var.bot_name,

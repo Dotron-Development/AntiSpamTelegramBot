@@ -27,3 +27,4 @@ global using Microsoft.Extensions.Configuration;
 global using TelegramAntiSpamBot.Persistence.DTO;
 global using TelegramAntiSpamBot.Persistence.Repositories;
 global using Telegram.Bot.Exceptions;
+global using System.Buffers;

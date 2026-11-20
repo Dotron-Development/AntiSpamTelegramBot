@@ -52,7 +52,7 @@ Configure these environment variables:
 | --- | --- |
 | `AZ_TERRAFORM_BACKEND_STORAGEACCOUNT` | Existing Terraform backend storage account name. |
 | `AZ_TERRAFORM_BACKEND_RESOURCEGROUP` | Backend storage account's resource group. |
-| `REVIEW_USER_OBJECT_IDS` | Non-empty JSON array of permitted moderators' Entra user Object IDs, for example `["<USER_OBJECT_ID>"]`. |
+| `REVIEW_TELEGRAM_MODERATOR_IDS` | Comma-separated positive decimal Telegram user IDs, e.g. `123456789,987654321`. Leave unset or empty to deny everyone. |
 | `REVIEW_FRONTEND_ORIGINS` | Optional JSON array of additional exact frontend origins. Defaults to `["http://localhost:5173"]`; use `[]` for only the deployed website. |
 
 On `ppr` and `prod`, restrict deployments to `main`, add **Required reviewers**, and disable administrator bypass before running release or destroy. Keep Azure credentials in these same environments. GitHub approval applies to jobs that reference the protected environment, including runner connectivity changes, Terraform plan and apply, destroy, Key Vault configuration, Functions, the review SPA, and runner endpoint cleanup. Expect multiple prompts as jobs become ready. Leave `dev` without required reviewers for automatic deployments.
@@ -104,17 +104,13 @@ Keep deployment trust outside the bot's Terraform state so that destroying `dev`
 
 For a fork, replace the organization, repository and their numeric IDs. Retrieve the IDs with `gh api orgs/<organization> --jq .id` and `gh api repos/<owner>/<repository> --jq .id`.
 
-## 6. Configure Website Sign-In
+## 6. Configure the Review Mini App
 
-Use a separate single-tenant Entra App registration for the review website and API. Its tenant must match the deployment tenant.
+The review UI is hosted on the existing Azure Static Web App. Set `REVIEW_TELEGRAM_MODERATOR_IDS` per environment using Telegram **user IDs**, not chat IDs or usernames. No new token, secret, or review-specific Entra registration is needed. Azure deployment access still uses the separate OIDC registration described above.
 
-1. Add the **Single-page application** redirect URI `http://localhost:5173` for local development.
-2. Create the `Moderator` app role for Users/Groups and assign the permitted moderators in the Enterprise application.
-3. Set the API's `requestedAccessTokenVersion` to `2`.
-4. Under **Expose an API**, set `api://<CLIENT_ID>` and create the delegated `Review.Access` scope. Arrange the required administrator consent.
-5. Record each moderator's user Object ID in `REVIEW_USER_OBJECT_IDS`.
+Every review API request sends `Authorization: tma <raw Telegram initData>`. Functions verifies the Telegram signature and moderator ID on each request, accepting launch data at most 30 minutes old with up to 30 seconds of future clock skew. There is no token exchange or refresh; close and reopen the Mini App from Telegram when the launch data expires.
 
-Follow the detailed [Entra registration guide](docs/entra-id-setup.md) and [Functions Easy Auth guide](docs/functions-easy-auth.md). The frontend role check does not replace the API's user allowlist. Keep the Telegram webhook excluded from Easy Auth; its own header validation remains enabled.
+After deployment, set the bot’s menu button to the HTTPS `review_static_web_app_url` in BotFather. See the [Telegram Mini App guide](docs/telegram-mini-app.md) for the required cutover sequence for existing deployments, BotFather setup, and authentication checks.
 
 ## 7. Configure Environment Parameters
 
@@ -124,7 +120,6 @@ Edit [dev.tfvars](src/infrastructure/environments/dev.tfvars) and [prod.tfvars](
 - Non-overlapping `vnet_address_prefix` values.
 - Existing GitHub runner VNet, resource group and subnet names.
 - `bot_name`, including `@`, and `forwardSpamToChatId`.
-- `review_client_id`, using the review website/API registration from step 6, not the deployment application.
 - AI model names, versions and capacities for `spam_recognition`, `image_text_extractor` and `mention`.
 - `disable_public_access`, according to the environment's network requirements.
 - Optional `function_alert_emails`, `command_cooldown` and `spam_restriction_timeout`.
@@ -171,22 +166,22 @@ Remove `--limit` for the full archive. The worker skips repeated archive jobs an
 
 ## 8. Deploy and Verify
 
-1. Run [release dev](.github/workflows/release-dev.yaml) manually from GitHub Actions, or push to `main` to deploy `dev` automatically.
-2. Verify OIDC login, infrastructure deployment, Functions deployment, website deployment and runner-endpoint cleanup.
-3. Obtain the `review_static_web_app_url` Terraform output and add it as a **Single-page application** redirect URI in the review registration.
-4. Open that URL, sign in as an assigned moderator and verify API access. Check that unauthenticated review API requests are rejected.
+**Existing deployments:** Complete the [one-time Easy Auth cutover](docs/telegram-mini-app.md#one-time-cutover-for-existing-deployments) before applying the new Terraform plan. Do not opt into removal until the guarded backend is deployed.
+
+1. Run [release dev](.github/workflows/release-dev.yaml) manually, or push to `main` to deploy `dev` automatically. Leave the cutover input off for new environments and routine releases.
+2. Verify OIDC login, Terraform, Functions, website deployment, and runner-endpoint cleanup.
+3. Obtain `review_static_web_app_url` from Terraform and set it as the bot menu button URL via BotFather. If the Static Web App is recreated and its hostname changes, update the menu URL.
+4. Open the Mini App from inside the bot's Telegram chat. Verify that an allowlisted moderator can use it, an unlisted user cannot, and review API calls without valid Telegram launch data fail.
 5. Send a message to the development Telegram group and verify webhook delivery.
-6. Run [release prod](.github/workflows/release-prod.yaml) manually, explicitly selecting `prod`. Repeat the sign-in and webhook checks for production.
+6. Run [release prod](.github/workflows/release-prod.yaml) manually, explicitly selecting `ppr` or `prod`, and repeat the same checks.
 
-The website deploys to Azure Static Web Apps Free. Its build settings are supplied by Terraform and the build job; changing them requires another deployment. Function CORS includes the deployed website origin automatically.
-
-Entra redirect URIs are configured manually; the deployment workflows do not register them. The generated `azurestaticapps.net` address stays unchanged during normal deployments, but deleting and recreating the Static Web App can change it. After recreation, register the new `review_static_web_app_url` in the matching environment's review application before signing in.
-
-If sign-in fails with **AADSTS50011**, open **Microsoft Entra ID > App registrations**, find the application by the client ID shown in the error (matching `review_client_id`), then open **Authentication**. Add the exact redirect URI from the error under **Single-page application**, not **Web**, and save. Preserve other required redirect URIs, including `http://localhost:5173` for local development. Allow a few minutes for the change to propagate, then retry sign-in. A custom domain is not required.
+The Functions origin is supplied at build time as `API_URL`. Changing it requires rebuilding the Mini App. Functions CORS automatically includes the deployed Mini App origin and does not allow browser credentials.
 
 After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) with environment `dev` to remove its infrastructure and data. Do not select `prod` for routine cleanup.
 
 ## 9. Run Locally
+
+See the [local development guide](docs/local-development.md) for the complete Windows setup with Azurite, Vite, and real Telegram sign-in.
 
 1. Sign in with `az login`. Ensure your account can access the AI deployments and application Table Storage. For private resources, configure working network access and DNS.
 2. Configure the ignored [local.settings.json](src/bot/TelegramAntiSpamBot.Functions/local.settings.json) with the Telegram bot token, webhook header, bot username, Azure AI endpoint and deployment names, and Table Storage URL. Use Azurite if `AzureWebJobsStorage` is `UseDevelopmentStorage=true`. For local ingestion with Azurite, also set `SearchQueueStorage` and `AzureTablesConfiguration__StorageAccountUrl` to `UseDevelopmentStorage=true`. Create the `search-index`, `search-index-poison`, `reset-snapshot` and `reset-snapshot-poison` queues, the `Vectors` table, and the private `search-snapshots` container before testing ingestion (create `Chats` for webhook chat registration). Keep real credentials outside version control.
@@ -203,6 +198,7 @@ After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) wit
        "TelegramBotConfiguration__Token": "<dev-bot-token>",
        "TelegramBotConfiguration__SecretHeader": "<webhook-header>",
        "TelegramBotConfiguration__BotName": "@YourDevBotName",
+       "ReviewTelegram__ModeratorIds": "123456789",
        "OpenAiServicesConfiguration__ServiceUrl": "https://<ai-service-endpoint>/",
        "OpenAiServicesConfiguration__SpamRecognitionDeployment": "antispam",
        "OpenAiServicesConfiguration__ImageRecognitionDeployment": "images",
@@ -221,16 +217,12 @@ After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) wit
    func start --cors http://localhost:5173
    ```
 
-   Keep the local Functions host bound to loopback: Easy Auth runs only in Azure.
+   Keep the local Functions host bound to loopback. Telegram review authentication is also enforced locally.
 
 4. Create `src/web/.env` with the public configuration:
 
    ```dotenv
    API_URL=http://localhost:7071
-   TENANT_ID=<Directory tenant ID>
-   CLIENT_ID=<Review registration Application client ID>
-   API_SCOPE=api://<Review registration Application client ID>/Review.Access
-   REDIRECT_URI=http://localhost:5173
    ```
 
 5. In another terminal, from the repository root:
@@ -241,7 +233,7 @@ After development tests, run [destroy-ci](.github/workflows/destroy-ci.yaml) wit
    npm run dev
    ```
 
-   Open `http://localhost:5173`. Restart Vite after changing `.env`. To verify platform authentication, set `API_URL` to the deployed Function App's HTTPS origin.
+   Open `http://localhost:5173` to check the signed-out screen, and restart Vite after changing `.env`. A regular browser tab does not have a signed Telegram launch. Test sign-in with the deployed development bot and its HTTPS Mini App URL.
 
 6. For local Telegram delivery, expose the development webhook through a public HTTPS tunnel and register it from the repository root:
 

@@ -6,24 +6,32 @@
 
 :root {
     font-family: 'Manrope', sans-serif;
-    color: #22332e;
-    background: #f5f7f6;
+    color: var(--ink);
+    background: var(--page);
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    --ink: #22332e;
-    --muted: #75807b;
-    --line: #e2e8e4;
-    --green: #147d68;
-    --green-dark: #0b6251;
-    --green-pale: #edf6f1;
-    --red: #ae443f;
-    --red-pale: #fff3f1;
+    --page: var(--tg-theme-secondary-bg-color, light-dark(#f5f7f6, #172125));
+    --surface: var(--tg-theme-bg-color, light-dark(white, #202c30));
+    --surface-alt: color-mix(in srgb, var(--surface) 93%, var(--ink));
+    --ink: var(--tg-theme-text-color, light-dark(#22332e, #e7eeea));
+    --muted: var(--tg-theme-hint-color, light-dark(#617169, #a9b7b1));
+    --line: var(--tg-theme-section-separator-color, color-mix(in srgb, var(--surface) 84%, var(--ink)));
+    --green: var(--tg-theme-button-color, #147d68);
+    --green-dark: var(--tg-theme-link-color, light-dark(#0b6251, #93d4c0));
+    --green-pale: color-mix(in srgb, var(--surface) 87%, var(--green-dark));
+    --button-text: var(--tg-theme-button-text-color, white);
+    --red: var(--tg-theme-destructive-text-color, light-dark(#ae443f, #ffa79d));
+    --red-pale: color-mix(in srgb, var(--surface) 87%, var(--red));
+    --safe-top: calc(max(env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px)) + var(--tg-content-safe-area-inset-top, 0px));
+    --safe-right: calc(max(env(safe-area-inset-right, 0px), var(--tg-safe-area-inset-right, 0px)) + var(--tg-content-safe-area-inset-right, 0px));
+    --safe-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px)) + var(--tg-content-safe-area-inset-bottom, 0px));
+    --safe-left: calc(max(env(safe-area-inset-left, 0px), var(--tg-safe-area-inset-left, 0px)) + var(--tg-content-safe-area-inset-left, 0px));
     --mono: 'IBM Plex Mono', monospace;
     font-size: 14px;
     letter-spacing: 0;
-    color-scheme: light;
+    color-scheme: var(--tg-color-scheme, light);
 }
 
 * {
@@ -32,7 +40,7 @@
 
 body {
     margin: 0;
-    min-width: 320px;
+    min-width: 0;
 }
 
 button,
@@ -60,7 +68,7 @@ select {
 
 button:focus-visible,
 a:focus-visible {
-    outline: 3px solid #92c9b7;
+    outline: 3px solid var(--green-dark);
     outline-offset: 3px;
 }
 
@@ -68,8 +76,8 @@ input,
 select {
     width: 100%;
     min-width: 0;
-    border: 1px solid #cfd9d3;
-    background: white;
+    border: 1px solid var(--line);
+    background: var(--surface);
     border-radius: 5px;
     color: var(--ink);
     height: 42px;
@@ -78,13 +86,13 @@ select {
 
 input:focus,
 select:focus {
-    outline: 2px solid #a4d1bf;
+    outline: 2px solid var(--green-dark);
     outline-offset: 1px;
     border-color: var(--green);
 }
 
 input::placeholder {
-    color: #929c97;
+    color: var(--muted);
 }
 
 code {
