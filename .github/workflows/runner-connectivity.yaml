@@ -73,19 +73,49 @@ jobs:
             -backend-config="key=terraform.tfstate" \
             -backend-config="resource_group_name=${AZ_TERRAFORM_BACKEND_RESOURCEGROUP}"
 
+      - name: Detect private runner connectivity
+        id: connectivity
+        env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          if ! grep -Eq '^[[:space:]]*disable_public_access[[:space:]]*=[[:space:]]*false[[:space:]]*(#.*)?$' \
+            "environments/${DEPLOY_ENVIRONMENT}.tfvars"; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Preserve existing private connectivity for refresh until the full cutover plan is applied.
+          if ! state_addresses=$(terraform state list 2>&1); then
+            if [[ "$state_addresses" == "No state file was found!"* ]]; then
+              echo "required=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            printf '%s\n' "$state_addresses" >&2
+            exit 1
+          fi
+
+          if grep -Eq '^azurerm_private_dns_zone\.(private_dns|data_storage_private_dns)\[0\]$' <<< "$state_addresses"; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Plan runner connectivity setup
-        if: inputs.enable_runner_endpoints
+        if: ${{ steps.connectivity.outputs.required == 'true' && inputs.enable_runner_endpoints }}
         # Refreshing existing secrets requires connectivity to be restored first.
         run: |
           terraform plan -refresh=false -out=connectivity.tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
+            -var=disable_public_access=true \
             -target=time_sleep.kv_dns_propagation \
             -target=time_sleep.data_storage_dns_propagation
 
       - name: Plan runner connectivity cleanup
-        if: ${{ !inputs.enable_runner_endpoints }}
+        if: ${{ steps.connectivity.outputs.required == 'true' && !inputs.enable_runner_endpoints }}
         # Cleanup must not reconcile unrelated, unapproved infrastructure drift.
         run: |
           terraform plan -out=connectivity.tfplan -var-file=environments/${{ inputs.environment }}.tfvars \
+            -var=disable_public_access=true \
             -target=time_sleep.kv_dns_propagation \
             -target=time_sleep.data_storage_dns_propagation \
             -target=azurerm_private_endpoint.kv_runner_pe \
@@ -94,7 +124,7 @@ jobs:
             -target=azurerm_private_dns_a_record.data_storage_a_record
 
       - name: Verify runner connectivity cleanup plan
-        if: ${{ !inputs.enable_runner_endpoints }}
+        if: ${{ steps.connectivity.outputs.required == 'true' && !inputs.enable_runner_endpoints }}
         uses: actions/github-script@v8
         with:
           script: |
@@ -129,4 +159,5 @@ jobs:
             }
 
       - name: Apply runner connectivity plan
+        if: steps.connectivity.outputs.required == 'true'
         run: terraform apply connectivity.tfplan
