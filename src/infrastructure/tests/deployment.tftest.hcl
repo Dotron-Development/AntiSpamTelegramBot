@@ -221,6 +221,24 @@ run "planning_runner_dns_cleanup" {
   }
 }
 
+run "preserving_functions_service_endpoints_during_runner_setup" {
+  command = plan
+
+  variables {
+    disable_public_access               = true
+    functions_service_endpoints_override = ["Microsoft.KeyVault", "Microsoft.Storage"]
+  }
+
+  assert {
+    condition = (
+      toset([for endpoint in azurerm_subnet.subnet1_functions.service_endpoint : endpoint.service]) == toset(["Microsoft.KeyVault", "Microsoft.Storage"]) &&
+      !azurerm_key_vault.kv.public_network_access_enabled &&
+      azurerm_storage_account.data_storage.public_network_access == "Disabled"
+    )
+    error_message = "Targeted runner setup must preserve existing Functions service endpoints without enabling public access on private services."
+  }
+}
+
 run "planning_prod_service_endpoints" {
   command = plan
 
@@ -248,8 +266,12 @@ run "planning_prod_service_endpoints" {
   assert {
     condition = var.environment_prefix != "prod" || (
       length(azurerm_subnet.subnet2_private_endpoints) == 0 &&
-      length(azurerm_private_dns_zone.private_dns) == 0 &&
-      length(azurerm_private_dns_zone.data_storage_private_dns) == 0 &&
+      one(azurerm_private_dns_zone.private_dns).name == "privatelink.vaultcore.azure.net" &&
+      one(azurerm_private_dns_zone.data_storage_private_dns).name == "privatelink.table.core.windows.net" &&
+      length(azurerm_private_dns_zone_virtual_network_link.keyvault_vnet_link) == 0 &&
+      length(azurerm_private_dns_zone_virtual_network_link.data_storage_vnet_link) == 0 &&
+      length(azurerm_private_dns_a_record.keyvault_a_record) == 0 &&
+      length(azurerm_private_dns_a_record.data_storage_a_record) == 0 &&
       length(azurerm_private_dns_zone.data_storage_queue) == 0 &&
       length(azurerm_private_dns_zone.data_storage_blob) == 0 &&
       length(azurerm_private_endpoint.kv_pe) == 0 &&
@@ -261,7 +283,7 @@ run "planning_prod_service_endpoints" {
       length(data.azurerm_private_dns_zone.runner) == 0 &&
       length(data.azurerm_private_dns_zone_virtual_network_link.runner) == 0
     )
-    error_message = "Production must not provision Private Link networking or depend on shared runner DNS when using service endpoints."
+    error_message = "Service-endpoint mode must retain the Key Vault and Table zones without private endpoints, VNet links, or private A records and must not depend on shared runner DNS."
   }
 }
 

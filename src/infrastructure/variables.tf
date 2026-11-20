@@ -79,6 +79,12 @@ variable "enable_runner_endpoints" {
   default     = true
 }
 
+variable "functions_service_endpoints_override" {
+  description = "Preserve the live Functions subnet service endpoints in the temporary runner setup plan during a cutover. Leave null in normal plans."
+  type        = set(string)
+  default     = null
+}
+
 variable "bot_name" {
   description = "The name of the bot. Example: @someBotName"
   type        = string
