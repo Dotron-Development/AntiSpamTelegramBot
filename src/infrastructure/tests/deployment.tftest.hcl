@@ -120,6 +120,48 @@ run "planning_search_foundation" {
   }
 }
 
+run "planning_prod_service_endpoints" {
+  command = plan
+
+  override_resource {
+    target          = azurerm_subnet.subnet1_functions
+    override_during = plan
+    values = {
+      id = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/rg-test/providers/Microsoft.Network/virtualNetworks/vnet-test/subnets/functions"
+    }
+  }
+
+  assert {
+    condition = var.environment_prefix != "prod" || (
+      azurerm_key_vault.kv.public_network_access_enabled &&
+      azurerm_storage_account.data_storage.public_network_access == "Enabled" &&
+      one(azurerm_key_vault.kv.network_acls).default_action == "Deny" &&
+      one(azurerm_storage_account.data_storage.network_rules).default_action == "Deny" &&
+      toset(one(azurerm_key_vault.kv.network_acls).virtual_network_subnet_ids) == toset([azurerm_subnet.subnet1_functions.id, data.azurerm_subnet.github_runner_vnet_subnet.id]) &&
+      toset(one(azurerm_storage_account.data_storage.network_rules).virtual_network_subnet_ids) == toset([azurerm_subnet.subnet1_functions.id, data.azurerm_subnet.github_runner_vnet_subnet.id]) &&
+      toset([for endpoint in azurerm_subnet.subnet1_functions.service_endpoint : endpoint.service]) == toset(["Microsoft.KeyVault", "Microsoft.Storage"])
+    )
+    error_message = "Production must use service endpoints with default-deny firewalls and allowlist the Functions and runner subnets."
+  }
+
+  assert {
+    condition = var.environment_prefix != "prod" || (
+      length(azurerm_subnet.subnet2_private_endpoints) == 0 &&
+      length(azurerm_private_dns_zone.private_dns) == 0 &&
+      length(azurerm_private_dns_zone.data_storage_private_dns) == 0 &&
+      length(azurerm_private_dns_zone.data_storage_queue) == 0 &&
+      length(azurerm_private_dns_zone.data_storage_blob) == 0 &&
+      length(azurerm_private_endpoint.kv_pe) == 0 &&
+      length(azurerm_private_endpoint.data_storage_pe) == 0 &&
+      length(azurerm_private_endpoint.data_storage_queue) == 0 &&
+      length(azurerm_private_endpoint.data_storage_blob) == 0 &&
+      length(azurerm_private_endpoint.kv_runner_pe) == 0 &&
+      length(azurerm_private_endpoint.data_storage_runner_pe) == 0
+    )
+    error_message = "Production must not provision Private Link networking, including temporary runner endpoints."
+  }
+}
+
 run "planning_without_additional_origins" {
   command = plan
 

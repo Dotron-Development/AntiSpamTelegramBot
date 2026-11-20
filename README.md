@@ -123,6 +123,8 @@ Edit [dev.tfvars](src/infrastructure/environments/dev.tfvars) and [prod.tfvars](
 - `disable_public_access`, according to the environment's network requirements.
 - Optional `function_alert_emails`, `command_cooldown` and `spam_restriction_timeout`.
 
+In `prod`, Key Vault and the data storage account use Azure service endpoints instead of Private Link. The public endpoints are enabled with the default network action set to deny; the Functions subnet and the GitHub runner subnet are allowlisted. Ensure both `Microsoft.KeyVault` and `Microsoft.Storage` service endpoints are enabled on the existing runner subnet before switching an existing deployment. Review the `prod` plan for private endpoint and DNS removal, and schedule the cutover in a maintenance window.
+
 The data storage private endpoint NICs use `nic-data-storage-pe-<environment>-tables`,
 `nic-data-storage-pe-<environment>-queue`, and `nic-data-storage-pe-<environment>-blob`.
 Applying a NIC name change replaces the associated private endpoint. Review the
@@ -154,7 +156,7 @@ $channelId = '-1001234567890' # Replace with the export's channel ID.
 dotnet run --project .\tools\ChannelArchiveImport -- $archive $channelId
 ```
 
-Once the indexing worker is deployed, sign in with `az login` using an identity with **Storage Queue Data Message Sender** on the destination queue. Run the importer from a network that can reach the data storage queue endpoint; production requires access to its private endpoint and DNS. Use the data storage account for your environment (`satgbotdataprod` in production) and send a small test batch:
+Once the indexing worker is deployed, sign in with `az login` using an identity with **Storage Queue Data Message Sender** on the destination queue. Run the importer from a network allowed by the storage firewall. For `prod`, use the allowlisted runner subnet with the `Microsoft.Storage` service endpoint enabled; for `ppr`, use a network with access to the queue's private endpoint and DNS. Use the data storage account for your environment (`satgbotdataprod` in production) and send a small test batch:
 
 ```powershell
 $queue = 'https://<data-storage-account>.queue.core.windows.net/search-index'
