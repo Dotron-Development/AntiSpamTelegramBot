@@ -280,7 +280,7 @@ See [the web setup guide](src/web/README.md) for additional frontend configurati
 
 ## 10. Mention Agent and Web Search
 
-Messages starting with `@BotName` invoke a Microsoft Agent Framework agent backed by Azure OpenAI Responses. Existing slash commands, spam detection, reply context, Telegram Markdown formatting and the chat-level command cooldown are unchanged. A new agent run is created for each mention; conversations are not shared between chats or requests, and Responses storage is disabled (`store: false`).
+Messages starting with `@BotName` invoke a Microsoft Agent Framework agent backed by Azure OpenAI Responses. The chat-level command cooldown applies to mentions and `/report`, but not to `/search` or `/stat`. A new agent run is created for each mention; conversations are not shared between chats or requests, and Responses storage is disabled (`store: false`).
 
 The agent has hosted web search backed by Bing and, for Telegram mentions only, a local `get_message_history` tool. Ordinary questions can be answered without either tool. Initial mention payloads contain `Question`, `From`, explicit `ReplyTo` and `Conversation` metadata (chat/message IDs, UTC mention date and optional reply date), not surrounding messages. Web previews keep their existing request/response shape and have no history tool.
 

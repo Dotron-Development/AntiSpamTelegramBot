@@ -16,6 +16,7 @@ namespace TelegramAntiSpamBot.Commands.Commands
             """);
 
         public string Command => "/stat";
+        public bool IsCoolDownCommand => false;
 
         public async Task ProcessAsync(Update update)
         {
