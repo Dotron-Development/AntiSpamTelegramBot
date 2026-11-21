@@ -32,7 +32,7 @@ namespace TelegramAntiSpamBot.Commands
                     }
                 }
 
-                if (!await calls.TryAcquireAsync(message.Chat.Id, command.Command, DateTimeOffset.UtcNow,
+                if (command.IsCoolDownCommand && !await calls.TryAcquireAsync(message.Chat.Id, command.Command, DateTimeOffset.UtcNow,
                     configuration.CommandCooldown))
                 {
                     logger.LogInformation("Skipping command {command} for chat {chatId}: cooldown {cooldown} is active",

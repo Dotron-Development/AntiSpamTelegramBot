@@ -97,6 +97,41 @@ public sealed class PostSnapshotTests
         Assert.Equal(expected, command.Matches(text, "TestBot"));
     }
 
+    [Fact]
+    public async Task ProcessesRepeatedSearchWithoutAccessingCooldownStorage()
+    {
+        using var handler = new SearchDeletionHandler();
+        using var http = new HttpClient(handler);
+        var bot = new TelegramBotClient("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk", http);
+        var config = new TelegramBotConfiguration { Token = "test", SecretHeader = "test", BotName = "TestBot", DebugAiResponse = false };
+        var search = new SearchCommand(bot, null!, Options.Create(config), NullLogger<SearchCommand>.Instance);
+        var processor = new CommandProcessor([search], config, bot, null!, NullLogger<CommandProcessor>.Instance);
+
+        foreach (var id in new[] { 1, 2 })
+            await processor.ProcessCommand(new Update
+            {
+                Message = new Message { Id = id, Chat = new Chat { Id = -100 }, Text = "/search" }
+            });
+
+        Assert.Equal(new[] { 1, 2 }, handler.Deleted);
+    }
+
+    private sealed class SearchDeletionHandler : HttpMessageHandler
+    {
+        public List<int> Deleted { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.EndsWith("/deleteMessage", request.RequestUri!.AbsolutePath, StringComparison.OrdinalIgnoreCase);
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            Deleted.Add(body.RootElement.GetProperty("message_id").GetInt32());
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true,\"result\":true}", Encoding.UTF8, "application/json")
+            };
+        }
+    }
+
     private sealed class QueryEmbeddings(ReadOnlyMemory<float> vector) : ISearchEmbeddings
     {
         public Task<IReadOnlyList<ReadOnlyMemory<float>>> GenerateAsync(IReadOnlyList<string> inputs, CancellationToken cancellationToken = default) =>

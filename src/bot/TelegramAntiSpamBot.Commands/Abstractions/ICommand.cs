@@ -7,6 +7,8 @@ namespace TelegramAntiSpamBot.Commands
 
         bool DeleteInvocation => true;
 
+        bool IsCoolDownCommand => true;
+
         bool Matches(string message, string botName) =>
             SlashCommandSyntax.MatchLength(message, Command, botName) != 0;
 

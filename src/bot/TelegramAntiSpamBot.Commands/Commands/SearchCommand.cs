@@ -8,6 +8,7 @@ internal sealed class SearchCommand(
 {
     public string Command => "/search";
     public bool DeleteInvocation => false;
+    public bool IsCoolDownCommand => false;
 
     public bool Matches(string message, string botName) =>
         SlashCommandSyntax.MatchLength(message, Command, botName, acceptsArguments: true) != 0;
