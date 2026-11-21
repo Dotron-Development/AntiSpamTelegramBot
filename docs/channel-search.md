@@ -35,7 +35,7 @@ To rebuild manually, open **Snapshots** in the review UI, select a discussion gr
 
 1. Both the [`/search` command](../src/bot/TelegramAntiSpamBot.Commands/Commands/SearchCommand.cs) and the mention tool resolve the current group's `linked_chat_id` through Telegram. [PostSearch](../src/bot/TelegramAntiSpamBot.Search/Query/PostSearch.cs) uses it to open the channel snapshot.
 2. Each worker caches one snapshot of up to 160 MiB in memory. For repeated queries to the same channel, it checks the blob's `ETag` at most once every 30 seconds and does not download an unchanged snapshot again.
-3. Search embeds the query and compares it with the chunks in memory using cosine similarity. Each post is ranked by its best chunk, with a boost when the query or a hashtag matches the title. It does not use FAISS.
+3. Search embeds the query and compares it with the chunks in memory using cosine similarity. Each post is ranked by its best chunk, with a boost when the title contains the full query. Only posts with a final score of at least 0.35 are eligible for the top five. Search does not use FAISS.
 4. The bot replies in the same chat with links to original posts. Opening a link requires access to the channel. The bot also replies if the index is not ready or no results are found. In other cases where search cannot run, it deletes the command without replying if Telegram permits deletion.
 
 ## Troubleshooting a stale or missing index

@@ -67,6 +67,39 @@ public sealed class PostSnapshotTests
             SearchCommand.Format([new(results[0].Title, "https://t.me/c/1234567890/10")]));
     }
 
+    [Theory]
+    [InlineData("async", new long[] { 2 })]
+    [InlineData("unrelated", new long[] { })]
+    [InlineData("async #dotnet", new long[] { })]
+    [InlineData("#dotnet", new long[] { 5 })]
+    public async Task ReturnsOnlyPostsThatMeetTheRelevanceThreshold(string query, long[] expectedIds)
+    {
+        var storage = new SnapshotStorage();
+        var queryVector = Post(1, 1).Vectors[0];
+        var partialMatch = queryVector.ToArray();
+        partialMatch[1] = 4;
+        var weakMatch = queryVector.ToArray();
+        weakMatch[1] = 10;
+        var taggedMatch = queryVector.ToArray();
+        taggedMatch[1] = 3;
+        var archive = new IndexedPost[]
+        {
+            new(2, "Async basics", [partialMatch]),
+            new(3, "Async news", [weakMatch]),
+            new(4, "Other topics", [partialMatch]),
+            new(5, "Tips #dotnet", [taggedMatch])
+        };
+        const long channel = -1001234567890;
+        await new PostSnapshotBuilder(new VectorSource(archive), storage)
+            .RebuildAsync(new SnapshotResetJob(channel, DateTimeOffset.UtcNow), default);
+        var search = new PostSearch(storage, new QueryEmbeddings(queryVector));
+
+        var results = await search.FindAsync(channel, query);
+
+        Assert.NotNull(results);
+        Assert.Equal(expectedIds, results.Select(hit => hit.MessageId));
+    }
+
     [Fact]
     public async Task RejectsSnapshotWithCorruptChecksum()
     {
