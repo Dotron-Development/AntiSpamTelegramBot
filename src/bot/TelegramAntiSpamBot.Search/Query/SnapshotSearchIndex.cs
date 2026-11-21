@@ -2,6 +2,8 @@ namespace TelegramAntiSpamBot.Search;
 
 internal sealed class SnapshotSearchIndex((PostSearchResult Result, int EndChunk)[] posts, float[] vectors)
 {
+    private const float MinimumRelevanceScore = 0.35f;
+
     public static async Task<SnapshotSearchIndex> ReadAsync(Stream source, string channel, long length, CancellationToken ct)
     {
         const int vectorSize = VectorFormat.Dimensions * sizeof(float);
@@ -71,8 +73,6 @@ internal sealed class SnapshotSearchIndex((PostSearchResult Result, int EndChunk
 
     public IReadOnlyList<PostSearchResult> Find(ReadOnlySpan<float> query, string text, int limit, CancellationToken ct)
     {
-        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        var tags = words.Where(word => word.Length > 1 && word[0] == '#').ToArray();
         var top = new PriorityQueue<PostSearchResult, (float Score, long Id)>();
         var chunk = 0;
         foreach (var (post, end) in posts)
@@ -86,7 +86,7 @@ internal sealed class SnapshotSearchIndex((PostSearchResult Result, int EndChunk
             }
             if (!float.IsFinite(best)) continue;
             if (post.Title.Contains(text, StringComparison.OrdinalIgnoreCase)) best += 0.18f;
-            else if (tags.Any(tag => post.Title.Contains(tag, StringComparison.OrdinalIgnoreCase))) best += 0.08f;
+            if (best < MinimumRelevanceScore) continue;
             var priority = (best, -post.MessageId);
             if (top.Count < limit) top.Enqueue(post, priority);
             else if (top.TryPeek(out _, out var previous) && priority.CompareTo(previous) > 0)
