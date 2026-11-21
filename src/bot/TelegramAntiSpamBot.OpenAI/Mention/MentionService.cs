@@ -6,7 +6,9 @@ internal sealed class MentionService(
     [FromKeyedServices("Mention")] ResponsesClient client,
     SpamDetectionInstructions instructions,
     MentionHistoryToolFactory historyToolFactory,
-    IOptions<OpenAiServicesConfiguration> configuration) : IMentionService
+    IOptions<OpenAiServicesConfiguration> configuration,
+    ILogger<MentionService> logger,
+    IChannelPostSearch postSearch) : IMentionService
 {
     public async Task<MentionResponse> GenerateAsync(MentionRequest request, CancellationToken cancellationToken = default)
     {
@@ -18,7 +20,10 @@ internal sealed class MentionService(
         var tools = new List<AITool> { new HostedWebSearchTool() };
 
         if (request.Conversation is { } conversation)
+        {
             tools.Add(historyToolFactory.Create(conversation, timeout.Token));
+            tools.Add(new ChannelPostSearchTool(postSearch, conversation.ChatId, timeout.Token, logger).Create());
+        }
 
         var agent = CreateAgent(prompt, tools);
         var response = await agent.RunAsync(

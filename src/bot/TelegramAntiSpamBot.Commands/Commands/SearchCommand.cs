@@ -2,7 +2,7 @@ namespace TelegramAntiSpamBot.Commands.Commands;
 
 internal sealed class SearchCommand(
     ITelegramBotClient bot,
-    IServiceProvider services,
+    IChannelPostSearch postSearch,
     IOptions<TelegramBotConfiguration> configuration,
     ILogger<SearchCommand> logger) : ICommand
 {
@@ -46,19 +46,12 @@ internal sealed class SearchCommand(
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-            var ct = timeout.Token;
-            var group = await bot.GetChat(chatId, ct);
-            if (group.Type is not (ChatType.Group or ChatType.Supergroup) ||
-                group.LinkedChatId is not (< -100 and var channelId) ||
-                !channelId.ToString(CultureInfo.InvariantCulture).StartsWith("-100", StringComparison.Ordinal))
-                return null;
-
-            var hits = await services.GetRequiredService<PostSearch>().FindAsync(channelId, query, cancellationToken: ct);
-            return hits switch
+            var result = await postSearch.FindAsync(chatId, query, timeout.Token);
+            return result.Status switch
             {
-                null => "The channel's search index isn't ready yet.",
-                { Count: 0 } => "No results found.",
-                _ => Format(hits, channelId)
+                ChannelPostSearchStatus.IndexNotReady => "The channel's search index isn't ready yet.",
+                ChannelPostSearchStatus.Completed => result.Posts.Count == 0 ? "No results found." : Format(result.Posts),
+                _ => null
             };
         }
         catch (Exception exception)
@@ -68,16 +61,7 @@ internal sealed class SearchCommand(
         }
     }
 
-    internal static string Format(IReadOnlyList<PostSearchResult> hits, long channelId)
-    {
-        var channel = channelId.ToString(CultureInfo.InvariantCulture)[4..];
-        return string.Join('\n', hits.Select((hit, index) =>
-        {
-            var title = string.Join(' ', hit.Title.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-            if (title.Length > 160)
-                title = title[..(char.IsHighSurrogate(title[159]) ? 159 : 160)] + "…";
-            var id = hit.MessageId.ToString(CultureInfo.InvariantCulture);
-            return $"{index + 1}. <a href=\"https://t.me/c/{channel}/{id}\">{WebUtility.HtmlEncode(title)}</a>";
-        }));
-    }
+    internal static string Format(IReadOnlyList<ChannelPostLink> posts) =>
+        string.Join('\n', posts.Select((post, index) =>
+            $"{index + 1}. <a href=\"{post.Url}\">{WebUtility.HtmlEncode(post.Title)}</a>"));
 }
