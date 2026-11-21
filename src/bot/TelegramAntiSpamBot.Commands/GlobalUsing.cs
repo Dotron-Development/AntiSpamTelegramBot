@@ -5,6 +5,7 @@ global using Microsoft.Extensions.Options;
 global using TelegramAntispamBot.Configuration;
 global using Microsoft.Extensions.Logging;
 global using System.Text;
+global using System.Text.RegularExpressions;
 global using TelegramAntiSpamBot.OpenAI;
 global using TelegramAntiSpamBot.Persistence.Repositories;
 global using Telegram.Bot.Exceptions;

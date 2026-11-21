@@ -2,6 +2,8 @@ namespace TelegramAntiSpamBot.Search;
 
 public sealed class PostSnapshotBuilder(IPostVectorRepository vectors, IPostSnapshotRepository snapshots)
 {
+    internal const int SnapshotSignature = 0x31534354; // TCS1 in little-endian order.
+
     public IAsyncEnumerable<SnapshotBlob> ListAsync(CancellationToken cancellationToken) => snapshots.ListAsync(cancellationToken);
 
     public Task<SnapshotBlob?> FindAsync(long channelId, CancellationToken cancellationToken) =>
@@ -37,7 +39,7 @@ public sealed class PostSnapshotBuilder(IPostVectorRepository vectors, IPostSnap
         posts.Sort((a, b) => a.Id.CompareTo(b.Id));
 
         using var writer = new BinaryWriter(target, Encoding.UTF8, leaveOpen: true);
-        writer.Write(SnapshotMagic.Value);
+        writer.Write(SnapshotSignature);
         writer.Write(chat);
         writer.Write(VectorFormat.Model);
         writer.Write(VectorFormat.Version);

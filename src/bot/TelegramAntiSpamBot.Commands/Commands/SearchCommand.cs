@@ -9,72 +9,62 @@ internal sealed class SearchCommand(
     public string Command => "/search";
     public bool DeleteInvocation => false;
 
-    public bool Matches(string message, string botName)
-    {
-        var command = Token(message);
-        if (command.Equals(Command.AsSpan(), StringComparison.OrdinalIgnoreCase)) return true;
-        var username = botName.AsSpan().TrimStart('@');
-        return !username.IsEmpty && command.Length > Command.Length && command[Command.Length] == '@' &&
-            command[..Command.Length].Equals(Command.AsSpan(), StringComparison.OrdinalIgnoreCase) &&
-            command[(Command.Length + 1)..].Equals(username, StringComparison.OrdinalIgnoreCase);
-    }
+    public bool Matches(string message, string botName) =>
+        SlashCommandSyntax.MatchLength(message, Command, botName, acceptsArguments: true) != 0;
 
     public async Task ProcessAsync(Update update)
     {
-        if (update.Message is not { Text: { } text } message || !Matches(text, configuration.Value.BotName)) return;
-        var query = text[Token(text).Length..].Trim();
-        if (query.Length == 0)
+        if (update.Message is not { Text: { } text } message) return;
+        var commandLength = SlashCommandSyntax.MatchLength(text, Command, configuration.Value.BotName, acceptsArguments: true);
+        if (commandLength == 0) return;
+        var query = text[commandLength..].Trim();
+        var response = query.Length == 0 || message.Chat.Type is not (ChatType.Group or ChatType.Supergroup)
+            ? null
+            : await SearchAsync(message.Chat.Id, query);
+        if (response is null)
         {
-            await Reply("Использование: /search &lt;запрос&gt;");
-            return;
-        }
-        if (message.Chat.Type is not (ChatType.Group or ChatType.Supergroup))
-        {
-            await Reply("Поиск доступен в группе обсуждения канала.");
+            try
+            {
+                await bot.DeleteMessage(message.Chat.Id, message.Id);
+            }
+            catch (ApiRequestException exception)
+            {
+                logger.LogWarning(exception, "Unable to delete search command {MessageId} in chat {ChatId}", message.Id, message.Chat.Id);
+            }
             return;
         }
 
-        string response;
-        try
-        {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-            var ct = timeout.Token;
-            var group = await bot.GetChat(message.Chat.Id, ct);
-            if (group.Type is not (ChatType.Group or ChatType.Supergroup) ||
-                group.LinkedChatId is not (< -100 and var channelId) ||
-                !channelId.ToString(CultureInfo.InvariantCulture).StartsWith("-100", StringComparison.Ordinal))
-            {
-                response = "К этой группе не привязан канал.";
-            }
-            else
-            {
-                var hits = await services.GetRequiredService<PostSearch>().FindAsync(channelId, query, cancellationToken: ct);
-                response = hits switch
-                {
-                    null => "Индекс канала пока не готов.",
-                    { Count: 0 } => "Ничего не найдено.",
-                    _ => Format(hits, channelId)
-                };
-            }
-        }
-        catch (Exception exception)
-        {
-            logger.LogWarning(exception, "Search failed for chat {ChatId}", message.Chat.Id);
-            response = "Поиск временно недоступен. Попробуйте позже.";
-        }
-        await Reply(response);
-
-        Task<Message> Reply(string body) => bot.SendMessage(message.Chat.Id, body, parseMode: ParseMode.Html,
+        await bot.SendMessage(message.Chat.Id, response, parseMode: ParseMode.Html,
             linkPreviewOptions: new LinkPreviewOptions { IsDisabled = true },
             messageThreadId: message.IsTopicMessage ? message.MessageThreadId : null,
             replyParameters: new ReplyParameters { MessageId = message.Id, AllowSendingWithoutReply = true });
     }
 
-    private static ReadOnlySpan<char> Token(string message)
+    private async Task<string?> SearchAsync(long chatId, string query)
     {
-        var end = 0;
-        while (end < message.Length && !char.IsWhiteSpace(message[end])) end++;
-        return message.AsSpan(0, end);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            var ct = timeout.Token;
+            var group = await bot.GetChat(chatId, ct);
+            if (group.Type is not (ChatType.Group or ChatType.Supergroup) ||
+                group.LinkedChatId is not (< -100 and var channelId) ||
+                !channelId.ToString(CultureInfo.InvariantCulture).StartsWith("-100", StringComparison.Ordinal))
+                return null;
+
+            var hits = await services.GetRequiredService<PostSearch>().FindAsync(channelId, query, cancellationToken: ct);
+            return hits switch
+            {
+                null => "The channel's search index isn't ready yet.",
+                { Count: 0 } => "No results found.",
+                _ => Format(hits, channelId)
+            };
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Search failed for chat {ChatId}", chatId);
+            return null;
+        }
     }
 
     internal static string Format(IReadOnlyList<PostSearchResult> hits, long channelId)

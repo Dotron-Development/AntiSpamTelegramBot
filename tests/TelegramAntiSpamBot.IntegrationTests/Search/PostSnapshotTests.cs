@@ -88,6 +88,15 @@ public sealed class PostSnapshotTests
         Assert.Equal(expected, command.Matches(text, "@TestBot"));
     }
 
+    [Theory]
+    [InlineData("/stat@TestBot", true)]
+    [InlineData("/statTestBot", false)]
+    public void MatchesExplicitBotNameWhenConfigurationOmitsAtSign(string text, bool expected)
+    {
+        ICommand command = new StatCommand(null!, null!);
+        Assert.Equal(expected, command.Matches(text, "TestBot"));
+    }
+
     private sealed class QueryEmbeddings(ReadOnlyMemory<float> vector) : ISearchEmbeddings
     {
         public Task<IReadOnlyList<ReadOnlyMemory<float>>> GenerateAsync(IReadOnlyList<string> inputs, CancellationToken cancellationToken = default) =>

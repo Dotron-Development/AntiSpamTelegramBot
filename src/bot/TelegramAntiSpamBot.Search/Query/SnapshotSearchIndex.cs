@@ -9,7 +9,7 @@ internal sealed class SnapshotSearchIndex((PostSearchResult Result, int EndChunk
         using var header = new MemoryStream();
         using (var writer = new BinaryWriter(header, Encoding.UTF8, leaveOpen: true))
         {
-            writer.Write(SnapshotMagic.Value);
+            writer.Write(PostSnapshotBuilder.SnapshotSignature);
             writer.Write(channel);
             writer.Write(VectorFormat.Model);
             writer.Write(VectorFormat.Version);
