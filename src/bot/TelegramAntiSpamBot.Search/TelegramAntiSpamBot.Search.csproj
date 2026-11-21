@@ -2,6 +2,7 @@
   <ItemGroup>
     <PackageReference Include="Azure.AI.OpenAI" />
     <PackageReference Include="Microsoft.ML.Tokenizers" />
+    <PackageReference Include="System.Numerics.Tensors" />
     <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" />
   </ItemGroup>
   <ItemGroup>

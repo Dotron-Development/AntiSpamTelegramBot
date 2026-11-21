@@ -162,6 +162,10 @@ one-minute evaluation frequency.
 
 ## Search storage and embeddings
 
+In a channel's linked discussion group, use `/search <query>` (or `/search@BotName <query>`). The bot resolves the linked channel and replies in the same chat with up to five original post links. It ranks posts by their best matching vector fragment, with a boost for matching titles or hashtags. Results link to the channel and require normal Telegram access to it. If the snapshot is missing, build it from the **Search snapshots** review tab.
+
+Search caches one channel snapshot per worker, checks its ETag at most once every 30 seconds while serving that channel, and never downloads an unchanged snapshot again. The in-memory reader supports snapshots up to 160 MiB.
+
 The `Vectors` repository in Persistence stores post titles and binary vector chunks in the bot's data storage account. The Search project reuses `OpenAiServicesConfiguration` for the endpoint and credentials; `OpenAiServicesConfiguration__SearchEmbeddingDeployment` selects the deployment. The index uses `text-embedding-3-large` version 1 (3,072 dimensions).
 
 Automatic copies of channel posts in discussion groups (including edits) bypass commands, spam checks, photo analysis, and message history. The webhook still queues them for indexing when they have a channel `forward_origin` and nonblank text or a caption, and waits for the write before acknowledging Telegram. Index keys use the original channel and post IDs, not the discussion copy's IDs. Telegram's service sender (`777000`) also bypasses moderation, but its ID alone does not qualify a message for indexing. User forwards and comments follow the normal moderation path; direct channel posts still go through the usual history processing.

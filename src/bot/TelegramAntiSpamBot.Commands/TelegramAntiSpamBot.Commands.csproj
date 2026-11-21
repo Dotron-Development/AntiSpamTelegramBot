@@ -9,6 +9,7 @@
     <ProjectReference Include="..\TelegramAntispamBot.Configuration\TelegramAntispamBot.Configuration.csproj" />
     <ProjectReference Include="..\TelegramAntiSpamBot.Persistence\TelegramAntiSpamBot.Persistence.csproj" />
     <ProjectReference Include="..\TelegramAntiSpamBot.OpenAI\TelegramAntiSpamBot.OpenAI.csproj" />
+    <ProjectReference Include="..\TelegramAntiSpamBot.Search\TelegramAntiSpamBot.Search.csproj" />
   </ItemGroup>
 
 </Project>

@@ -9,3 +9,7 @@ global using TelegramAntiSpamBot.OpenAI;
 global using TelegramAntiSpamBot.Persistence.Repositories;
 global using Telegram.Bot.Exceptions;
 global using TelegramAntiSpamBot.Persistence.DTO;
+global using TelegramAntiSpamBot.Search;
+global using Telegram.Bot.Types.Enums;
+global using System.Globalization;
+global using System.Net;

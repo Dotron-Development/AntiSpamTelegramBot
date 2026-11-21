@@ -37,7 +37,7 @@ public sealed class PostSnapshotBuilder(IPostVectorRepository vectors, IPostSnap
         posts.Sort((a, b) => a.Id.CompareTo(b.Id));
 
         using var writer = new BinaryWriter(target, Encoding.UTF8, leaveOpen: true);
-        writer.Write(0x31534354);
+        writer.Write(SnapshotMagic.Value);
         writer.Write(chat);
         writer.Write(VectorFormat.Model);
         writer.Write(VectorFormat.Version);
