@@ -25,6 +25,27 @@ internal sealed class BlobPostSnapshotRepository(BlobContainerClient container) 
         }
     }
 
+    public async Task<SnapshotDownload?> OpenIfChangedAsync(string name, string? etag, CancellationToken cancellationToken)
+    {
+        var conditions = etag is null ? null : new BlobRequestConditions { IfNoneMatch = new ETag(etag) };
+        try
+        {
+            var response = await container.GetBlobClient(name).DownloadStreamingAsync(
+                new BlobDownloadOptions { Conditions = conditions }, cancellationToken);
+            if (response.GetRawResponse().Status == 304) return new SnapshotDownload(etag!, 0, null);
+            var download = response.Value;
+            return new SnapshotDownload(download.Details.ETag.ToString(), download.Details.ContentLength, download.Content);
+        }
+        catch (RequestFailedException e) when (e.Status == 304)
+        {
+            return new SnapshotDownload(etag!, 0, null);
+        }
+        catch (RequestFailedException e) when (e.Status == 404 && e.ErrorCode == "BlobNotFound")
+        {
+            return null;
+        }
+    }
+
     public async Task PublishAsync(string name, DateTimeOffset requestedAt, Func<Stream, CancellationToken, Task<bool>> write,
         CancellationToken cancellationToken)
     {

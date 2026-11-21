@@ -8,8 +8,7 @@ namespace TelegramAntiSpamBot.Commands
         bool DeleteInvocation => true;
 
         bool Matches(string message, string botName) =>
-            Command.Equals(message, StringComparison.InvariantCultureIgnoreCase) ||
-            $"{Command}{botName}".Equals(message, StringComparison.InvariantCultureIgnoreCase);
+            SlashCommandSyntax.MatchLength(message, Command, botName) != 0;
 
         Task ProcessAsync(Update update);
     }

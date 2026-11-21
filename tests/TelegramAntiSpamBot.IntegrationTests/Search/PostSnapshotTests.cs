@@ -45,6 +45,64 @@ public sealed class PostSnapshotTests
         Assert.Null(storage.Bytes);
     }
 
+    [Fact]
+    public async Task SearchesPublishedSnapshotByBestChunkWithTitleBoostAndReusesCache()
+    {
+        var storage = new SnapshotStorage();
+        var best = Post(2, 1);
+        var second = best.Vectors[0].ToArray();
+        second[1] = 0.4f;
+        var poor = new float[VectorFormat.Dimensions];
+        poor[1] = 1;
+        var archive = new[] { best, new IndexedPost(10, "Async & <await>", [poor, second]) };
+        const long channel = -1001234567890;
+        await new PostSnapshotBuilder(new VectorSource(archive), storage)
+            .RebuildAsync(new SnapshotResetJob(channel, DateTimeOffset.UtcNow), default);
+        var search = new PostSearch(storage, new QueryEmbeddings(best.Vectors[0]));
+        Assert.Equal(new long[] { 2, 10 }, (await search.FindAsync(channel, "other"))!.Select(hit => hit.MessageId));
+        var results = (await search.FindAsync(channel, "async"))!;
+        Assert.Equal(new long[] { 10, 2 }, results.Select(hit => hit.MessageId));
+        Assert.Equal(1, storage.Downloads);
+        Assert.Contains("https://t.me/c/1234567890/10\">Async &amp; &lt;await&gt;", SearchCommand.Format(results, channel));
+    }
+
+    [Fact]
+    public async Task RejectsSnapshotWithCorruptChecksum()
+    {
+        var storage = new SnapshotStorage();
+        var request = new SnapshotResetJob(-1001234567890, DateTimeOffset.UtcNow);
+        await new PostSnapshotBuilder(new VectorSource([Post(2, 1)]), storage).RebuildAsync(request, default);
+        storage.Bytes![^1] ^= 1;
+        var search = new PostSearch(storage, new QueryEmbeddings(default));
+        await Assert.ThrowsAsync<InvalidDataException>(() => search.FindAsync(request.ChatId, "async"));
+    }
+
+    [Theory]
+    [InlineData("/search async", true)]
+    [InlineData("/SEARCH@TestBot\tasync", true)]
+    [InlineData("/search@OtherBot async", false)]
+    [InlineData("/searching async", false)]
+    public void MatchesOnlySearchCommandsAddressedToThisBot(string text, bool expected)
+    {
+        var command = new SearchCommand(null!, null!, null!, NullLogger<SearchCommand>.Instance);
+        Assert.Equal(expected, command.Matches(text, "@TestBot"));
+    }
+
+    [Theory]
+    [InlineData("/stat@TestBot", true)]
+    [InlineData("/statTestBot", false)]
+    public void MatchesExplicitBotNameWhenConfigurationOmitsAtSign(string text, bool expected)
+    {
+        ICommand command = new StatCommand(null!, null!);
+        Assert.Equal(expected, command.Matches(text, "TestBot"));
+    }
+
+    private sealed class QueryEmbeddings(ReadOnlyMemory<float> vector) : ISearchEmbeddings
+    {
+        public Task<IReadOnlyList<ReadOnlyMemory<float>>> GenerateAsync(IReadOnlyList<string> inputs, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ReadOnlyMemory<float>>>([vector]);
+    }
+
     private static IndexedPost Post(long id, float coordinate)
     {
         var vector = new float[VectorFormat.Dimensions];
@@ -71,6 +129,7 @@ public sealed class PostSnapshotTests
         public string? Name { get; private set; }
         public DateTimeOffset RequestedAt { get; private set; }
         public byte[]? Bytes { get; private set; }
+        public int Downloads { get; private set; }
 
         public async Task PublishAsync(string name, DateTimeOffset requestedAt, Func<Stream, CancellationToken, Task<bool>> write,
             CancellationToken cancellationToken)
@@ -83,5 +142,11 @@ public sealed class PostSnapshotTests
 
         public IAsyncEnumerable<SnapshotBlob> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<SnapshotBlob?> FindAsync(string name, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<SnapshotDownload?> OpenIfChangedAsync(string name, string? etag, CancellationToken cancellationToken)
+        {
+            Assert.Equal(Name, name);
+            Downloads++;
+            return Task.FromResult(Bytes is { } bytes ? new SnapshotDownload("test", bytes.Length, new MemoryStream(bytes)) : null);
+        }
     }
 }
