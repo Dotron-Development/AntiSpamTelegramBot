@@ -6,6 +6,7 @@
         {
             serviceCollection.AddOptions<TelegramBotConfiguration>()
                 .ValidateDataAnnotations();
+            serviceCollection.AddScoped<IChannelPostSearch, LinkedChannelPostSearch>();
             var assembly = typeof(DependencyInjection).Assembly;
             var commandTypes = assembly
                 .GetTypes()

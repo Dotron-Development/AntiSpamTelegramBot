@@ -367,6 +367,54 @@ public class MentionCommandTests
     }
 
     [Fact]
+    public async Task PostSearchUsesLinkedChannelAndSendsSelectedOriginalLink()
+    {
+        using var fixture = new Fixture();
+        fixture.Update.Message!.Text = "@TestBot найди пост про async/await";
+        fixture.Telegram.LinkedChannelId = Fixture.ChannelId;
+        fixture.Ai.PostSearchQuery = "async/await";
+        fixture.Ai.Answer = "[Async/await](https://t.me/c/1234567890/10)";
+        var vector = new float[VectorFormat.Dimensions];
+        vector[0] = 1;
+        fixture.Embeddings.Vector = vector;
+        var posts = Enumerable.Range(10, 6).Select(id => new IndexedPost(id, id == 10 ? "Async/await" : $"Post {id}", [vector])).ToArray();
+        await new PostSnapshotBuilder(new PostSnapshotTests.VectorSource(posts), fixture.Snapshots)
+            .RebuildAsync(new SnapshotResetJob(Fixture.ChannelId, DateTimeOffset.UtcNow), default);
+
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        Assert.Equal(1, fixture.Telegram.ChatLookups);
+        Assert.Equal("async/await", Assert.Single(fixture.Embeddings.Inputs));
+        Assert.Equal(0, fixture.History.PageCalls);
+        var result = fixture.Ai.PostSearchResult!.Value;
+        Assert.Equal("Completed", result.GetProperty("Status").GetString());
+        var candidates = result.GetProperty("Posts");
+        Assert.Equal(5, candidates.GetArrayLength());
+        Assert.Equal("Async/await", candidates[0].GetProperty("Title").GetString());
+        Assert.Equal("https://t.me/c/1234567890/10", candidates[0].GetProperty("Url").GetString());
+        Assert.Equal(fixture.Ai.Answer, Assert.Single(fixture.Telegram.Sent).GetProperty("text").GetString());
+        Assert.Contains("do not list them all by default", fixture.Ai.Prompt);
+    }
+
+    [Theory]
+    [InlineData(false, "NoLinkedChannel", 0)]
+    [InlineData(true, "IndexNotReady", 1)]
+    public async Task PostSearchReportsWhyItIsUnavailable(bool linked, string status, int snapshotsRead)
+    {
+        using var fixture = new Fixture();
+        fixture.Telegram.LinkedChannelId = linked ? Fixture.ChannelId : null;
+        fixture.Ai.PostSearchQuery = "async/await";
+
+        await fixture.Processor.ProcessCommand(fixture.Update);
+
+        var result = fixture.Ai.PostSearchResult!.Value;
+        Assert.Equal(status, result.GetProperty("Status").GetString());
+        Assert.Empty(result.GetProperty("Posts").EnumerateArray());
+        Assert.Equal(snapshotsRead, fixture.Snapshots.Downloads);
+        Assert.Empty(fixture.Embeddings.Inputs);
+    }
+
+    [Fact]
     public async Task WithoutHistoryToolCallSendsOnlyMetadataAndDoesNotReadStorage()
     {
         using var fixture = new Fixture();
@@ -377,6 +425,8 @@ public class MentionCommandTests
         Assert.Equal(new MentionConversation(-100, 1000, new DateTimeOffset(fixture.Update.Message!.Date), null),
             fixture.Ai.Input!.Conversation);
         Assert.Equal(0, fixture.History.PageCalls);
+        Assert.Equal(0, fixture.Telegram.ChatLookups);
+        Assert.Equal(0, fixture.Snapshots.Downloads);
     }
 
     [Fact]
@@ -591,6 +641,9 @@ public class MentionCommandTests
         private readonly HttpClient telegramHttp;
         private readonly HttpClient aiHttp;
         private readonly ServiceProvider services;
+        public const long ChannelId = -1001234567890;
+        public PostSnapshotTests.SnapshotStorage Snapshots { get; } = new("-1001234567890");
+        public SearchEmbeddingsStub Embeddings { get; } = new();
         public TelegramHandler Telegram { get; } = new();
         public AiHandler Ai { get; } = new();
         public CallsStub Calls { get; } = new();
@@ -612,7 +665,9 @@ public class MentionCommandTests
                 Endpoint = new Uri("https://mention.example.test"), Transport = new HttpClientPipelineTransport(aiHttp),
                 RetryPolicy = OpenAiDependencyInjection.CreateMentionClientOptions(new Uri("https://mention.example.test")).RetryPolicy
             });
-            var collection = new ServiceCollection().AddLogging().AddOpenAiService().AddCommands()
+            var collection = new ServiceCollection().AddLogging().AddOpenAiService().AddCommands().AddSearch()
+                .AddSingleton<IPostSnapshotRepository>(Snapshots)
+                .AddSingleton<ISearchEmbeddings>(Embeddings)
                 .AddSingleton<ITelegramBotClient>(new TelegramBotClient("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk", telegramHttp))
                 .AddSingleton<ICommandCallsRepository>(Calls)
                 .AddSingleton<IMessageHistoryRepository>(History)
@@ -678,6 +733,8 @@ public class MentionCommandTests
         public bool ExpectHistoryError { get; set; }
         public string HistoryFrom { get; set; } = "2026-01-01T00:00:00+00:00";
         public string HistoryTo { get; set; } = "2026-01-01T01:00:00+00:00";
+        public string? PostSearchQuery { get; set; }
+        public JsonElement? PostSearchResult { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests++;
@@ -706,9 +763,14 @@ public class MentionCommandTests
             Assert.Equal(Input!.Conversation is not null,
                 tools.Any(tool => tool.GetProperty("type").GetString() == "function" &&
                     tool.GetProperty("name").GetString() == "get_message_history"));
+            var postSearchTools = tools.Where(tool => tool.GetProperty("type").GetString() == "function" &&
+                tool.GetProperty("name").GetString() == "search_channel_posts");
             if (Input.Conversation is not null)
             {
-                var historyTool = Assert.Single(tools, tool => tool.GetProperty("type").GetString() == "function");
+                var postTool = Assert.Single(postSearchTools);
+                Assert.Equal("query", Assert.Single(postTool.GetProperty("parameters").GetProperty("properties").EnumerateObject()).Name);
+                var historyTool = Assert.Single(tools, tool => tool.GetProperty("type").GetString() == "function" &&
+                    tool.GetProperty("name").GetString() == "get_message_history");
                 Assert.Contains("Retrieve up to 100 messages", historyTool.GetProperty("description").GetString());
                 var schema = historyTool.GetProperty("parameters").GetProperty("properties");
                 Assert.Equal("date-time", schema.GetProperty("from").GetProperty("format").GetString());
@@ -716,12 +778,21 @@ public class MentionCommandTests
                 Assert.Contains("Inclusive start timestamp", schema.GetProperty("from").GetProperty("description").GetString());
                 Assert.False(schema.TryGetProperty("chatId", out _));
             }
+            else
+                Assert.Empty(postSearchTools);
             var results = messages.EnumerateArray().Where(message =>
                 message.TryGetProperty("type", out var type) && type.GetString() == "function_call_output").ToArray();
             HistoryResults.Clear();
             HistoryErrors.Clear();
+            PostSearchResult = null;
             foreach (var result in results)
             {
+                if (PostSearchQuery is not null)
+                {
+                    using var postResult = JsonDocument.Parse(result.GetProperty("output").GetString()!);
+                    PostSearchResult = postResult.RootElement.Clone();
+                    continue;
+                }
                 if (ExpectHistoryError)
                 {
                     HistoryErrors.Add(result.GetProperty("output").GetString()!);
@@ -741,7 +812,12 @@ public class MentionCommandTests
                 return response;
             }
             var output = new List<object>();
-            if (results.Length < HistoryCalls)
+            if (PostSearchQuery is { } query && results.Length == 0)
+            {
+                output.Add(new { type = "function_call", id = "fc-post", call_id = "call-post",
+                    name = "search_channel_posts", status = "completed", arguments = JsonSerializer.Serialize(new { query }) });
+            }
+            else if (results.Length < HistoryCalls)
             {
                 output.Add(new { type = "function_call", id = "fc-" + results.Length,
                     call_id = "call-" + results.Length, name = "get_message_history", status = "completed",
@@ -779,10 +855,22 @@ public class MentionCommandTests
     {
         public List<int> Deleted { get; } = [];
         public List<JsonElement> Sent { get; } = [];
+        public int ChatLookups { get; private set; }
+        public long? LinkedChannelId { get; set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
-            if (request.RequestUri!.AbsolutePath.EndsWith("/deleteMessage", StringComparison.OrdinalIgnoreCase))
+            if (request.RequestUri!.AbsolutePath.EndsWith("/getChat", StringComparison.OrdinalIgnoreCase))
+            {
+                ChatLookups++;
+                Assert.Equal(-100, document.RootElement.GetProperty("chat_id").GetInt64());
+                var json = JsonSerializer.Serialize(new
+                {
+                    ok = true, result = new { id = -100, type = "supergroup", linked_chat_id = LinkedChannelId }
+                });
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+            }
+            if (request.RequestUri.AbsolutePath.EndsWith("/deleteMessage", StringComparison.OrdinalIgnoreCase))
                 Deleted.Add(document.RootElement.GetProperty("message_id").GetInt32());
             else
             {

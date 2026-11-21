@@ -17,6 +17,7 @@ global using System.ComponentModel.DataAnnotations;
 global using System.ComponentModel;
 global using TelegramAntiSpamBot.Persistence.DTO;
 global using TelegramAntiSpamBot.Persistence.Repositories;
+global using TelegramAntiSpamBot.Search;
 global using Microsoft.Agents.AI;
 global using Microsoft.Extensions.AI;
 global using OpenAI.Responses;

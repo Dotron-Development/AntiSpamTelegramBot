@@ -63,7 +63,8 @@ public sealed class PostSnapshotTests
         var results = (await search.FindAsync(channel, "async"))!;
         Assert.Equal(new long[] { 10, 2 }, results.Select(hit => hit.MessageId));
         Assert.Equal(1, storage.Downloads);
-        Assert.Contains("https://t.me/c/1234567890/10\">Async &amp; &lt;await&gt;", SearchCommand.Format(results, channel));
+        Assert.Contains("https://t.me/c/1234567890/10\">Async &amp; &lt;await&gt;",
+            SearchCommand.Format([new(results[0].Title, "https://t.me/c/1234567890/10")]));
     }
 
     [Theory]
@@ -178,7 +179,7 @@ public sealed class PostSnapshotTests
         return new IndexedPost(id, $"Post {id}", [vector]);
     }
 
-    private sealed class VectorSource(IndexedPost[] posts) : IPostVectorRepository
+    internal sealed class VectorSource(IndexedPost[] posts) : IPostVectorRepository
     {
         public async IAsyncEnumerable<IndexedPost> ListAsync(long chatId,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -192,7 +193,7 @@ public sealed class PostSnapshotTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class SnapshotStorage : IPostSnapshotRepository
+    internal sealed class SnapshotStorage(string? expectedName = null) : IPostSnapshotRepository
     {
         public string? Name { get; private set; }
         public DateTimeOffset RequestedAt { get; private set; }
@@ -212,7 +213,7 @@ public sealed class PostSnapshotTests
         public Task<SnapshotBlob?> FindAsync(string name, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<SnapshotDownload?> OpenIfChangedAsync(string name, string? etag, CancellationToken cancellationToken)
         {
-            Assert.Equal(Name, name);
+            Assert.Equal(expectedName ?? Name, name);
             Downloads++;
             return Task.FromResult(Bytes is { } bytes ? new SnapshotDownload("test", bytes.Length, new MemoryStream(bytes)) : null);
         }
